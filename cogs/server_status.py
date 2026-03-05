@@ -53,27 +53,26 @@ class ServerStatus(commands.Cog):
 
         try:
             # Ejecutar consultas
-            info = await asyncio.to_thread(a2s.info, address)
-            players = await asyncio.to_thread(a2s.players, address)
-
-            p_count = info.player_count
+            valid_players = [p.name for p in players if p.name]
+            p_count = len(players)
             ping_ms = int(info.ping * 1000)
+            
+            hidden_count = p_count - len(valid_players)
 
             embed = discord.Embed(title=f"🦖 Estado: {server_name}", color=discord.Color.green())
             embed.add_field(name="Mapa", value=info.map_name, inline=True)
             
-            player_list = ", ".join([p.name for p in players if p.name])
+            player_list = ", ".join(valid_players)
             
-            # Gestión de Ghost Players
-            if not player_list:
-                if p_count == 1:
-                    p_count = 0
-                    player_list = "Nadie conectado."
-                elif p_count > 1:
-                    player_list = f"{p_count} Jugadores ocultos o sin nombre (Epic/Steam Privacy)."
-                else:
-                    player_list = "Nadie conectado."
-            elif len(player_list) > 1000:
+            # Gestión de lista vacía o mixta
+            if p_count == 0:
+                player_list = "Nadie conectado."
+            elif len(valid_players) == 0 and hidden_count > 0:
+                player_list = f"{hidden_count} Jugador(es) con perfil privado de Steam."
+            elif hidden_count > 0:
+                player_list += f" (+ {hidden_count} perfil(es) privado(s))"
+                
+            if len(player_list) > 1000:
                 player_list = player_list[:1000] + "..."
 
             embed.add_field(name="Jugadores", value=f"{p_count}/{info.max_players}", inline=True)
@@ -192,21 +191,22 @@ class ServerStatus(commands.Cog):
                 info = await asyncio.wait_for(asyncio.to_thread(a2s.info, address), timeout=5.0)
                 players = await asyncio.wait_for(asyncio.to_thread(a2s.players, address), timeout=5.0)
                 
-                player_list = ", ".join([p.name for p in players if p.name])
+                valid_players = [p.name for p in players if p.name]
+                p_count = len(players)
+                hidden_count = p_count - len(valid_players)
+                
+                player_list = ", ".join(valid_players)
                 ping_ms = int(info.ping * 1000)
                 
-                p_count = info.player_count
-                
-                # Gestión de Ghost Players (1 jugador fantasma sin nombre se considera vacío)
-                if not player_list:
-                    if p_count == 1:
-                        p_count = 0  # Ignoramos el ghost
-                        player_list = "Nadie conectado."
-                    elif p_count > 1:
-                        player_list = f"{p_count} Jugadores ocultos."
-                    else:
-                        player_list = "Nadie conectado."
-                elif len(player_list) > 1000:
+                # Gestión de lista vacía o mixta
+                if p_count == 0:
+                    player_list = "Nadie conectado."
+                elif len(valid_players) == 0 and hidden_count > 0:
+                    player_list = f"{hidden_count} Jugador(es) con perfil privado de Steam."
+                elif hidden_count > 0:
+                    player_list += f" (+ {hidden_count} perfil(es) privado(s))"
+                    
+                if len(player_list) > 1000:
                     player_list = player_list[:1000] + "..."
                 
                 return {
