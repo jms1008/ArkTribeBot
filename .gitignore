@@ -1,0 +1,17 @@
+# Entorno y variables de entorno ocultas
+.env
+venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Bases de datos y configuraciones locales
+*.db
+*.sqlite3
+tribe_data.db
+
+# Logs de actividad y temporales
+*.log
+logs/
+.DS_Store

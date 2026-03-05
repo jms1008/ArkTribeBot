@@ -1,0 +1,1053 @@
+import discord
+from discord.ext import commands, tasks
+from discord import app_commands
+import os
+import a2s
+import asyncio
+import aiosqlite
+import logging
+from datetime import datetime, timedelta
+import json
+
+logger = logging.getLogger("ArkTribeBot")
+
+# Reuse SERVERS from server_status.py
+from cogs.server_status import SERVERS, AUTHORIZED_ADMIN_ID
+
+class AddRelationshipModal(discord.ui.Modal, title='Añadir Relación'):
+    jugador1 = discord.ui.TextInput(label='Jugador 1', placeholder='Nombre exacto del jugador 1...', max_length=100)
+    jugador2 = discord.ui.TextInput(label='Jugador 2', placeholder='Nombre exacto del jugador 2...', max_length=100)
+    
+    def __init__(self, bot):
+        super().__init__()
+        self.bot = bot
+
+    async def on_submit(self, interaction: discord.Interaction):
+        p1 = self.jugador1.value.strip()
+        p2 = self.jugador2.value.strip()
+        
+        # Normalize order so p1 < p2
+        if p1 > p2:
+            p1, p2 = p2, p1
+
+        async with aiosqlite.connect(self.bot.db_name) as db:
+            # Check if exists
+            cursor = await db.execute("SELECT id FROM k4ultra_relationships WHERE player1 = ? AND player2 = ?", (p1, p2))
+            if await cursor.fetchone():
+                await db.execute("UPDATE k4ultra_relationships SET is_manual = 1, probability_score = 100 WHERE player1 = ? AND player2 = ?", (p1, p2))
+            else:
+                await db.execute("INSERT INTO k4ultra_relationships (player1, player2, probability_score, is_manual) VALUES (?, ?, 100, 1)", (p1, p2))
+            await db.commit()
+            
+        await interaction.response.send_message(f"✅ Relación manual añadida entre **{p1}** y **{p2}**.", ephemeral=True)
+
+class RemoveRelationshipModal(discord.ui.Modal, title='Eliminar Relación'):
+    jugador1 = discord.ui.TextInput(label='Jugador 1', placeholder='Nombre exacto del jugador 1...', max_length=100)
+    jugador2 = discord.ui.TextInput(label='Jugador 2', placeholder='Nombre exacto del jugador 2...', max_length=100)
+
+    def __init__(self, bot):
+        super().__init__()
+        self.bot = bot
+
+    async def on_submit(self, interaction: discord.Interaction):
+        p1 = self.jugador1.value.strip()
+        p2 = self.jugador2.value.strip()
+        
+        # Normalize order
+        if p1 > p2:
+            p1, p2 = p2, p1
+
+        async with aiosqlite.connect(self.bot.db_name) as db:
+            await db.execute("DELETE FROM k4ultra_relationships WHERE player1 = ? AND player2 = ?", (p1, p2))
+            await db.commit()
+            
+        await interaction.response.send_message(f"🗑️ Relación eliminada entre **{p1}** y **{p2}**.", ephemeral=True)
+
+class RenameTribeModal(discord.ui.Modal, title='Asignar Nombre a Tribu'):
+    miembro_ref = discord.ui.TextInput(label='Miembro de Referencia', placeholder='Nombre exacto de un jugador de la tribu...', max_length=100)
+    nuevo_nombre = discord.ui.TextInput(label='Nuevo Nombre', placeholder='Ej: Los Alfas', max_length=100)
+    
+    def __init__(self, bot):
+        super().__init__()
+        self.bot = bot
+
+    async def on_submit(self, interaction: discord.Interaction):
+        miembro = self.miembro_ref.value.strip()
+        nuevo_nombre = self.nuevo_nombre.value.strip()
+        
+        async with aiosqlite.connect(self.bot.db_name) as db:
+            db.row_factory = aiosqlite.Row
+            # We identify the tribe by the reference member
+            # Since the algorithm clusters them purely by graph, we'll store the rename rule using the member's exact name
+            # A more robust way is to just use 'k4ultra_tribe_names' with 'tribe_signature' = miembro
+            # Let's save the custom name associated with this member.
+            
+            cursor = await db.execute("SELECT id FROM k4ultra_tribe_names WHERE tribe_signature = ?", (miembro,))
+            if await cursor.fetchone():
+                await db.execute("UPDATE k4ultra_tribe_names SET custom_name = ? WHERE tribe_signature = ?", (nuevo_nombre, miembro))
+            else:
+                await db.execute("INSERT INTO k4ultra_tribe_names (tribe_signature, custom_name) VALUES (?, ?)", (miembro, nuevo_nombre))
+            await db.commit()
+            
+        await interaction.response.send_message(f"✅ Tribu de **{miembro}** renombrada a **{nuevo_nombre}**. Se aplicará en el próximo refresco.", ephemeral=True)
+
+class PlayerSelectMenu(discord.ui.Select):
+    def __init__(self, bot, players):
+        self.bot = bot
+        options = []
+        for i, p in enumerate(players[:25]):
+            options.append(discord.SelectOption(label=p, description="Ver detalles y horarios", value=p))
+        if not options:
+            options.append(discord.SelectOption(label="Sin datos", value="none"))
+        super().__init__(placeholder="Selecciona un jugador para ver su perfil detallado...", min_values=1, max_values=1, options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        player_name = self.values[0]
+        if player_name == "none":
+            await interaction.response.send_message("No hay datos.", ephemeral=True)
+            return
+            
+        async with aiosqlite.connect(self.bot.db_name) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute("SELECT map_name, sum(total_minutes) as m FROM k4ultra_playtime WHERE player_name = ? GROUP BY map_name ORDER BY m DESC", (player_name,))
+            maps = await cursor.fetchall()
+            
+            total_mins = sum(m['m'] for m in maps) if maps else 0
+            if total_mins == 0:
+                await interaction.response.send_message("No hay datos suficientes de este jugador.", ephemeral=True)
+                return
+                
+            main_map = maps[0]['map_name']
+            
+            cursor = await db.execute("SELECT start_time FROM k4ultra_sessions WHERE player_name = ?", (player_name,))
+            sessions = await cursor.fetchall()
+            
+            hours_played = {i: 0 for i in range(24)}
+            for s in sessions:
+                try:
+                    st = datetime.strptime(s['start_time'], "%Y-%m-%d %H:%M:%S")
+                    hours_played[st.hour] += 1
+                except: pass
+                
+            best_hour = max(hours_played, key=hours_played.get) if sessions else "N/A"
+            
+            embed = discord.Embed(title=f"👤 Perfil Detallado: {player_name}", color=discord.Color.blue())
+            
+            # Añadir alias si existe
+            try:
+                cursor = await db.execute("SELECT alias FROM k4ultra_aliases WHERE player_name = ?", (player_name,))
+                alias_row = await cursor.fetchone()
+                if alias_row:
+                    embed.title += f" [{alias_row['alias']}]"
+            except aiosqlite.OperationalError:
+                pass
+            
+            hours = total_mins // 60
+            mins = total_mins % 60
+            embed.add_field(name="⏱️ Tiempo Total", value=f"{hours}h {mins}m", inline=True)
+            embed.add_field(name="🗺️ Main Map", value=f"{main_map}", inline=True)
+            embed.add_field(name="⏰ Hora Frecuente (Inicio)", value=f"{best_hour}:00", inline=True)
+            
+            # Extraer info de la blacklist si existe
+            try:
+                cursor = await db.execute("SELECT tribe, notes FROM blacklist WHERE player = ?", (player_name,))
+                bl_row = await cursor.fetchone()
+                if bl_row:
+                    embed.add_field(name="🏠 Tribu (Manual)", value=f"**{bl_row['tribe']}**", inline=True)
+                    embed.add_field(name="📓 Extra (Notas)", value=bl_row['notes'] or "Ninguna", inline=False)
+            except aiosqlite.OperationalError:
+                pass
+            
+            map_str = ""
+            for m in maps:
+                pct = int((m['m'] / total_mins) * 100)
+                map_str += f"**{m['map_name'][:4].upper()}** ({pct}%)\n"
+            
+            embed.add_field(name="Distribución de Servidores", value=map_str or "No data", inline=False)
+            
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+
+class K4UltraView(discord.ui.View):
+    def __init__(self, bot, top_players=None):
+        super().__init__(timeout=None)
+        self.bot = bot
+        if top_players:
+            self.add_item(PlayerSelectMenu(bot, top_players))
+
+    @discord.ui.button(label="Añadir Relación", style=discord.ButtonStyle.primary, emoji="➕", custom_id="k4ultra_add_rel", row=1)
+    async def add_rel_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(AddRelationshipModal(self.bot))
+
+    @discord.ui.button(label="Eliminar Relación", style=discord.ButtonStyle.danger, emoji="➖", custom_id="k4ultra_rem_rel", row=1)
+    async def rem_rel_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(RemoveRelationshipModal(self.bot))
+
+    @discord.ui.button(label="Renombrar Tribu", style=discord.ButtonStyle.secondary, emoji="✏️", custom_id="k4ultra_ren_rel", row=1)
+    async def ren_rel_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(RenameTribeModal(self.bot))
+
+
+class K4Ultra(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
+        self.gather_player_data.start()
+        self.calculate_relationships.start()
+
+    def cog_unload(self):
+        self.gather_player_data.cancel()
+        self.calculate_relationships.cancel()
+
+    async def fetch_server_players(self, map_name, ip, port):
+        """Fetches players from A2S and returns valid names + session durations."""
+        address = (ip, port)
+        valid_players = []
+        try:
+            players = await asyncio.wait_for(asyncio.to_thread(a2s.players, address), timeout=5.0)
+            for p in players:
+                # Omitir jugadores que no tienen nombre (ocultos de Steam/Epic)
+                if not p.name:
+                    continue
+                valid_players.append({"name": p.name, "duration": p.duration})
+            return map_name, valid_players
+        except Exception as e:
+            logger.debug(f"[K4Ultra] Error fetching from {map_name}: {e}")
+            return map_name, []
+
+    @tasks.loop(minutes=2)
+    async def gather_player_data(self):
+        """Tarea en segundo plano que recopila datos de los jugadores cada 5 minutos."""
+        await self.bot.wait_until_ready()
+        
+        tasks_list = [self.fetch_server_players(name, ip, port) for name, (ip, port) in SERVERS.items()]
+        results = await asyncio.gather(*tasks_list)
+        
+        now = datetime.now()
+        
+        all_fetched = []
+        for map_name, players in results:
+            for p in players:
+                all_fetched.append({"map": map_name, "raw_name": p['name']})
+                
+        async with aiosqlite.connect(self.bot.db_name) as db:
+            db.row_factory = aiosqlite.Row
+            
+            cursor = await db.execute("SELECT id, player_name, map_name, start_time, end_time FROM k4ultra_sessions WHERE is_active = 1")
+            active_pool = [dict(s) for s in await cursor.fetchall()]
+            
+            ten_mins_ago = (now - timedelta(minutes=10)).strftime("%Y-%m-%d %H:%M:%S")
+            cursor = await db.execute("SELECT id, player_name, map_name, start_time, end_time FROM k4ultra_sessions WHERE is_active = 0 AND end_time >= ? ORDER BY end_time DESC", (ten_mins_ago,))
+            recent_closed_pool = [dict(s) for s in await cursor.fetchall()]
+            
+            seen_identities = set()
+            active_pool_dict = {s['id']: s for s in active_pool} # helpful tracker
+            
+            def extract_base(ident):
+                parts = ident.rsplit('_', 1)
+                if len(parts) == 2 and parts[1].isdigit():
+                    return parts[0]
+                return ident
+
+            for fp in all_fetched:
+                map_m = fp['map']
+                raw_name = fp['raw_name']
+                
+                true_identity = None
+                
+                # 1. Look for exact active session on this exact map
+                for sid, s in active_pool_dict.items():
+                    if sid not in seen_identities and s['map_name'] == map_m:
+                        if extract_base(s['player_name']) == raw_name:
+                            true_identity = s['player_name']
+                            seen_identities.add(sid)
+                            await db.execute("UPDATE k4ultra_sessions SET end_time = ? WHERE id = ?", (now.strftime("%Y-%m-%d %H:%M:%S"), sid))
+                            break
+                            
+                if not true_identity:
+                    # 2. Look for recent disconnected session to inherit (Transferencia o reconexión)
+                    # Excluye identidades que ya hayan sido asimiladas en este tick (estén online en otro lado)
+                    identities_already_online = [active_pool_dict[sid]['player_name'] for sid in seen_identities if sid in active_pool_dict]
+                    
+                    generic_names = {"123", "human", "humano", "survivor", "player", "bob"}
+                    is_generic = raw_name.lower() in generic_names
+                    
+                    # Para genéricos, buscamos CUALQUIER sesión inactiva de la DB (incluso hace >10 min) para reaprovechar el ID
+                    # Para no genéricos, usamos el pool de transferencias (últimos 10 mins)
+                    pool_to_check = recent_closed_pool
+                    if is_generic:
+                        # Fetch all inactive sessions for this exact base name to recycle
+                        cursor = await db.execute("SELECT id, player_name, map_name, start_time, end_time FROM k4ultra_sessions WHERE is_active = 0 AND player_name LIKE ? ORDER BY end_time DESC", (f"{raw_name}_%",))
+                        # Also include the base name itself if it exists and is inactive
+                        cursor2 = await db.execute("SELECT id, player_name, map_name, start_time, end_time FROM k4ultra_sessions WHERE is_active = 0 AND player_name = ? ORDER BY end_time DESC", (raw_name,))
+                        
+                        generic_inactive = [dict(s) for s in await cursor.fetchall()]
+                        generic_inactive.extend([dict(s) for s in await cursor2.fetchall()])
+                        
+                        # Sort combined list by end_time DESC
+                        generic_inactive.sort(key=lambda x: x['end_time'], reverse=True)
+                        pool_to_check = generic_inactive
+                        
+                    for s in pool_to_check:
+                        if extract_base(s['player_name']) == raw_name and s['player_name'] not in identities_already_online:
+                            true_identity = s['player_name']
+                            # Crear nueva sesión para esta reconexión/salto
+                            cursor = await db.execute("INSERT INTO k4ultra_sessions (player_name, map_name, start_time, end_time, is_active) VALUES (?, ?, ?, ?, 1)",
+                                             (true_identity, map_m, now.strftime("%Y-%m-%d %H:%M:%S"), now.strftime("%Y-%m-%d %H:%M:%S")))
+                            new_id = cursor.lastrowid
+                            seen_identities.add(new_id)
+                            active_pool_dict[new_id] = {'id': new_id, 'player_name': true_identity, 'map_name': map_m}
+                            break
+                            
+                if not true_identity:
+                    # 3. New concurrent user (Concurrencia extrema o nuevo absoluto)
+                    if is_generic:
+                        # En este punto, todos los sufijos _x están online (o no hay). Creamos el siguiente.
+                        cursor = await db.execute("SELECT player_name FROM k4ultra_sessions WHERE player_name LIKE ?", (f"{raw_name}_%",))
+                        existing = await cursor.fetchall()
+                        max_suffix = 0
+                        for e in existing:
+                            parts = e['player_name'].rsplit('_', 1)
+                            if len(parts) == 2 and parts[1].isdigit() and parts[0] == raw_name:
+                                val = int(parts[1])
+                                if val > max_suffix: max_suffix = val
+                        
+                        true_identity = f"{raw_name}_{max_suffix + 1}"
+                    else:
+                        # Para jugadores normales, se usa su nombre original siempre
+                        true_identity = raw_name
+                    cursor = await db.execute("INSERT INTO k4ultra_sessions (player_name, map_name, start_time, end_time, is_active) VALUES (?, ?, ?, ?, 1)",
+                                         (true_identity, map_m, now.strftime("%Y-%m-%d %H:%M:%S"), now.strftime("%Y-%m-%d %H:%M:%S")))
+                    new_id = cursor.lastrowid
+                    seen_identities.add(new_id)
+                    active_pool_dict[new_id] = {'id': new_id, 'player_name': true_identity, 'map_name': map_m}
+                
+                # Logs
+                await db.execute("INSERT INTO k4ultra_players_log (player_name, map_name) VALUES (?, ?)", (true_identity, map_m))
+                
+                # Playtime
+                cursor = await db.execute("SELECT id FROM k4ultra_playtime WHERE player_name = ? AND map_name = ?", (true_identity, map_m))
+                pt_row = await cursor.fetchone()
+                if pt_row:
+                    await db.execute("UPDATE k4ultra_playtime SET total_minutes = total_minutes + 5, last_seen = ? WHERE id = ?", (now.strftime("%Y-%m-%d %H:%M:%S"), pt_row['id']))
+                else:
+                    await db.execute("INSERT INTO k4ultra_playtime (player_name, map_name, total_minutes, last_seen) VALUES (?, ?, ?, ?)", (true_identity, map_m, 5, now.strftime("%Y-%m-%d %H:%M:%S")))
+
+            # Marcar inactivos los que han desaparecido
+            for sid, s in active_pool_dict.items():
+                if sid not in seen_identities and sid in [a['id'] for a in active_pool]: # Only close originally active ones
+                    await db.execute("UPDATE k4ultra_sessions SET is_active = 0 WHERE id = ?", (sid,))
+                    
+            await db.commit()
+            
+            # --- Auto-Blacklist Logic ---
+            try:
+                cursor = await db.execute("SELECT members_json FROM k4ultra_fixed_tribes WHERE name = 'UNNAMED'")
+                unnamed_row = await cursor.fetchone()
+                if unnamed_row:
+                    import json
+                    unnamed_members = set(json.loads(unnamed_row['members_json']))
+                    
+                    # Check for aliases of UNNAMED members to avoid blacklisting them too
+                    aliases = {}
+                    try:
+                        cursor = await db.execute("SELECT player_name, alias FROM k4ultra_aliases")
+                        aliases = {r['player_name']: r['alias'] for r in await cursor.fetchall()}
+                    except aiosqlite.OperationalError:
+                        pass # Table might not exist yet if bot wasn't fully restarted
+                    
+                    blacklisted = set()
+                    try:
+                        cursor = await db.execute("SELECT player FROM blacklist")
+                        blacklisted = {r['player'] for r in await cursor.fetchall()}
+                    except aiosqlite.OperationalError:
+                        pass
+                    
+                    new_blacklist_count = 0
+                    import datetime as dt
+                    created_at = dt.date.today().isoformat()
+                    
+                    for sid in seen_identities:
+                        if sid in active_pool_dict:
+                            s_info = active_pool_dict[sid]
+                            t_name = s_info['player_name']
+                            t_map = s_info['map_name']
+                            
+                            if t_name not in unnamed_members and t_name not in blacklisted:
+                                try:
+                                    await db.execute("INSERT INTO blacklist (player, tribe, map, notes, created_at) VALUES (?, ?, ?, ?, ?)",
+                                                     (t_name, "Desconocido", t_map, "Auto-detectado por Radar K4Ultra", created_at))
+                                    blacklisted.add(t_name)
+                                    new_blacklist_count += 1
+                                except aiosqlite.OperationalError:
+                                    pass # Might not exist
+                                
+                    if new_blacklist_count > 0:
+                        await db.commit()
+                        try:
+                            from cogs.warfare import update_blacklist_dashboards
+                            await update_blacklist_dashboards(self.bot)
+                        except Exception as e:
+                            logger.error(f"[K4Ultra] Error updating blacklist dashboards: {e}")
+            except Exception as e:
+                logger.error(f"[K4Ultra] Auto-blacklist check failed: {e}")
+            
+            # --- Actualizar mensajes persistentes K4Ultra ---
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute("SELECT id, channel_id, message_id FROM k4ultra_messages")
+            rows = await cursor.fetchall()
+            
+            if rows:
+                new_embed, top_players = await self.generate_k4ultra_embed()
+                messages_to_remove = []
+                
+                for row in rows:
+                    row_id = row['id']
+                    channel_id = row['channel_id']
+                    message_id = row['message_id']
+                    
+                    try:
+                        channel = self.bot.get_channel(channel_id) or await self.bot.fetch_channel(channel_id)
+                        if not channel:
+                            messages_to_remove.append(row_id)
+                            continue
+                            
+                        message = await channel.fetch_message(message_id)
+                        
+                        # Re-attach the view to secure buttons on restarts
+                        view = K4UltraView(self.bot, top_players)
+                        await message.edit(embed=new_embed, view=view)
+                    except discord.NotFound:
+                        messages_to_remove.append(row_id)
+                    except discord.Forbidden:
+                        pass
+                    except Exception as e:
+                        logger.error(f"[K4Ultra] Error actualizando mensaje persistente {row_id}: {e}")
+                        
+                if messages_to_remove:
+                    for msg_id in messages_to_remove:
+                        await db.execute("DELETE FROM k4ultra_messages WHERE id = ?", (msg_id,))
+                    await db.commit()
+
+    @tasks.loop(hours=24)
+    async def calculate_relationships(self):
+        """Calcula las relaciones cada 24 horas usando el sistema de puntos."""
+        await self.bot.wait_until_ready()
+        
+        now = datetime.now()
+        yesterday_start = (now - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        yesterday_end = yesterday_start + timedelta(days=1)
+        ys_str = yesterday_start.strftime("%Y-%m-%d %H:%M:%S")
+        ye_str = yesterday_end.strftime("%Y-%m-%d %H:%M:%S")
+
+        async with aiosqlite.connect(self.bot.db_name) as db:
+            db.row_factory = aiosqlite.Row
+            
+            # Evitar doble ejecución por reinicios
+            await db.execute("CREATE TABLE IF NOT EXISTS k4ultra_config (key TEXT PRIMARY KEY, value TEXT)")
+            cursor = await db.execute("SELECT value FROM k4ultra_config WHERE key = 'last_calc_date'")
+            row = await cursor.fetchone()
+            today_str = now.strftime("%Y-%m-%d")
+            if row and row['value'] == today_str:
+                return # Ya hemos calculado los puntos de hoy
+            await db.execute("INSERT OR REPLACE INTO k4ultra_config (key, value) VALUES ('last_calc_date', ?)", (today_str,))
+            
+            # Preparar pilar de minutos compartidos si no existe
+            try:
+                await db.execute("ALTER TABLE k4ultra_relationships ADD COLUMN shared_minutes INTEGER DEFAULT 0")
+            except: pass
+            
+            # 1. Traer las sesiones finalizadas o con actividad en "Ayer"
+            cursor = await db.execute("SELECT player_name, map_name, start_time, end_time FROM k4ultra_sessions WHERE start_time >= ? AND start_time < ?", (ys_str, ye_str))
+            sessions = await cursor.fetchall()
+            
+            points_to_add = {} 
+            shared_mins_to_add = {} 
+            
+            def add_points(a, b, pts):
+                if a > b: a, b = b, a
+                points_to_add[(a, b)] = points_to_add.get((a, b), 0) + pts
+                
+            def add_mins(a, b, m):
+                if a > b: a, b = b, a
+                shared_mins_to_add[(a, b)] = shared_mins_to_add.get((a, b), 0) + m
+
+            parsed_sessions = []
+            for s in sessions:
+                st = datetime.strptime(s['start_time'], "%Y-%m-%d %H:%M:%S")
+                # Si una sesión sigue activa o su end_time sobrepasa el día, cap en ye_str
+                end_str = s['end_time']
+                if end_str > ye_str: end_str = ye_str
+                et = datetime.strptime(end_str, "%Y-%m-%d %H:%M:%S")
+                parsed_sessions.append({'p': s['player_name'], 'm': s['map_name'], 'st': st, 'et': et})
+
+            from collections import defaultdict
+            player_sessions = defaultdict(list)
+            for s in parsed_sessions:
+                player_sessions[s['p']].append(s)
+            
+            for p in player_sessions:
+                player_sessions[p].sort(key=lambda x: x['st'])
+
+            players = list(player_sessions.keys())
+            
+            for i in range(len(players)):
+                for j in range(i+1, len(players)):
+                    p1 = players[i]
+                    p2 = players[j]
+                    
+                    s1_list = player_sessions[p1]
+                    s2_list = player_sessions[p2]
+                    
+                    # Regla A: Minutos compartidos (solapados en mismo mapa)
+                    for s1 in s1_list:
+                        for s2 in s2_list:
+                            if s1['m'] == s2['m']:
+                                overlap_start = max(s1['st'], s2['st'])
+                                overlap_end = min(s1['et'], s2['et'])
+                                if overlap_end > overlap_start:
+                                    mins = int((overlap_end - overlap_start).total_seconds() / 60)
+                                    add_mins(p1, p2, mins)
+                                    
+                    # Regla C: Sincronización Login/Logout (<= 10 mins)
+                    if abs((s1_list[0]['st'] - s2_list[0]['st']).total_seconds()) <= 600:
+                        add_points(p1, p2, 2)
+                    if abs((s1_list[-1]['et'] - s2_list[-1]['et']).total_seconds()) <= 600:
+                        add_points(p1, p2, 2)
+                        
+                    # Regla B: Transferencias simultáneas (<= 5 mins)
+                    for k1 in range(len(s1_list)-1):
+                        t1_end = s1_list[k1]['et']
+                        t1_map1 = s1_list[k1]['m']
+                        t1_start2 = s1_list[k1+1]['st']
+                        t1_map2 = s1_list[k1+1]['m']
+                        
+                        if t1_map1 != t1_map2:  # Hubo transferencia real
+                            for k2 in range(len(s2_list)-1):
+                                t2_end = s2_list[k2]['et']
+                                t2_map1 = s2_list[k2]['m']
+                                t2_start2 = s2_list[k2+1]['st']
+                                t2_map2 = s2_list[k2+1]['m']
+                                
+                                if t2_map1 == t1_map1 and t2_map2 == t1_map2:
+                                    if abs((t1_end - t2_end).total_seconds()) <= 300 and abs((t1_start2 - t2_start2).total_seconds()) <= 300:
+                                        add_points(p1, p2, 5)
+
+            # Volcar datos a SQL
+            for (p1, p2), mins in shared_mins_to_add.items():
+                cursor = await db.execute("SELECT probability_score, shared_minutes, is_manual FROM k4ultra_relationships WHERE player1 = ? AND player2 = ?", (p1, p2))
+                row = await cursor.fetchone()
+                pts_to_add = points_to_add.get((p1, p2), 0)
+                
+                if row:
+                    old_mins = row['shared_minutes'] if 'shared_minutes' in row.keys() else 0
+                    new_mins = old_mins + mins
+                    # Calculamos los Puntos de la Regla A sumados
+                    pts_to_add += (new_mins // 180) - (old_mins // 180)
+                    
+                    if row['is_manual'] == 0:
+                        await db.execute("UPDATE k4ultra_relationships SET probability_score = probability_score + ?, shared_minutes = ? WHERE player1 = ? AND player2 = ?", (pts_to_add, new_mins, p1, p2))
+                else:
+                    pts_to_add += mins // 180
+                    if pts_to_add > 0:
+                        await db.execute("INSERT INTO k4ultra_relationships (player1, player2, probability_score, shared_minutes, is_manual) VALUES (?, ?, ?, ?, 0)", (p1, p2, pts_to_add, mins))
+                        
+            # Aplicar Puntos que provienen únicamente de transferencias o sync loops sin cruce de minutos
+            for (p1, p2), pts in points_to_add.items():
+                if (p1, p2) not in shared_mins_to_add:
+                    cursor = await db.execute("SELECT probability_score, is_manual FROM k4ultra_relationships WHERE player1 = ? AND player2 = ?", (p1, p2))
+                    row = await cursor.fetchone()
+                    if row:
+                        if row['is_manual'] == 0:
+                            await db.execute("UPDATE k4ultra_relationships SET probability_score = probability_score + ? WHERE player1 = ? AND player2 = ?", (pts, p1, p2))
+                    else:
+                        if pts > 0:
+                            await db.execute("INSERT INTO k4ultra_relationships (player1, player2, probability_score, shared_minutes, is_manual) VALUES (?, ?, ?, 0, 0)", (p1, p2, pts))
+            
+            # Limpieza mensual de logs crudos para evitar petar la DB (manteniendo sesiones!)
+            await db.execute("DELETE FROM k4ultra_players_log WHERE timestamp < datetime('now', '-30 days')")
+            
+            await db.commit()
+            
+            # Guardar Snapshot Si es Lunes
+            if now.weekday() == 0:  # Lunes
+                current_week = now.isocalendar()[1]
+                cursor = await db.execute("SELECT id FROM k4ultra_snapshots WHERE week_number = ?", (current_week,))
+                if not await cursor.fetchone():
+                    # Generar embed para guardar
+                    embed, _ = await self.generate_k4ultra_embed()
+                    embed.title = f"🌐 Tracker de Jugadores K4Ultra - Semana {current_week}"
+                    embed.description = "Registro inmutable de la semana."
+                    embed.set_footer(text=f"Guardado automáticamente: {now.strftime('%Y-%m-%d')}")
+                    
+                    embed_json = json.dumps(embed.to_dict())
+                    await db.execute(
+                        "INSERT INTO k4ultra_snapshots (week_number, embed_json) VALUES (?, ?)",
+                        (current_week, embed_json)
+                    )
+                    await db.commit()
+
+    async def generate_k4ultra_embed(self) -> tuple[discord.Embed, list]:
+        embed = discord.Embed(title="🌐 Tracker de Jugadores K4Ultra", color=discord.Color.purple())
+        top_player_names = []
+        
+        async with aiosqlite.connect(self.bot.db_name) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute("""
+                SELECT player_name, map_name, total_minutes
+                FROM k4ultra_playtime
+            """)
+            all_playtimes = await cursor.fetchall()
+            
+            from collections import defaultdict
+            p_totals = defaultdict(int)
+            p_maps = defaultdict(list)
+            for row in all_playtimes:
+                p_totals[row['player_name']] += row['total_minutes']
+                p_maps[row['player_name']].append({'map': row['map_name'], 'mins': row['total_minutes']})
+                
+            # Obtenemos los jugadores actualmente conectados desde k4ultra_sessions
+            cursor = await db.execute("SELECT player_name FROM k4ultra_sessions WHERE is_active = 1")
+            active_sessions = await cursor.fetchall()
+            active_players = {s['player_name'] for s in active_sessions}
+            
+            # Obtenemos aliases
+            aliases = {}
+            try:
+                cursor = await db.execute("SELECT player_name, alias FROM k4ultra_aliases")
+                aliases = {r['player_name']: r['alias'] for r in await cursor.fetchall()}
+            except aiosqlite.OperationalError:
+                pass # Table might not exist yet
+            
+            sorted_players = sorted(p_totals.items(), key=lambda x: x[1], reverse=True)[:25]
+            
+            players_text = ""
+            for p_name, total_m in sorted_players:
+                top_player_names.append(p_name)
+                # Solo pintamos los 15 primeros en el Embed, pero devolvemos 25 para el Select Menu
+                if len(top_player_names) <= 15:
+                    h = total_m // 60
+                    m = total_m % 60
+                    time_str = f"{h}h {m}m" if h > 0 else f"{m}m"
+                    
+                    maps_for_p = p_maps[p_name]
+                    maps_for_p.sort(key=lambda x: x['mins'], reverse=True)
+                    
+                    map_str_list = []
+                    
+                    map_acronyms = {
+                        "Aberration": "Aber",
+                        "Crystal Isles": "Crys",
+                        "Extinction": "Exti",
+                        "Fjordur": "Fjor",
+                        "Gen1": "Gen1",
+                        "Gen2": "Gen2",
+                        "Hub": "Hub ",
+                        "Lost Island": "Lost",
+                        "Ragnarok": "Ragn",
+                        "Scorched Earth": "Scor",
+                        "The Center": "Cent",
+                        "The Island": "Isla",
+                        "Valguero": "Valg"
+                    }
+                    
+                    for mm in maps_for_p:
+                        pct = int((mm['mins'] / total_m) * 100) if total_m > 0 else 0
+                        if pct > 0:
+                            # Buscar en el diccionario o usar el default de las 4 primeras letras
+                            raw_map = mm['map']
+                            acronym = map_acronyms.get(raw_map, raw_map.replace(" ", "")[:4].capitalize())
+                            map_str_list.append(f"*{pct}% {acronym}*")
+                        
+                    map_joined = ", ".join(map_str_list)
+                    # Añadir marca de conexión
+                    online_marker = "🟢 " if p_name in active_players else ""
+                    players_text += f"- **{online_marker}{p_name}** ⏱️ {time_str}: {map_joined}\n"
+            
+            if players_text:
+                embed.add_field(name="🏆 Top Jugadores (Global)", value=players_text, inline=False)
+            else:
+                embed.add_field(name="🏆 Top Jugadores (Global)", value="No hay datos suficientes aún.", inline=False)
+                
+            # Tribus Fijadas (/fijar_tribu)
+            cursor = await db.execute("SELECT name, members_json FROM k4ultra_fixed_tribes")
+            fixed_rows = await cursor.fetchall()
+            fixed_players = set()
+            import json
+            for fr in fixed_rows:
+                members = json.loads(fr['members_json'])
+                for m in members: fixed_players.add(m)
+                
+            # Relaciones Calculadas
+            cursor = await db.execute("SELECT player1, player2 FROM k4ultra_relationships WHERE probability_score >= 10 OR is_manual = 1")
+            rels = await cursor.fetchall()
+            
+            adjacency = {}
+            for r in rels:
+                p1, p2 = r['player1'], r['player2']
+                # Ignorar jugadores que ya están en tribus fijadas para que no se mezclen
+                if p1 in fixed_players or p2 in fixed_players: continue
+                if p1 not in adjacency: adjacency[p1] = set()
+                if p2 not in adjacency: adjacency[p2] = set()
+                adjacency[p1].add(p2)
+                adjacency[p2].add(p1)
+                
+            visited = set()
+            dynamic_tribes = []
+            
+            for node in adjacency:
+                if node not in visited:
+                    cluster = set()
+                    queue = [node]
+                    visited.add(node)
+                    while queue:
+                        curr = queue.pop(0)
+                        cluster.add(curr)
+                        for neighbor in adjacency[curr]:
+                            if neighbor not in visited:
+                                visited.add(neighbor)
+                                queue.append(neighbor)
+                                
+                    if len(cluster) > 1:
+                        dynamic_tribes.append(list(cluster))
+                        
+            dynamic_tribes.sort(key=len, reverse=True)
+            
+            rels_text = ""
+            
+            # Pintar Tribus Fijadas Primero
+            for fr in fixed_rows:
+                tribe_name = fr['name']
+                members = json.loads(fr['members_json'])
+                tribe_str = ", ".join(members)
+                
+                placeholders = ', '.join(['?'] * len(members))
+                cursor = await db.execute(f"""
+                    SELECT map_name, SUM(total_minutes) as tribe_mins
+                    FROM k4ultra_playtime
+                    WHERE player_name IN ({placeholders})
+                    GROUP BY map_name
+                    ORDER BY tribe_mins DESC
+                    LIMIT 1
+                """, list(members))
+                map_row = await cursor.fetchone()
+                map_info = f" | 🗺️ {map_row['map_name']}" if map_row else ""
+                
+                rels_text += f"**{tribe_name}** [🛡️ Fijada] ({len(members)}){map_info}\n└ {tribe_str}\n"
+
+            # Pintar Tribus Dinámicas
+            for i, tribe in enumerate(dynamic_tribes[:8]): 
+                custom_name = None
+                for m in tribe:
+                    cursor = await db.execute("SELECT custom_name FROM k4ultra_tribe_names WHERE tribe_signature = ?", (m,))
+                    cname_row = await cursor.fetchone()
+                    if cname_row:
+                        custom_name = cname_row['custom_name']
+                        break
+                        
+                tribe_label = custom_name if custom_name else f"Grupo {i+1}"
+                tribe_str = ", ".join(tribe)
+                if len(tribe_str) > 100: tribe_str = tribe_str[:97] + "..."
+                
+                placeholders = ', '.join(['?'] * len(tribe))
+                cursor = await db.execute(f"""
+                    SELECT map_name, SUM(total_minutes) as tribe_mins
+                    FROM k4ultra_playtime
+                    WHERE player_name IN ({placeholders})
+                    GROUP BY map_name
+                    ORDER BY tribe_mins DESC
+                    LIMIT 1
+                """, list(tribe))
+                map_row = await cursor.fetchone()
+                
+                map_info = f" | 🗺️ {map_row['map_name']}" if map_row else ""
+                rels_text += f"**{tribe_label}** ({len(tribe)}){map_info}\n└ {tribe_str}\n"
+            
+            if len(dynamic_tribes) > 8:
+                rels_text += f"*... y {len(dynamic_tribes) - 8} grupos más*\n"
+            
+            if rels_text:
+                embed.add_field(name="🔗 Posibles Tribus / Grupos", value=rels_text, inline=False)
+            else:
+                embed.add_field(name="🔗 Posibles Tribus / Grupos", value="No se han detectado grupos de momento.", inline=False)
+                
+            embed.set_footer(text="Información y grupos calculados automáticamente.")
+            
+        return embed, top_player_names
+
+    @app_commands.command(name="k4ultra", description="Muestra información detallada de jugadores, tiempos y relaciones.")
+    @app_commands.describe(semana="Opcional. Número de semana para ver el histórico de esa semana.")
+    async def k4ultra_command(self, interaction: discord.Interaction, semana: int = None):
+        
+        # Ensure user has access (Admin implicitly or specified ID)
+        if interaction.user.id != AUTHORIZED_ADMIN_ID and not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("❌ **ACCESO DENEGADO.**", ephemeral=True)
+            return
+
+        if semana:
+            # Query the snapshot
+            await interaction.response.defer(ephemeral=True)
+            async with aiosqlite.connect(self.bot.db_name) as db:
+                cursor = await db.execute("SELECT embed_json FROM k4ultra_snapshots WHERE week_number = ?", (semana,))
+                row = await cursor.fetchone()
+                
+                if row:
+                    embed_dict = json.loads(row[0])
+                    snap_embed = discord.Embed.from_dict(embed_dict)
+                    await interaction.followup.send(embed=snap_embed, ephemeral=True)
+                else:
+                    await interaction.followup.send(f"❌ No se encontró un snapshot para la semana {semana}.", ephemeral=True)
+        else:
+            # Show live stats and save as persistent message
+            await interaction.response.defer(ephemeral=False)
+            embed, top_players = await self.generate_k4ultra_embed()
+            view = K4UltraView(self.bot, top_players)
+            message = await interaction.followup.send(embed=embed, view=view)
+            
+            async with aiosqlite.connect(self.bot.db_name) as db:
+                await db.execute("""
+                    INSERT INTO k4ultra_messages (channel_id, message_id)
+                    VALUES (?, ?)
+                """, (interaction.channel_id, message.id))
+                await db.commit()
+
+    @app_commands.command(name="k4ultra_cleanup", description="[Admin] Limpia y fusiona perfiles duplicados (_1, _2) con su nombre base.")
+    async def k4ultra_cleanup(self, interaction: discord.Interaction):
+        if interaction.user.id != AUTHORIZED_ADMIN_ID and not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("❌ Acceso denegado.", ephemeral=True)
+            return
+            
+        await interaction.response.defer(ephemeral=True)
+        
+        async with aiosqlite.connect(self.bot.db_name) as db:
+            db.row_factory = aiosqlite.Row
+            
+            # Buscar jugadores con sufijo _[numero]
+            import re
+            cursor = await db.execute("SELECT DISTINCT player_name FROM k4ultra_playtime")
+            all_players = [r['player_name'] for r in await cursor.fetchall()]
+            
+            # Identify base names and duplicates
+            duplicates_to_merge = []
+            generic_names = {"123", "human", "humano", "survivor", "player", "bob"}
+            
+            for p in all_players:
+                match = re.search(r'^(.*)_(\d+)$', p)
+                if match:
+                    base_name = match.group(1)
+                    # No fusionar nombres genéricos, ya que es normal que tengan _1, _2
+                    if base_name.lower() not in generic_names:
+                        duplicates_to_merge.append((p, base_name))
+                    
+            if not duplicates_to_merge:
+                await interaction.followup.send("✅ No se encontraron perfiles duplicados para fusionar.", ephemeral=True)
+                return
+                
+            merged_count = 0
+            for dup_name, base_name in duplicates_to_merge:
+                # 1. Merge Playtime
+                cursor = await db.execute("SELECT map_name, total_minutes, last_seen FROM k4ultra_playtime WHERE player_name = ?", (dup_name,))
+                dup_maps = await cursor.fetchall()
+                
+                for dm in dup_maps:
+                    # Check if base name already has playtime on this map
+                    c2 = await db.execute("SELECT total_minutes, last_seen FROM k4ultra_playtime WHERE player_name = ? AND map_name = ?", (base_name, dm['map_name']))
+                    base_map = await c2.fetchone()
+                    
+                    if base_map:
+                        # Add minutes, keep latest last_seen
+                        new_mins = base_map['total_minutes'] + dm['total_minutes']
+                        new_last_seen = max(base_map['last_seen'], dm['last_seen'])
+                        await db.execute("UPDATE k4ultra_playtime SET total_minutes = ?, last_seen = ? WHERE player_name = ? AND map_name = ?", 
+                                         (new_mins, new_last_seen, base_name, dm['map_name']))
+                    else:
+                        # Insert as base name
+                        await db.execute("INSERT INTO k4ultra_playtime (player_name, map_name, total_minutes, last_seen) VALUES (?, ?, ?, ?)",
+                                         (base_name, dm['map_name'], dm['total_minutes'], dm['last_seen']))
+                                         
+                await db.execute("DELETE FROM k4ultra_playtime WHERE player_name = ?", (dup_name,))
+                
+                # 2. Update Sessions
+                await db.execute("UPDATE k4ultra_sessions SET player_name = ? WHERE player_name = ?", (base_name, dup_name))
+                
+                # 3. Update Relationships
+                # Since relationships involve pairs, we handle carefully
+                await db.execute("UPDATE k4ultra_relationships SET player1 = ? WHERE player1 = ?", (base_name, dup_name))
+                await db.execute("UPDATE k4ultra_relationships SET player2 = ? WHERE player2 = ?", (base_name, dup_name))
+                
+                # Limpiar auto-relaciones
+                await db.execute("DELETE FROM k4ultra_relationships WHERE player1 = player2")
+                
+                # 4. Cleanup Blacklist and Aliases
+                await db.execute("DELETE FROM blacklist WHERE player = ?", (dup_name,))
+                await db.execute("DELETE FROM k4ultra_aliases WHERE player_name = ?", (dup_name,))
+                await db.execute("UPDATE k4ultra_players_log SET player_name = ? WHERE player_name = ?", (base_name, dup_name))
+                
+                merged_count += 1
+                
+            await db.commit()
+            
+        await interaction.followup.send(f"✅ Limpieza completada. Se han fusionado **{merged_count}** perfiles duplicados con sus nombres base.", ephemeral=True)
+
+    @app_commands.command(name="fijar_tribu", description="[Admin] Fija una tribu para que el algoritmo no añada jugadores externos.")
+    @app_commands.describe(nombre="Nombre de la tribu", jugadores="Nombres de los jugadores separados por coma")
+    async def fijar_tribu(self, interaction: discord.Interaction, nombre: str, jugadores: str):
+        if interaction.user.id != AUTHORIZED_ADMIN_ID and not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("❌ Acceso denegado.", ephemeral=True)
+            return
+            
+        # Limpiar comillas accidentales y espacios
+        nombre = nombre.strip().strip("'\"")
+        miembros = [m.strip().strip("'\"") for m in jugadores.split(',') if m.strip().strip("'\"")]
+        
+        if len(miembros) < 2:
+            await interaction.response.send_message("❌ Debes especificar al menos 2 jugadores válidos separados por comas.", ephemeral=True)
+            return
+            
+        async with aiosqlite.connect(self.bot.db_name) as db:
+            import json
+            await db.execute("INSERT INTO k4ultra_fixed_tribes (name, members_json) VALUES (?, ?)", (nombre, json.dumps(miembros)))
+            await db.commit()
+            
+        await interaction.response.send_message(f"✅ Tribu fijada: **{nombre}** con los jugadores: {', '.join(miembros)}.\nEl algoritmo no añadirá jugadores externos a este bloque.", ephemeral=True)
+
+    @app_commands.command(name="unfijar_tribu", description="[Admin] Elimina una tribu fijada por su nombre exacto.")
+    @app_commands.describe(nombre="Nombre exacto de la tribu a eliminar")
+    async def unfijar_tribu(self, interaction: discord.Interaction, nombre: str):
+        if interaction.user.id != AUTHORIZED_ADMIN_ID and not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("❌ Acceso denegado.", ephemeral=True)
+            return
+            
+        nombre = nombre.strip()
+        
+        async with aiosqlite.connect(self.bot.db_name) as db:
+            cursor = await db.execute("DELETE FROM k4ultra_fixed_tribes WHERE name = ?", (nombre,))
+            deleted = cursor.rowcount
+            await db.commit()
+            
+        if deleted > 0:
+            await interaction.response.send_message(f"✅ Tribu **{nombre}** ha sido eliminada de las fijadas. Sus miembros volverán a agruparse automáticamente.", ephemeral=True)
+        else:
+            await interaction.response.send_message(f"❌ No se encontró ninguna tribu fijada con el nombre **{nombre}**.", ephemeral=True)
+
+    @app_commands.command(name="set_alias", description="[Admin] Añade un segundo nombre a un jugador en el tracker (ej. Discord, Steam).")
+    @app_commands.describe(jugador="Nombre original tal y como aparece en el tracker", alias="El apodo a añadir")
+    async def set_alias(self, interaction: discord.Interaction, jugador: str, alias: str):
+        if interaction.user.id != AUTHORIZED_ADMIN_ID and not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("❌ Acceso denegado.", ephemeral=True)
+            return
+            
+        async with aiosqlite.connect(self.bot.db_name) as db:
+            await db.execute("INSERT INTO k4ultra_aliases (player_name, alias) VALUES (?, ?) ON CONFLICT(player_name) DO UPDATE SET alias=excluded.alias", (jugador, alias))
+            await db.commit()
+            
+        await interaction.response.send_message(f"✅ Alias añadido: **{jugador}** ahora se mostrará como **{jugador} [{alias}]**.", ephemeral=True)
+
+    @app_commands.command(name="k4ultra_merge", description="[Admin] Fusiona MANUALMENTE un perfil duplicado (origen) hacia un perfil base (destino).")
+    @app_commands.describe(origen="Perfil a eliminar y fusionar (ej: 123_1)", destino="Perfil base que absorberá las horas (ej: 123)")
+    async def k4ultra_merge(self, interaction: discord.Interaction, origen: str, destino: str):
+        if interaction.user.id != AUTHORIZED_ADMIN_ID and not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("❌ Acceso denegado.", ephemeral=True)
+            return
+            
+        origen = origen.strip()
+        destino = destino.strip()
+        
+        if origen == destino:
+            await interaction.response.send_message("❌ El origen y el destino no pueden ser el mismo.", ephemeral=True)
+            return
+            
+        await interaction.response.defer(ephemeral=True)
+        
+        async with aiosqlite.connect(self.bot.db_name) as db:
+            db.row_factory = aiosqlite.Row
+            
+            # Verificar si el origen existe
+            cursor = await db.execute("SELECT * FROM k4ultra_playtime WHERE player_name = ?", (origen,))
+            origen_maps = await cursor.fetchall()
+            if not origen_maps:
+                await interaction.followup.send(f"❌ El jugador origen **{origen}** no tiene registros de tiempo, o no existe.", ephemeral=True)
+                return
+                
+            # 1. Merge Playtime
+            for dm in origen_maps:
+                c2 = await db.execute("SELECT total_minutes, last_seen FROM k4ultra_playtime WHERE player_name = ? AND map_name = ?", (destino, dm['map_name']))
+                base_map = await c2.fetchone()
+                
+                if base_map:
+                    new_mins = base_map['total_minutes'] + dm['total_minutes']
+                    new_last_seen = max(base_map['last_seen'], dm['last_seen'])
+                    await db.execute("UPDATE k4ultra_playtime SET total_minutes = ?, last_seen = ? WHERE player_name = ? AND map_name = ?", 
+                                     (new_mins, new_last_seen, destino, dm['map_name']))
+                else:
+                    await db.execute("INSERT INTO k4ultra_playtime (player_name, map_name, total_minutes, last_seen) VALUES (?, ?, ?, ?)",
+                                     (destino, dm['map_name'], dm['total_minutes'], dm['last_seen']))
+                                     
+            await db.execute("DELETE FROM k4ultra_playtime WHERE player_name = ?", (origen,))
+            
+            # 2. Update Sessions
+            await db.execute("UPDATE k4ultra_sessions SET player_name = ? WHERE player_name = ?", (destino, origen))
+            
+            # 3. Update Relationships
+            await db.execute("UPDATE k4ultra_relationships SET player1 = ? WHERE player1 = ?", (destino, origen))
+            await db.execute("UPDATE k4ultra_relationships SET player2 = ? WHERE player2 = ?", (destino, origen))
+            await db.execute("DELETE FROM k4ultra_relationships WHERE player1 = player2")
+            
+            # 4. Cleanup Blacklist and Aliases
+            await db.execute("DELETE FROM blacklist WHERE player = ?", (origen,))
+            await db.execute("DELETE FROM k4ultra_aliases WHERE player_name = ?", (origen,))
+            await db.execute("UPDATE k4ultra_players_log SET player_name = ? WHERE player_name = ?", (destino, origen))
+            
+            await db.commit()
+            
+        await interaction.followup.send(f"✅ ¡Fusión manual completada con éxito!\nTodas las horas e información de **{origen}** han sido traspasadas a **{destino}**.", ephemeral=True)
+
+    @app_commands.command(name="k4ultra_split", description="[Admin] Separa la SESIÓN ACTUAL de un jugador (origen) hacia un nuevo perfil (destino).")
+    @app_commands.describe(origen="Jugador que está conectado AHORA (ej: 123_1)", destino="Nuevo perfil donde moverlo (ej: 123_2)")
+    async def k4ultra_split(self, interaction: discord.Interaction, origen: str, destino: str):
+        if interaction.user.id != AUTHORIZED_ADMIN_ID and not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("❌ Acceso denegado.", ephemeral=True)
+            return
+            
+        origen = origen.strip()
+        destino = destino.strip()
+        
+        if origen == destino:
+            await interaction.response.send_message("❌ El origen y el destino no pueden ser el mismo.", ephemeral=True)
+            return
+            
+        await interaction.response.defer(ephemeral=True)
+        
+        async with aiosqlite.connect(self.bot.db_name) as db:
+            db.row_factory = aiosqlite.Row
+            
+            # Buscar si el origen tiene una sesión ACTIVA actualmente
+            cursor = await db.execute("SELECT id, map_name FROM k4ultra_sessions WHERE player_name = ? AND is_active = 1", (origen,))
+            active_sessions = await cursor.fetchall()
+            
+            if not active_sessions:
+                await interaction.followup.send(f"❌ El jugador **{origen}** NO tiene ninguna sesión activa en este momento. Este comando solo sirve para separar a un impostor mientras está conectado.", ephemeral=True)
+                return
+                
+            if len(active_sessions) > 1:
+                await interaction.followup.send(f"⚠️ **{origen}** tiene múltiples sesiones activas extrañas. Contacta al soporte técnico.", ephemeral=True)
+                return
+                
+            session_id = active_sessions[0]['id']
+            map_name = active_sessions[0]['map_name']
+            
+            # 1. Cambiar la identidad de esa sesión
+            await db.execute("UPDATE k4ultra_sessions SET player_name = ? WHERE id = ?", (destino, session_id))
+            
+            # 2. Asegurarnos que el destino existe en playtime para evitar crashes en el dashboard
+            cursor = await db.execute("SELECT total_minutes FROM k4ultra_playtime WHERE player_name = ? AND map_name = ?", (destino, map_name))
+            if not await cursor.fetchone():
+                import datetime as dt
+                now_str = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                await db.execute("INSERT INTO k4ultra_playtime (player_name, map_name, total_minutes, last_seen) VALUES (?, ?, 0, ?)",
+                                 (destino, map_name, now_str))
+                                 
+            await db.commit()
+            
+        await interaction.followup.send(f"✅ ¡Sesión separada!\nEl impostor que estaba usando **{origen}** ahora es rastreado como **{destino}**.\nLa sesión actual ya ha sido purgada del historial de **{origen}**.", ephemeral=True)
+
+async def setup(bot):
+    await bot.add_cog(K4Ultra(bot))
