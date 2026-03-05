@@ -1,0 +1,28 @@
+name: Desplegar Bot de Discord
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Conectarse al servidor y actualizar
+      uses: appleboy/ssh-action@master
+      with:
+        host: ${{ secrets.HOST }}
+        username: ${{ secrets.USERNAME }}
+        key: ${{ secrets.SSH_KEY }}
+        script: |
+          # 1. Entrar a la carpeta
+          cd /home/opc/ArkTribeBot
+          
+          # 2. Descargar el código
+          git pull
+          
+          # 3. Matar SOLO este bot buscando la ruta específica de su entorno virtual
+          pkill -f "/home/opc/ArkTribeBot/.venv/bin/python3" || true
+          
+          # 4. Lanzar el bot usando rutas absolutas para que sea inconfundible en los procesos
+          nohup /home/opc/ArkTribeBot/.venv/bin/python3 /home/opc/ArkTribeBot/main.py > /home/opc/ArkTribeBot/nohup.out 2>&1 < /dev/null &

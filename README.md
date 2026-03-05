@@ -1,6 +1,6 @@
 # Ark Tribe Bot 🦖
 
-Bot privado de Discord diseñado a medida para gestionar y administrar todas las operaciones de una tribu jugando a **ARK: Survival Ascended** en servidores modificados (x10).
+Bot de Discord diseñado a medida para gestionar y administrar todas las operaciones de una tribu jugando a **ARK: Survival Evolved**.
 
 ## 🚀 Funcionalidades Principales
 
