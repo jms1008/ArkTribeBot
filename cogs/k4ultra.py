@@ -251,52 +251,62 @@ class K4Ultra(commands.Cog):
                 map_m = fp['map']
                 raw_name = fp['raw_name']
                 
+                # Pasada 1: Solo buscar sesiones exactas activas en el mismo mapa
                 true_identity = None
-                
-                # 1. Look for exact active session on this exact map
                 for sid, s in active_pool_dict.items():
                     if sid not in seen_identities and s['map_name'] == map_m:
                         if extract_base(s['player_name']) == raw_name:
                             true_identity = s['player_name']
                             seen_identities.add(sid)
                             await db.execute("UPDATE k4ultra_sessions SET end_time = ? WHERE id = ?", (now.strftime("%Y-%m-%d %H:%M:%S"), sid))
+                            fp['matched'] = True
+                            fp['true_identity'] = true_identity
                             break
                             
-                if not true_identity:
-                    # 2. Look for recent disconnected session to inherit (Transferencia o reconexión)
-                    # Excluye identidades que ya hayan sido asimiladas en este tick (estén online en otro lado)
-                    identities_already_online = [active_pool_dict[sid]['player_name'] for sid in seen_identities if sid in active_pool_dict]
+            # Pasada 2: Resolver reconexiones, transferencias y nuevos jugadores
+            for fp in all_fetched:
+                if fp.get('matched'):
+                    continue
                     
-                    generic_names = {"123", "human", "humano", "survivor", "player", "bob"}
-                    is_generic = raw_name.lower() in generic_names
+                map_m = fp['map']
+                raw_name = fp['raw_name']
+                true_identity = None
+                
+                # 2. Look for recent disconnected session to inherit (Transferencia o reconexión)
+                # Excluye identidades que ya hayan sido asimiladas en este tick (estén online en otro lado)
+                identities_already_online = [active_pool_dict[sid]['player_name'] for sid in seen_identities if sid in active_pool_dict]
+                
+                generic_names = {"123", "human", "humano", "survivor", "player", "bob"}
+                is_generic = raw_name.lower() in generic_names
+                
+                # Para genéricos, buscamos CUALQUIER sesión inactiva de la DB (incluso hace >10 min) para reaprovechar el ID
+                # Para no genéricos, usamos el pool de transferencias (últimos 10 mins)
+                pool_to_check = recent_closed_pool
+                if is_generic:
+                    # Fetch all inactive sessions for this exact base name to recycle
+                    cursor = await db.execute("SELECT id, player_name, map_name, start_time, end_time FROM k4ultra_sessions WHERE is_active = 0 AND player_name LIKE ? ORDER BY end_time DESC", (f"{raw_name}_%",))
+                    # Also include the base name itself if it exists and is inactive
+                    cursor2 = await db.execute("SELECT id, player_name, map_name, start_time, end_time FROM k4ultra_sessions WHERE is_active = 0 AND player_name = ? ORDER BY end_time DESC", (raw_name,))
                     
-                    # Para genéricos, buscamos CUALQUIER sesión inactiva de la DB (incluso hace >10 min) para reaprovechar el ID
-                    # Para no genéricos, usamos el pool de transferencias (últimos 10 mins)
-                    pool_to_check = recent_closed_pool
-                    if is_generic:
-                        # Fetch all inactive sessions for this exact base name to recycle
-                        cursor = await db.execute("SELECT id, player_name, map_name, start_time, end_time FROM k4ultra_sessions WHERE is_active = 0 AND player_name LIKE ? ORDER BY end_time DESC", (f"{raw_name}_%",))
-                        # Also include the base name itself if it exists and is inactive
-                        cursor2 = await db.execute("SELECT id, player_name, map_name, start_time, end_time FROM k4ultra_sessions WHERE is_active = 0 AND player_name = ? ORDER BY end_time DESC", (raw_name,))
+                    generic_inactive = [dict(s) for s in await cursor.fetchall()]
+                    generic_inactive.extend([dict(s) for s in await cursor2.fetchall()])
+                    
+                    # Sort combined list by end_time DESC
+                    generic_inactive.sort(key=lambda x: x['end_time'], reverse=True)
+                    pool_to_check = generic_inactive
+                    
+                for s in pool_to_check:
+                    if extract_base(s['player_name']) == raw_name and s['player_name'] not in identities_already_online:
+                        true_identity = s['player_name']
+                        # Crear nueva sesión para esta reconexión/salto
+                        cursor = await db.execute("INSERT INTO k4ultra_sessions (player_name, map_name, start_time, end_time, is_active) VALUES (?, ?, ?, ?, 1)",
+                                         (true_identity, map_m, now.strftime("%Y-%m-%d %H:%M:%S"), now.strftime("%Y-%m-%d %H:%M:%S")))
+                        new_id = cursor.lastrowid
+                        seen_identities.add(new_id)
+                        active_pool_dict[new_id] = {'id': new_id, 'player_name': true_identity, 'map_name': map_m}
+                        fp['true_identity'] = true_identity
+                        break
                         
-                        generic_inactive = [dict(s) for s in await cursor.fetchall()]
-                        generic_inactive.extend([dict(s) for s in await cursor2.fetchall()])
-                        
-                        # Sort combined list by end_time DESC
-                        generic_inactive.sort(key=lambda x: x['end_time'], reverse=True)
-                        pool_to_check = generic_inactive
-                        
-                    for s in pool_to_check:
-                        if extract_base(s['player_name']) == raw_name and s['player_name'] not in identities_already_online:
-                            true_identity = s['player_name']
-                            # Crear nueva sesión para esta reconexión/salto
-                            cursor = await db.execute("INSERT INTO k4ultra_sessions (player_name, map_name, start_time, end_time, is_active) VALUES (?, ?, ?, ?, 1)",
-                                             (true_identity, map_m, now.strftime("%Y-%m-%d %H:%M:%S"), now.strftime("%Y-%m-%d %H:%M:%S")))
-                            new_id = cursor.lastrowid
-                            seen_identities.add(new_id)
-                            active_pool_dict[new_id] = {'id': new_id, 'player_name': true_identity, 'map_name': map_m}
-                            break
-                            
                 if not true_identity:
                     # 3. New concurrent user (Concurrencia extrema o nuevo absoluto)
                     if is_generic:
@@ -310,15 +320,22 @@ class K4Ultra(commands.Cog):
                                 val = int(parts[1])
                                 if val > max_suffix: max_suffix = val
                         
-                        true_identity = f"{raw_name}_{max_suffix + 1}"
+                        # Si raw_name ("123") no está online ni en bd inactiva, pero encontramos "123_1", 
+                        # comprobamos si raw_name base ya está online. De lo contrario se usa sufijo _1, _2
+                        if raw_name not in identities_already_online and not any(e['player_name'] == raw_name for e in existing):
+                            true_identity = raw_name
+                        else:
+                            true_identity = f"{raw_name}_{max_suffix + 1}"
                     else:
                         # Para jugadores normales, se usa su nombre original siempre
                         true_identity = raw_name
+                        
                     cursor = await db.execute("INSERT INTO k4ultra_sessions (player_name, map_name, start_time, end_time, is_active) VALUES (?, ?, ?, ?, 1)",
                                          (true_identity, map_m, now.strftime("%Y-%m-%d %H:%M:%S"), now.strftime("%Y-%m-%d %H:%M:%S")))
                     new_id = cursor.lastrowid
                     seen_identities.add(new_id)
                     active_pool_dict[new_id] = {'id': new_id, 'player_name': true_identity, 'map_name': map_m}
+                    fp['true_identity'] = true_identity
                 
                 # Logs
                 await db.execute("INSERT INTO k4ultra_players_log (player_name, map_name) VALUES (?, ?)", (true_identity, map_m))
