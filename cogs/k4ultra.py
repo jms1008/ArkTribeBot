@@ -711,11 +711,11 @@ class K4Ultra(commands.Cog):
             if players_text:
                 # Split players_text into chunks of max 1024 chars safely
                 chunks = []
-                while len(players_text) > 1024:
-                    # Find a good place to break (newline) within the first 1024 chars
-                    break_point = players_text.rfind('\n', 0, 1024)
+                while len(players_text) > 900:
+                    # Find a good place to break (newline) within the first 900 chars
+                    break_point = players_text.rfind('\n', 0, 900)
                     if break_point == -1:
-                        break_point = 1024
+                        break_point = 900
                     else:
                         break_point += 1 # Include the newline in the chunk
                     chunks.append(players_text[:break_point])
@@ -832,10 +832,10 @@ class K4Ultra(commands.Cog):
             
             if rels_text:
                 chunks = []
-                while len(rels_text) > 1024:
-                    break_point = rels_text.rfind('\n', 0, 1024)
+                while len(rels_text) > 900:
+                    break_point = rels_text.rfind('\n', 0, 900)
                     if break_point == -1:
-                        break_point = 1024
+                        break_point = 900
                     else:
                         break_point += 1
                     chunks.append(rels_text[:break_point])
