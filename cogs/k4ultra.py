@@ -207,7 +207,7 @@ class K4Ultra(commands.Cog):
                 # Omitir jugadores que no tienen nombre (ocultos de Steam/Epic)
                 if not p.name:
                     continue
-                valid_players.append({"name": p.name, "duration": p.duration})
+                valid_players.append({"name": p.name.strip(), "duration": p.duration})
             return map_name, valid_players
         except Exception as e:
             logger.debug(f"[K4Ultra] Error fetching from {map_name}: {e}")
@@ -443,6 +443,10 @@ class K4Ultra(commands.Cog):
                     for msg_id in messages_to_remove:
                         await db.execute("DELETE FROM k4ultra_messages WHERE id = ?", (msg_id,))
                     await db.commit()
+
+    @gather_player_data.error
+    async def gather_player_data_error(self, error):
+        logger.error(f"[K4Ultra] Error CRÍTICO en task gather_player_data: {error}", exc_info=True)
 
     @tasks.loop(hours=24)
     async def calculate_relationships(self):
@@ -734,6 +738,8 @@ class K4Ultra(commands.Cog):
             for fr in fixed_rows:
                 tribe_name = fr['name']
                 members = json.loads(fr['members_json'])
+                if not members:
+                    continue
                 tribe_str = ", ".join(members)
                 
                 placeholders = ', '.join(['?'] * len(members))
@@ -752,6 +758,7 @@ class K4Ultra(commands.Cog):
 
             # Pintar Tribus Dinámicas
             for i, tribe in enumerate(dynamic_tribes[:8]): 
+                if not tribe: continue
                 custom_name = None
                 for m in tribe:
                     cursor = await db.execute("SELECT custom_name FROM k4ultra_tribe_names WHERE tribe_signature = ?", (m,))
