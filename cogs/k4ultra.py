@@ -728,7 +728,7 @@ class K4Ultra(commands.Cog):
                     chunks.append(players_text)
                     
                 for idx, chunk in enumerate(chunks):
-                    name = "🏆 Top Jugadores (Global)" if idx == 0 else "\u200b"
+                    name = "🏆 Top Jugadores (Global)" if idx == 0 else f"🏆 Top Jugadores (v{idx+1})"
                     embed.add_field(name=name, value=chunk, inline=False)
             else:
                 embed.add_field(name="🏆 Top Jugadores (Global)", value="No hay datos suficientes aún.", inline=False)
@@ -848,7 +848,7 @@ class K4Ultra(commands.Cog):
                     chunks.append(rels_text)
                     
                 for idx, chunk in enumerate(chunks):
-                    name = "🔗 Posibles Tribus / Grupos" if idx == 0 else "\u200b"
+                    name = "🔗 Posibles Tribus / Grupos" if idx == 0 else f"🔗 Tribus / Grupos (v{idx+1})"
                     embed.add_field(name=name, value=chunk, inline=False)
             else:
                 embed.add_field(name="🔗 Posibles Tribus / Grupos", value="No se han detectado grupos de momento.", inline=False)
