@@ -291,8 +291,26 @@ class K4Ultra(commands.Cog):
                     generic_inactive = [dict(s) for s in await cursor.fetchall()]
                     generic_inactive.extend([dict(s) for s in await cursor2.fetchall()])
                     
-                    # Sort combined list by end_time DESC
+                    # También incluir aquellos genéricos que están activos pero desconectaron en este mismo tick (no en seen_identities)
+                    for sid, sinfo in active_pool_dict.items():
+                        if sid not in seen_identities and extract_base(sinfo['player_name']) == raw_name:
+                            # Hacer una copia manual simulando una sesión inactiva reciente (end_time = now)
+                            dummy_inactive = {
+                                'id': sinfo['id'], 
+                                'player_name': sinfo['player_name'], 
+                                'map_name': sinfo['map_name'], 
+                                'start_time': sinfo.get('start_time', ''), 
+                                'end_time': now.strftime("%Y-%m-%d %H:%M:%S")
+                            }
+                            generic_inactive.append(dummy_inactive)
+                            
+                    # Ordenar todo por end_time descendente (para reutilizar el desconectado más reciente)
                     generic_inactive.sort(key=lambda x: x['end_time'], reverse=True)
+                    
+                    # Forzar a coger siempre el nombre base ("123") si ambos (ej. "123" y "123_1") tienen tiempos iguales
+                    # Para ello, podemos priorizar los que no tienen sufijo haciendo una ordenación secundaria por longitud de nombre (más corto primero)
+                    generic_inactive.sort(key=lambda x: (x['end_time'], -len(x['player_name'])), reverse=True)
+                    
                     pool_to_check = generic_inactive
                     
                 for s in pool_to_check:
