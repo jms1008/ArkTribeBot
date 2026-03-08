@@ -53,24 +53,21 @@ class ServerStatus(commands.Cog):
 
         try:
             # Ejecutar consultas
+            info = await asyncio.wait_for(asyncio.to_thread(a2s.info, address), timeout=5.0)
+            players = await asyncio.wait_for(asyncio.to_thread(a2s.players, address), timeout=5.0)
+
             valid_players = [p.name for p in players if p.name]
-            p_count = len(players)
+            p_count = len(valid_players)
             ping_ms = int(info.ping * 1000)
-            
-            hidden_count = p_count - len(valid_players)
 
             embed = discord.Embed(title=f"🦖 Estado: {server_name}", color=discord.Color.green())
             embed.add_field(name="Mapa", value=info.map_name, inline=True)
             
             player_list = ", ".join(valid_players)
             
-            # Gestión de lista vacía o mixta
+            # Gestión de lista vacía
             if p_count == 0:
                 player_list = "Nadie conectado."
-            elif len(valid_players) == 0 and hidden_count > 0:
-                player_list = f"{hidden_count} Jugador(es) con perfil privado de Steam."
-            elif hidden_count > 0:
-                player_list += f" (+ {hidden_count} perfil(es) privado(s))"
                 
             if len(player_list) > 1000:
                 player_list = player_list[:1000] + "..."
@@ -192,19 +189,14 @@ class ServerStatus(commands.Cog):
                 players = await asyncio.wait_for(asyncio.to_thread(a2s.players, address), timeout=5.0)
                 
                 valid_players = [p.name for p in players if p.name]
-                p_count = len(players)
-                hidden_count = p_count - len(valid_players)
+                p_count = len(valid_players)
                 
                 player_list = ", ".join(valid_players)
                 ping_ms = int(info.ping * 1000)
                 
-                # Gestión de lista vacía o mixta
+                # Gestión de lista vacía
                 if p_count == 0:
                     player_list = "Nadie conectado."
-                elif len(valid_players) == 0 and hidden_count > 0:
-                    player_list = f"{hidden_count} Jugador(es) con perfil privado de Steam."
-                elif hidden_count > 0:
-                    player_list += f" (+ {hidden_count} perfil(es) privado(s))"
                     
                 if len(player_list) > 1000:
                     player_list = player_list[:1000] + "..."
