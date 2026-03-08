@@ -461,6 +461,9 @@ class K4Ultra(commands.Cog):
                         messages_to_remove.append(row_id)
                     except discord.Forbidden:
                         pass
+                    except discord.HTTPException as e:
+                        logger.error(f"[K4Ultra Debug] Error actualizando mensaje persistente {row_id}: {e}")
+                        logger.error(f"[K4Ultra Debug] Payload failed: {new_embed.to_dict()}")
                     except Exception as e:
                         logger.error(f"[K4Ultra] Error actualizando mensaje persistente {row_id}: {e}")
                         
@@ -881,7 +884,13 @@ class K4Ultra(commands.Cog):
             await interaction.response.defer(ephemeral=False)
             embed, top_players = await self.generate_k4ultra_embed()
             view = K4UltraView(self.bot, top_players)
-            message = await interaction.followup.send(embed=embed, view=view)
+            
+            try:
+                message = await interaction.followup.send(embed=embed, view=view)
+            except discord.HTTPException as e:
+                logger.error(f"[K4Ultra Debug] HTTPException on send: {e}")
+                logger.error(f"[K4Ultra Debug] Embed payload: {embed.to_dict()}")
+                raise e
             
             async with aiosqlite.connect(self.bot.db_name) as db:
                 await db.execute("""
