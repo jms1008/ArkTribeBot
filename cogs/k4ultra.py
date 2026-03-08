@@ -102,9 +102,10 @@ class PlayerSelectMenu(discord.ui.Select):
         super().__init__(placeholder="Selecciona un jugador para ver su perfil detallado...", min_values=1, max_values=1, options=options)
 
     async def callback(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
         player_name = self.values[0]
         if player_name == "none":
-            await interaction.response.send_message("No hay datos.", ephemeral=True)
+            await interaction.followup.send("No hay datos.", ephemeral=True)
             return
             
         async with aiosqlite.connect(self.bot.db_name) as db:
@@ -114,7 +115,7 @@ class PlayerSelectMenu(discord.ui.Select):
             
             total_mins = sum(m['m'] for m in maps) if maps else 0
             if total_mins == 0:
-                await interaction.response.send_message("No hay datos suficientes de este jugador.", ephemeral=True)
+                await interaction.followup.send("No hay datos suficientes de este jugador.", ephemeral=True)
                 return
                 
             main_map = maps[0]['map_name']
@@ -163,9 +164,15 @@ class PlayerSelectMenu(discord.ui.Select):
                 pct = int((m['m'] / total_mins) * 100)
                 map_str += f"**{m['map_name'][:4].upper()}** ({pct}%)\n"
             
+            if len(map_str) > 1024:
+                map_str = map_str[:1020] + "..."
+                
             embed.add_field(name="Distribución de Servidores", value=map_str or "No data", inline=False)
             
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+            try:
+                await interaction.followup.send(embed=embed, ephemeral=True)
+            except Exception as e:
+                logger.error(f"[K4Ultra] Error sending dropdown profile: {e}")
 
 class K4UltraView(discord.ui.View):
     def __init__(self, bot, top_players=None):
@@ -702,17 +709,20 @@ class K4Ultra(commands.Cog):
                     players_text += f"- **{online_marker}{p_name}** ⏱️ {time_str}: {map_joined}\n"
             
             if players_text:
-                # Split players_text into chunks of max 1024 chars
+                # Split players_text into chunks of max 1024 chars safely
                 chunks = []
-                current_chunk = ""
-                for line in players_text.splitlines(True):
-                    if len(current_chunk) + len(line) > 1024:
-                        chunks.append(current_chunk)
-                        current_chunk = line
+                while len(players_text) > 1024:
+                    # Find a good place to break (newline) within the first 1024 chars
+                    break_point = players_text.rfind('\n', 0, 1024)
+                    if break_point == -1:
+                        break_point = 1024
                     else:
-                        current_chunk += line
-                if current_chunk:
-                    chunks.append(current_chunk)
+                        break_point += 1 # Include the newline in the chunk
+                    chunks.append(players_text[:break_point])
+                    players_text = players_text[break_point:]
+                
+                if players_text:
+                    chunks.append(players_text)
                     
                 for idx, chunk in enumerate(chunks):
                     name = "🏆 Top Jugadores (Global)" if idx == 0 else "🏆 Top Jugadores (Cont.)"
@@ -822,15 +832,17 @@ class K4Ultra(commands.Cog):
             
             if rels_text:
                 chunks = []
-                current_chunk = ""
-                for line in rels_text.splitlines(True):
-                    if len(current_chunk) + len(line) > 1024:
-                        chunks.append(current_chunk)
-                        current_chunk = line
+                while len(rels_text) > 1024:
+                    break_point = rels_text.rfind('\n', 0, 1024)
+                    if break_point == -1:
+                        break_point = 1024
                     else:
-                        current_chunk += line
-                if current_chunk:
-                    chunks.append(current_chunk)
+                        break_point += 1
+                    chunks.append(rels_text[:break_point])
+                    rels_text = rels_text[break_point:]
+                    
+                if rels_text:
+                    chunks.append(rels_text)
                     
                 for idx, chunk in enumerate(chunks):
                     name = "🔗 Posibles Tribus / Grupos" if idx == 0 else "🔗 Tribus / Grupos (Cont.)"
