@@ -702,7 +702,21 @@ class K4Ultra(commands.Cog):
                     players_text += f"- **{online_marker}{p_name}** ⏱️ {time_str}: {map_joined}\n"
             
             if players_text:
-                embed.add_field(name="🏆 Top Jugadores (Global)", value=players_text, inline=False)
+                # Split players_text into chunks of max 1024 chars
+                chunks = []
+                current_chunk = ""
+                for line in players_text.splitlines(True):
+                    if len(current_chunk) + len(line) > 1024:
+                        chunks.append(current_chunk)
+                        current_chunk = line
+                    else:
+                        current_chunk += line
+                if current_chunk:
+                    chunks.append(current_chunk)
+                    
+                for idx, chunk in enumerate(chunks):
+                    name = "🏆 Top Jugadores (Global)" if idx == 0 else "🏆 Top Jugadores (Cont.)"
+                    embed.add_field(name=name, value=chunk, inline=False)
             else:
                 embed.add_field(name="🏆 Top Jugadores (Global)", value="No hay datos suficientes aún.", inline=False)
                 
@@ -807,7 +821,20 @@ class K4Ultra(commands.Cog):
                 rels_text += f"*... y {len(dynamic_tribes) - 8} grupos más*\n"
             
             if rels_text:
-                embed.add_field(name="🔗 Posibles Tribus / Grupos", value=rels_text, inline=False)
+                chunks = []
+                current_chunk = ""
+                for line in rels_text.splitlines(True):
+                    if len(current_chunk) + len(line) > 1024:
+                        chunks.append(current_chunk)
+                        current_chunk = line
+                    else:
+                        current_chunk += line
+                if current_chunk:
+                    chunks.append(current_chunk)
+                    
+                for idx, chunk in enumerate(chunks):
+                    name = "🔗 Posibles Tribus / Grupos" if idx == 0 else "🔗 Tribus / Grupos (Cont.)"
+                    embed.add_field(name=name, value=chunk, inline=False)
             else:
                 embed.add_field(name="🔗 Posibles Tribus / Grupos", value="No se han detectado grupos de momento.", inline=False)
                 
