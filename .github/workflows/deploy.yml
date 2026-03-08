@@ -16,5 +16,6 @@ jobs:
         key: ${{ secrets.SSH_KEY }}
         script: |
           cd /home/opc/ArkTribeBot
-          git pull
+          git fetch --all
+          git reset --hard origin/main
           sudo systemctl restart arkbot
