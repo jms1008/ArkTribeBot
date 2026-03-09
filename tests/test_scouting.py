@@ -1,11 +1,12 @@
 import pytest
 from cogs.scouting import Scouting
-import discord
+
 
 @pytest.fixture
 async def scouting_cog(mock_bot):
     cog = Scouting(mock_bot)
     return cog
+
 
 @pytest.mark.asyncio
 async def test_scout_list_command(scouting_cog, mock_interaction, mocker):

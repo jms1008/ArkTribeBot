@@ -22,30 +22,48 @@ MAP_CHOICES = [
     app_commands.Choice(name="Ragnarok", value="Ragnarok"),
 ]
 
+
 class ScoutView(discord.ui.View):
     def __init__(self, bot, map_filter):
         super().__init__(timeout=None)
         self.bot = bot
         self.map_filter = map_filter
 
-    @discord.ui.button(label="Eliminar Scout", style=discord.ButtonStyle.danger, custom_id="scout_delete_btn")
-    async def delete_scout_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+    @discord.ui.button(
+        label="Eliminar Scout",
+        style=discord.ButtonStyle.danger,
+        custom_id="scout_delete_btn",
+    )
+    async def delete_scout_btn(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
         await interaction.response.send_modal(DeleteScoutModal(self.bot))
 
-    @discord.ui.button(label="Modificar Scout", style=discord.ButtonStyle.secondary, custom_id="scout_modify_btn", emoji="📝")
-    async def modify_scout_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+    @discord.ui.button(
+        label="Modificar Scout",
+        style=discord.ButtonStyle.secondary,
+        custom_id="scout_modify_btn",
+        emoji="📝",
+    )
+    async def modify_scout_btn(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
         await interaction.response.send_modal(ModifyScoutModal(self.bot))
+
 
 async def update_scout_dashboards(bot, target_map=None):
     """Actualiza los dashboards. target_map es el mapa que ha sufrido cambios (o None si unknown)."""
-    
+
     async with aiosqlite.connect(bot.db_name) as db:
         db.row_factory = aiosqlite.Row
         # Actualizamos Dashboards Globales Y Dashboards del mapa específico
         if target_map:
-             cursor = await db.execute("SELECT * FROM scout_messages WHERE map_filter = ? OR map_filter = 'Global'", (target_map,))
+            cursor = await db.execute(
+                "SELECT * FROM scout_messages WHERE map_filter = ? OR map_filter = 'Global'",
+                (target_map,),
+            )
         else:
-             cursor = await db.execute("SELECT * FROM scout_messages")
+            cursor = await db.execute("SELECT * FROM scout_messages")
         dashboards = await cursor.fetchall()
 
     if not dashboards:
@@ -54,39 +72,54 @@ async def update_scout_dashboards(bot, target_map=None):
     messages_to_remove = []
 
     for dash in dashboards:
-        map_filter = dash['map_filter']
-        
+        map_filter = dash["map_filter"]
+
         # Construir Embed
         async with aiosqlite.connect(bot.db_name) as db:
             db.row_factory = aiosqlite.Row
-            if map_filter == 'Global':
-                cursor = await db.execute("SELECT * FROM scouts ORDER BY mapa, nivel_amenaza DESC")
+            if map_filter == "Global":
+                cursor = await db.execute(
+                    "SELECT * FROM scouts ORDER BY mapa, nivel_amenaza DESC"
+                )
             else:
-                cursor = await db.execute("SELECT * FROM scouts WHERE mapa = ? ORDER BY nivel_amenaza DESC", (map_filter,))
+                cursor = await db.execute(
+                    "SELECT * FROM scouts WHERE mapa = ? ORDER BY nivel_amenaza DESC",
+                    (map_filter,),
+                )
             rows = await cursor.fetchall()
 
         if not rows:
-            embed = discord.Embed(title=f"📡 Scouting: {map_filter}", description="No hay registros.\n💡 Usa `/scout_add` para añadir uno.", color=discord.Color.red())
+            embed = discord.Embed(
+                title=f"📡 Scouting: {map_filter}",
+                description="No hay registros.\n💡 Usa `/scout_add` para añadir uno.",
+                color=discord.Color.red(),
+            )
         else:
-            embed = discord.Embed(title=f"📡 Scouting: {map_filter}", color=discord.Color.red())
+            embed = discord.Embed(
+                title=f"📡 Scouting: {map_filter}", color=discord.Color.red()
+            )
             count = 0
             for row in rows:
-                if count >= 20: 
-                    embed.set_footer(text="...y más registros. | 💡 Usa /scout_add para añadir.")
+                if count >= 20:
+                    embed.set_footer(
+                        text="...y más registros. | 💡 Usa /scout_add para añadir."
+                    )
                     break
-                
-                amenaza_str = "⭐" * row['nivel_amenaza']
+
+                amenaza_str = "⭐" * row["nivel_amenaza"]
                 # Si es Global, añadir prefijo de mapa
-                prefix = f"**[{row['mapa']}]** " if map_filter == 'Global' else ""
-                
+                prefix = f"**[{row['mapa']}]** " if map_filter == "Global" else ""
+
                 link_img = ""
                 # "N/A" es cuando no hay imagen. Si es un número (message_id) o URL vieja, intentamos conseguir el enlace fresco
-                if row['url_imagen'] and row['url_imagen'] != "N/A":
+                if row["url_imagen"] and row["url_imagen"] != "N/A":
                     try:
                         # Si es un message_id guardado (cifras puras)
-                        if str(row['url_imagen']).strip().isdigit():
-                            msg_id = int(str(row['url_imagen']).strip())
-                            thread = bot.get_channel(1476691633943875875) or await bot.fetch_channel(1476691633943875875)
+                        if str(row["url_imagen"]).strip().isdigit():
+                            msg_id = int(str(row["url_imagen"]).strip())
+                            thread = bot.get_channel(
+                                1476691633943875875
+                            ) or await bot.fetch_channel(1476691633943875875)
                             if thread:
                                 backup_msg = await thread.fetch_message(msg_id)
                                 if backup_msg.attachments:
@@ -96,27 +129,35 @@ async def update_scout_dashboards(bot, target_map=None):
                             # Retrocompatibilidad
                             link_img = f" [[📷 Ver Imagen]({row['url_imagen']})]"
                     except Exception as e:
-                        logging.getLogger("ArkTribeBot").warning(f"No se pudo recuperar imagen fresca para scout {row['id']}: {e}")
+                        logging.getLogger("ArkTribeBot").warning(
+                            f"No se pudo recuperar imagen fresca para scout {row['id']}: {e}"
+                        )
                         pass
-                
+
                 value_text = f"📍 {row['coordenadas']} | ⚠️ {amenaza_str}\n📝 {row['notas']}{link_img}\n🆔 **ID: {row['id']}**"
-                embed.add_field(name=f"{prefix}{row['tribu_enemiga']}", value=value_text, inline=False)
+                embed.add_field(
+                    name=f"{prefix}{row['tribu_enemiga']}",
+                    value=value_text,
+                    inline=False,
+                )
                 count += 1
-            
+
             if count < 20:
                 embed.set_footer(text="💡 Usa /scout_add para añadir una nueva base.")
 
         view = ScoutView(bot, map_filter)
 
         try:
-            channel = bot.get_channel(dash['channel_id']) or await bot.fetch_channel(dash['channel_id'])
+            channel = bot.get_channel(dash["channel_id"]) or await bot.fetch_channel(
+                dash["channel_id"]
+            )
             if channel:
-                message = await channel.fetch_message(dash['message_id'])
+                message = await channel.fetch_message(dash["message_id"])
                 await message.edit(embed=embed, view=view)
             else:
-                messages_to_remove.append(dash['id'])
+                messages_to_remove.append(dash["id"])
         except (discord.NotFound, discord.Forbidden):
-            messages_to_remove.append(dash['id'])
+            messages_to_remove.append(dash["id"])
         except Exception as e:
             print(f"Error update scout dash {dash['id']}: {e}")
 
@@ -126,6 +167,7 @@ async def update_scout_dashboards(bot, target_map=None):
             for mid in messages_to_remove:
                 await db.execute("DELETE FROM scout_messages WHERE id = ?", (mid,))
             await db.commit()
+
 
 class DeleteScoutModal(discord.ui.Modal, title="Eliminar Scout"):
     scout_id = discord.ui.TextInput(label="ID del Scout", placeholder="Número ID")
@@ -137,35 +179,57 @@ class DeleteScoutModal(discord.ui.Modal, title="Eliminar Scout"):
     async def on_submit(self, interaction: discord.Interaction):
         try:
             sid = int(self.scout_id.value)
-        except:
-            await interaction.response.send_message("❌ El ID debe ser un número.", ephemeral=True)
+        except Exception:
+            await interaction.response.send_message(
+                "❌ El ID debe ser un número.", ephemeral=True
+            )
             return
 
         async with aiosqlite.connect(self.bot.db_name) as db:
             cursor = await db.execute("SELECT mapa FROM scouts WHERE id = ?", (sid,))
             row = await cursor.fetchone()
             if not row:
-                await interaction.response.send_message("❌ No encontrado.", ephemeral=True)
+                await interaction.response.send_message(
+                    "❌ No encontrado.", ephemeral=True
+                )
                 return
-            
+
             target_map = row[0]
             await db.execute("DELETE FROM scouts WHERE id = ?", (sid,))
             await db.commit()
 
-        await interaction.response.send_message(f"🗑️ Scout **#{sid}** eliminado.", ephemeral=False)
+        await interaction.response.send_message(
+            f"🗑️ Scout **#{sid}** eliminado.", ephemeral=False
+        )
         await update_scout_dashboards(self.bot, target_map)
 
         await asyncio.sleep(5)
         try:
             msg = await interaction.original_response()
             await msg.delete()
-        except:
+        except Exception:
             pass
 
+
 class ModifyScoutModal(discord.ui.Modal, title="Modificar Scout"):
-    scout_id = discord.ui.TextInput(label="ID del Scout", placeholder="Número ID", style=discord.TextStyle.short, required=True)
-    nuevas_notas = discord.ui.TextInput(label="Nuevas Notas", placeholder="Escribe aquí para añadir información...", style=discord.TextStyle.paragraph, required=False)
-    nueva_amenaza = discord.ui.TextInput(label="Nuevo Nivel de Amenaza (1-5)", placeholder="Ej: 5", style=discord.TextStyle.short, required=False)
+    scout_id = discord.ui.TextInput(
+        label="ID del Scout",
+        placeholder="Número ID",
+        style=discord.TextStyle.short,
+        required=True,
+    )
+    nuevas_notas = discord.ui.TextInput(
+        label="Nuevas Notas",
+        placeholder="Escribe aquí para añadir información...",
+        style=discord.TextStyle.paragraph,
+        required=False,
+    )
+    nueva_amenaza = discord.ui.TextInput(
+        label="Nuevo Nivel de Amenaza (1-5)",
+        placeholder="Ej: 5",
+        style=discord.TextStyle.short,
+        required=False,
+    )
 
     def __init__(self, bot):
         super().__init__()
@@ -174,24 +238,32 @@ class ModifyScoutModal(discord.ui.Modal, title="Modificar Scout"):
     async def on_submit(self, interaction: discord.Interaction):
         try:
             sid = int(self.scout_id.value)
-        except:
-            await interaction.response.send_message("❌ El ID debe ser un número.", ephemeral=True)
+        except Exception:
+            await interaction.response.send_message(
+                "❌ El ID debe ser un número.", ephemeral=True
+            )
             return
 
         notas = self.nuevas_notas.value.strip()
         amenaza = self.nueva_amenaza.value.strip()
 
         if not notas and not amenaza:
-            await interaction.response.send_message("❌ Debes rellenar al menos un campo para modificar.", ephemeral=True)
+            await interaction.response.send_message(
+                "❌ Debes rellenar al menos un campo para modificar.", ephemeral=True
+            )
             return
 
         async with aiosqlite.connect(self.bot.db_name) as db:
-            cursor = await db.execute("SELECT mapa, notas, nivel_amenaza FROM scouts WHERE id = ?", (sid,))
+            cursor = await db.execute(
+                "SELECT mapa, notas, nivel_amenaza FROM scouts WHERE id = ?", (sid,)
+            )
             row = await cursor.fetchone()
             if not row:
-                await interaction.response.send_message("❌ Scout no encontrado.", ephemeral=True)
+                await interaction.response.send_message(
+                    "❌ Scout no encontrado.", ephemeral=True
+                )
                 return
-            
+
             target_map = row[0]
             existing_notas = row[1]
             existing_amenaza = row[2]
@@ -201,36 +273,53 @@ class ModifyScoutModal(discord.ui.Modal, title="Modificar Scout"):
                 try:
                     new_amenaza = int(amenaza)
                     if new_amenaza < 1 or new_amenaza > 5:
-                        await interaction.response.send_message("❌ La amenaza debe ser entre 1 y 5.", ephemeral=True)
+                        await interaction.response.send_message(
+                            "❌ La amenaza debe ser entre 1 y 5.", ephemeral=True
+                        )
                         return
-                except:
-                    await interaction.response.send_message("❌ La amenaza debe ser un número.", ephemeral=True)
+                except Exception:
+                    await interaction.response.send_message(
+                        "❌ La amenaza debe ser un número.", ephemeral=True
+                    )
                     return
 
             new_notas = existing_notas
             if notas:
                 import datetime as dt
-                today = dt.date.today().strftime("%d/%m")
-                new_notas = f"{existing_notas}\n[{today}]: {notas}" if existing_notas else f"[{today}]: {notas}"
 
-            await db.execute("UPDATE scouts SET notas = ?, nivel_amenaza = ? WHERE id = ?", (new_notas, new_amenaza, sid))
+                today = dt.date.today().strftime("%d/%m")
+                new_notas = (
+                    f"{existing_notas}\n[{today}]: {notas}"
+                    if existing_notas
+                    else f"[{today}]: {notas}"
+                )
+
+            await db.execute(
+                "UPDATE scouts SET notas = ?, nivel_amenaza = ? WHERE id = ?",
+                (new_notas, new_amenaza, sid),
+            )
             await db.commit()
 
-        await interaction.response.send_message(f"✅ Scout **#{sid}** actualizado.", ephemeral=False)
+        await interaction.response.send_message(
+            f"✅ Scout **#{sid}** actualizado.", ephemeral=False
+        )
         await update_scout_dashboards(self.bot, target_map)
 
         await asyncio.sleep(5)
         try:
             msg = await interaction.original_response()
             await msg.delete()
-        except:
+        except Exception:
             pass
+
 
 class Scouting(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="scout_add", description="Registra una base enemiga (Con imagen).")
+    @app_commands.command(
+        name="scout_add", description="Registra una base enemiga (Con imagen)."
+    )
     @app_commands.choices(mapa=MAP_CHOICES)
     @app_commands.describe(
         tribu="Nombre de la tribu enemiga",
@@ -238,15 +327,26 @@ class Scouting(commands.Cog):
         coords="Coordenadas (Lat, Lon)",
         amenaza="Nivel de amenaza (1-5)",
         imagen="Captura de pantalla (Opcional)",
-        notas="Información extra"
+        notas="Información extra",
     )
-    async def scout_add(self, interaction: discord.Interaction, tribu: str, mapa: app_commands.Choice[str], coords: str, amenaza: int, imagen: discord.Attachment = None, notas: str = ""):
+    async def scout_add(
+        self,
+        interaction: discord.Interaction,
+        tribu: str,
+        mapa: app_commands.Choice[str],
+        coords: str,
+        amenaza: int,
+        imagen: discord.Attachment = None,
+        notas: str = "",
+    ):
         await interaction.response.defer(ephemeral=False)
         url_imagen = "N/A"
-        
+
         if imagen:
             try:
-                thread = self.bot.get_channel(1476691633943875875) or await self.bot.fetch_channel(1476691633943875875)
+                thread = self.bot.get_channel(
+                    1476691633943875875
+                ) or await self.bot.fetch_channel(1476691633943875875)
                 if thread:
                     f = await imagen.to_file()
                     upload_msg = await thread.send(file=f)
@@ -255,120 +355,163 @@ class Scouting(commands.Cog):
                 else:
                     url_imagen = imagen.url
             except Exception as e:
-                logging.getLogger("ArkTribeBot").error(f"Error redirigiendo imagen: {e}")
+                logging.getLogger("ArkTribeBot").error(
+                    f"Error redirigiendo imagen: {e}"
+                )
                 url_imagen = imagen.url
-        
+
         async with aiosqlite.connect(self.bot.db_name) as db:
-            await db.execute("""
+            await db.execute(
+                """
                 INSERT INTO scouts (tribu_enemiga, mapa, coordenadas, nivel_amenaza, url_imagen, notas)
                 VALUES (?, ?, ?, ?, ?, ?)
-            """, (tribu, mapa.value, coords, amenaza, url_imagen, notas))
+            """,
+                (tribu, mapa.value, coords, amenaza, url_imagen, notas),
+            )
             await db.commit()
-        
-        await interaction.followup.send(f"✅ Base de **{tribu}** ({mapa.value}) registrada.")
+
+        await interaction.followup.send(
+            f"✅ Base de **{tribu}** ({mapa.value}) registrada."
+        )
         await update_scout_dashboards(self.bot, mapa.value)
-        
+
         await asyncio.sleep(5)
         try:
             msg = await interaction.original_response()
             await msg.delete()
-        except:
+        except Exception:
             pass
 
-    @app_commands.command(name="scout_list", description="Menú de Scouting: Sin argumentos = Dashboard PÚBLICO. Con mapa = Vista PRIVADA.")
+    @app_commands.command(
+        name="scout_list",
+        description="Menú de Scouting: Sin argumentos = Dashboard PÚBLICO. Con mapa = Vista PRIVADA.",
+    )
     @app_commands.choices(mapa=MAP_CHOICES)
     @app_commands.describe(mapa="Filtrar por mapa (Opcional)")
-    async def scout_list(self, interaction: discord.Interaction, mapa: app_commands.Choice[str] = None):
+    async def scout_list(
+        self, interaction: discord.Interaction, mapa: app_commands.Choice[str] = None
+    ):
         # Lógica dividida:
         # Si NO hay mapa -> Modo Global Público (Dashboard persistente)
         # Si SI hay mapa -> Modo Privado (Snapshot ephemeral)
-        
+
         target_map = mapa.value if mapa else "Global"
         ephemeral_mode = True if mapa else False
-        
+
         # Recuperar datos
         async with aiosqlite.connect(self.bot.db_name) as db:
             db.row_factory = aiosqlite.Row
             if target_map == "Global":
-                cursor = await db.execute("SELECT * FROM scouts ORDER BY mapa, nivel_amenaza DESC")
+                cursor = await db.execute(
+                    "SELECT * FROM scouts ORDER BY mapa, nivel_amenaza DESC"
+                )
             else:
-                cursor = await db.execute("SELECT * FROM scouts WHERE mapa = ? ORDER BY nivel_amenaza DESC", (target_map,))
+                cursor = await db.execute(
+                    "SELECT * FROM scouts WHERE mapa = ? ORDER BY nivel_amenaza DESC",
+                    (target_map,),
+                )
             rows = await cursor.fetchall()
 
         # Crear Embed
         if not rows:
-            embed = discord.Embed(title=f"📡 Scouting: {target_map}", description="No hay registros.\n💡 Usa `/scout_add` para añadir uno.", color=discord.Color.red())
+            embed = discord.Embed(
+                title=f"📡 Scouting: {target_map}",
+                description="No hay registros.\n💡 Usa `/scout_add` para añadir uno.",
+                color=discord.Color.red(),
+            )
         else:
-            embed = discord.Embed(title=f"📡 Scouting: {target_map}", color=discord.Color.red())
+            embed = discord.Embed(
+                title=f"📡 Scouting: {target_map}", color=discord.Color.red()
+            )
             count = 0
             for row in rows:
-                if count >= 20: 
-                    embed.set_footer(text="...y más registros. | 💡 Usa /scout_add para añadir.")
+                if count >= 20:
+                    embed.set_footer(
+                        text="...y más registros. | 💡 Usa /scout_add para añadir."
+                    )
                     break
-                amenaza_str = "⭐" * row['nivel_amenaza']
+                amenaza_str = "⭐" * row["nivel_amenaza"]
                 # Prefijo mapa si es Global
                 prefix = f"**[{row['mapa']}]** " if target_map == "Global" else ""
-                
+
                 link_img = ""
-                if row['url_imagen'] and row['url_imagen'] != "N/A":
+                if row["url_imagen"] and row["url_imagen"] != "N/A":
                     try:
-                        if str(row['url_imagen']).strip().isdigit():
-                            msg_id = int(str(row['url_imagen']).strip())
-                            thread = self.bot.get_channel(1476691633943875875) or await self.bot.fetch_channel(1476691633943875875)
+                        if str(row["url_imagen"]).strip().isdigit():
+                            msg_id = int(str(row["url_imagen"]).strip())
+                            thread = self.bot.get_channel(
+                                1476691633943875875
+                            ) or await self.bot.fetch_channel(1476691633943875875)
                             if thread:
                                 backup_msg = await thread.fetch_message(msg_id)
                                 if backup_msg.attachments:
                                     link_img = f" [[📷 Ver Imagen]({backup_msg.attachments[0].url})]"
                         else:
                             link_img = f" [[📷 Ver Imagen]({row['url_imagen']})]"
-                    except Exception as e:
+                    except Exception:
                         pass
-                
+
                 value_text = f"📍 {row['coordenadas']} | ⚠️ {amenaza_str}\n📝 {row['notas']}{link_img}\n🆔 **ID: {row['id']}**"
-                embed.add_field(name=f"{prefix}{row['tribu_enemiga']}", value=value_text, inline=False)
+                embed.add_field(
+                    name=f"{prefix}{row['tribu_enemiga']}",
+                    value=value_text,
+                    inline=False,
+                )
                 count += 1
-            
+
             if count < 20:
                 embed.set_footer(text="💡 Usa /scout_add para añadir una nueva base.")
-        
+
         # Crear Vista con botones
         view = ScoutView(self.bot, target_map)
-        
+
         # Enviar mensaje
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=ephemeral_mode)
-        
+        await interaction.response.send_message(
+            embed=embed, view=view, ephemeral=ephemeral_mode
+        )
+
         # Si es modo Global (Público), lo guardamos para auto-updates.
         if not ephemeral_mode:
             message = await interaction.original_response()
             async with aiosqlite.connect(self.bot.db_name) as db:
-                await db.execute("INSERT INTO scout_messages (channel_id, message_id, map_filter) VALUES (?, ?, ?)", (interaction.channel_id, message.id, "Global"))
+                await db.execute(
+                    "INSERT INTO scout_messages (channel_id, message_id, map_filter) VALUES (?, ?, ?)",
+                    (interaction.channel_id, message.id, "Global"),
+                )
                 await db.commit()
 
-    @app_commands.command(name="scout_delete", description="Elimina una entrada de scouting por ID.")
+    @app_commands.command(
+        name="scout_delete", description="Elimina una entrada de scouting por ID."
+    )
     @app_commands.describe(id="ID del registro a eliminar")
     async def scout_delete(self, interaction: discord.Interaction, id: int):
         async with aiosqlite.connect(self.bot.db_name) as db:
             cursor = await db.execute("SELECT mapa FROM scouts WHERE id = ?", (id,))
             row = await cursor.fetchone()
-            
+
             if not row:
-                await interaction.response.send_message(f"❌ ID {id} no encontrado.", ephemeral=True)
+                await interaction.response.send_message(
+                    f"❌ ID {id} no encontrado.", ephemeral=True
+                )
                 return
-            
+
             map_target = row[0]
-            
+
             await db.execute("DELETE FROM scouts WHERE id = ?", (id,))
             await db.commit()
-            
-        await interaction.response.send_message(f"🗑️ Registro #{id} eliminado.", ephemeral=False)
+
+        await interaction.response.send_message(
+            f"🗑️ Registro #{id} eliminado.", ephemeral=False
+        )
         await update_scout_dashboards(self.bot, map_target)
-        
+
         await asyncio.sleep(5)
         try:
             msg = await interaction.original_response()
             await msg.delete()
-        except:
+        except Exception:
             pass
+
 
 async def setup(bot):
     await bot.add_cog(Scouting(bot))
