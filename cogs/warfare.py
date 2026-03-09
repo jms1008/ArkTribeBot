@@ -8,7 +8,45 @@ import datetime
 from cogs.server_status import get_guild_servers
 
 
-async def update_blacklist_dashboards(bot):
+PAGE_SIZE = 10  # Entradas por página en el dashboard de Blacklist
+
+
+def build_blacklist_embed(rows: list, page: int = 0) -> discord.Embed:
+    """Construye el embed de la Blacklist en formato compacto paginado."""
+    total = len(rows)
+    total_pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
+    page = max(0, min(page, total_pages - 1))
+    start = page * PAGE_SIZE
+    chunk = rows[start : start + PAGE_SIZE]
+
+    embed = discord.Embed(
+        title="☠️ Blacklist de Tribu",
+        color=discord.Color.dark_grey(),
+    )
+
+    if not rows:
+        embed.description = "No hay jugadores en la lista negra.\n💡 Usa el botón **Añadir** para registrar uno."
+    else:
+        lines = []
+        for row in chunk:
+            nota_corta = (
+                (row["notes"][:30] + "...")
+                if row["notes"] and len(row["notes"]) > 30
+                else (row["notes"] or "")
+            )
+            lines.append(
+                f"`#{row['id']}` **{row['player']}** | {row['tribe']} | {row['map']}\n"
+                f"    📝 {nota_corta}"
+            )
+        embed.description = "\n\n".join(lines)
+        embed.set_footer(
+            text=f"Página {page + 1}/{total_pages} • {total} entradas totales"
+        )
+
+    return embed, page, total_pages
+
+
+async def update_blacklist_dashboards(bot, page: int = 0):
     """Actualiza todos los mensajes de lista negra (dashboards)."""
 
     async with aiosqlite.connect(bot.db_name) as db:
@@ -25,33 +63,8 @@ async def update_blacklist_dashboards(bot):
         cursor = await db.execute("SELECT * FROM blacklist ORDER BY id DESC")
         rows = await cursor.fetchall()
 
-    if not rows:
-        embed = discord.Embed(
-            title="☠️ Blacklist de Tribu",
-            description="No hay jugadores en la lista negra.",
-            color=discord.Color.darker_grey(),
-        )
-        embed.set_footer(
-            text="💡 /blacklist_add para añadir | /blacklist_mod para modificar"
-        )
-    else:
-        embed = discord.Embed(
-            title="☠️ Blacklist de Tribu", color=discord.Color.dark_grey()
-        )
-        for row in rows:
-            # ID: Player [Tribe] - Map
-            # Notes
-            embed.add_field(
-                name=f"🆔 {row['id']} | 👤 **{row['player']}**",
-                value=f"🏠 **Tribu:** {row['tribe']}\n🗺️ **Mapa:** {row['map']}\n📝 **Nota:** {row['notes']}\n────────────────",
-                inline=False,
-            )
-
-        embed.set_footer(
-            text="💡 /blacklist_add para añadir | /blacklist_mod para modificar | Botón para borrar."
-        )
-
-    view = BlacklistView(bot)
+    embed, current_page, total_pages = build_blacklist_embed(rows, page)
+    view = BlacklistView(bot, rows, current_page)
     messages_to_remove = []
 
     for dash in dashboards:
@@ -175,6 +188,96 @@ async def update_kda_dashboards(bot, guild_id=None):
             await db.commit()
 
 
+class AddBlacklistModal(discord.ui.Modal, title="Añadir a Blacklist"):
+    player = discord.ui.TextInput(
+        label="Nombre del Jugador", placeholder="Ej: xXDarkHunterXx"
+    )
+    tribe = discord.ui.TextInput(
+        label="Tribu", placeholder="Ej: Los Malos", required=False
+    )
+    map_name = discord.ui.TextInput(
+        label="Mapa", placeholder="Ej: Fjordur", required=False
+    )
+    notes = discord.ui.TextInput(
+        label="Notas",
+        placeholder="Razón del ban o información relevante",
+        style=discord.TextStyle.paragraph,
+        required=False,
+    )
+
+    def __init__(self, bot):
+        super().__init__()
+        self.bot = bot
+
+    async def on_submit(self, interaction: discord.Interaction):
+        async with aiosqlite.connect(self.bot.db_name) as db:
+            await db.execute(
+                "INSERT INTO blacklist (player, tribe, map, notes) VALUES (?, ?, ?, ?)",
+                (
+                    self.player.value,
+                    self.tribe.value or "Desconocido",
+                    self.map_name.value or "Desconocido",
+                    self.notes.value or "",
+                ),
+            )
+            await db.commit()
+        await interaction.response.send_message(
+            f"✅ **{self.player.value}** añadido a la Blacklist.", ephemeral=True
+        )
+        await update_blacklist_dashboards(self.bot)
+
+
+class ModifyBlacklistModal(discord.ui.Modal, title="Modificar entrada de Blacklist"):
+    entry_id = discord.ui.TextInput(label="ID de la entrada", placeholder="Número ID")
+    campo = discord.ui.TextInput(
+        label="Campo a modificar",
+        placeholder="player | tribe | map | notes",
+    )
+    nuevo_valor = discord.ui.TextInput(
+        label="Nuevo valor",
+        style=discord.TextStyle.paragraph,
+    )
+
+    def __init__(self, bot):
+        super().__init__()
+        self.bot = bot
+
+    async def on_submit(self, interaction: discord.Interaction):
+        valid_fields = {"player", "tribe", "map", "notes"}
+        campo = self.campo.value.strip().lower()
+        if campo not in valid_fields:
+            await interaction.response.send_message(
+                f"❌ Campo inválido. Usa: {', '.join(valid_fields)}", ephemeral=True
+            )
+            return
+        try:
+            bid = int(self.entry_id.value)
+        except ValueError:
+            await interaction.response.send_message(
+                "❌ El ID debe ser un número.", ephemeral=True
+            )
+            return
+
+        async with aiosqlite.connect(self.bot.db_name) as db:
+            cursor = await db.execute("SELECT id FROM blacklist WHERE id = ?", (bid,))
+            if not await cursor.fetchone():
+                await interaction.response.send_message(
+                    f"❌ No existe la entrada ID {bid}.", ephemeral=True
+                )
+                return
+            await db.execute(
+                f"UPDATE blacklist SET {campo} = ? WHERE id = ?",
+                (self.nuevo_valor.value, bid),
+            )
+            await db.commit()
+
+        await interaction.response.send_message(
+            f"✅ ID {bid} actualizado: **{campo}** → {self.nuevo_valor.value}",
+            ephemeral=True,
+        )
+        await update_blacklist_dashboards(self.bot)
+
+
 class DeleteBlacklistModal(discord.ui.Modal, title="Eliminar de Blacklist"):
     entry_id = discord.ui.TextInput(
         label="ID de la Entrada", placeholder="Número ID", min_length=1
@@ -204,20 +307,89 @@ class DeleteBlacklistModal(discord.ui.Modal, title="Eliminar de Blacklist"):
 
 
 class BlacklistView(discord.ui.View):
-    def __init__(self, bot):
+    def __init__(self, bot, rows=None, page: int = 0):
         super().__init__(timeout=None)
         self.bot = bot
+        self.rows = rows or []
+        self.page = page
+        total_pages = max(1, (len(self.rows) + PAGE_SIZE - 1) // PAGE_SIZE)
+        # Deshabilitar flechas si no hay páginas
+        self.prev_btn.disabled = page == 0
+        self.next_btn.disabled = page >= total_pages - 1
 
     @discord.ui.button(
-        label="Eliminar (por ID)",
+        label="Añadir",
+        style=discord.ButtonStyle.success,
+        custom_id="blacklist_add_btn",
+        emoji="➕",
+        row=0,
+    )
+    async def add_btn(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        await interaction.response.send_modal(AddBlacklistModal(self.bot))
+
+    @discord.ui.button(
+        label="Modificar",
+        style=discord.ButtonStyle.secondary,
+        custom_id="blacklist_modify_btn",
+        emoji="📝",
+        row=0,
+    )
+    async def modify_btn(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        await interaction.response.send_modal(ModifyBlacklistModal(self.bot))
+
+    @discord.ui.button(
+        label="Eliminar",
         style=discord.ButtonStyle.danger,
         custom_id="blacklist_delete_btn",
         emoji="🗑️",
+        row=0,
     )
     async def delete_btn(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
         await interaction.response.send_modal(DeleteBlacklistModal(self.bot))
+
+    @discord.ui.button(
+        label="◀️",
+        style=discord.ButtonStyle.blurple,
+        custom_id="blacklist_prev_btn",
+        row=1,
+    )
+    async def prev_btn(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        """Página anterior de la Blacklist."""
+        new_page = max(0, self.page - 1)
+        await self._update_page(interaction, new_page)
+
+    @discord.ui.button(
+        label="▶️",
+        style=discord.ButtonStyle.blurple,
+        custom_id="blacklist_next_btn",
+        row=1,
+    )
+    async def next_btn(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        """Página siguiente de la Blacklist."""
+        total_pages = max(1, (len(self.rows) + PAGE_SIZE - 1) // PAGE_SIZE)
+        new_page = min(total_pages - 1, self.page + 1)
+        await self._update_page(interaction, new_page)
+
+    async def _update_page(self, interaction: discord.Interaction, new_page: int):
+        """Carga los datos frescos, construye el embed de la página pedida y edita el mensaje."""
+        async with aiosqlite.connect(self.bot.db_name) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute("SELECT * FROM blacklist ORDER BY id DESC")
+            rows = await cursor.fetchall()
+
+        embed, current_page, _ = build_blacklist_embed(rows, new_page)
+        new_view = BlacklistView(self.bot, rows, current_page)
+        await interaction.response.edit_message(embed=embed, view=new_view)
 
 
 class Warfare(commands.Cog):
