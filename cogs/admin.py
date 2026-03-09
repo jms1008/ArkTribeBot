@@ -117,6 +117,7 @@ class Admin(commands.Cog):
         canal_archivos="Canal o Hilo para almacenamiento redundante de imágenes (Scouts).",
         intervalo_act="Frecuencia (minutos) para actualizar dashboards (Ej: 2, 5, 10).",
         rol_admin="Rol de Discord autorizado para usar comandos protegidos del bot.",
+        propietario_bot="Tu usuario de Discord. Será el propietario permanente de este bot en este servidor.",
         battlemetrics="Opcional. URLs o IDs para trackeo de servidores.",
     )
     async def inicio_ark(
@@ -127,6 +128,7 @@ class Admin(commands.Cog):
         canal_archivos: discord.TextChannel,
         intervalo_act: int = 2,
         rol_admin: discord.Role = None,
+        propietario_bot: discord.Member = None,
         battlemetrics: str = None,
     ):
         # Solo el dueño del servidor o verdaderos Admins de Discord pueden configurar el bot inicialmente
@@ -144,20 +146,22 @@ class Admin(commands.Cog):
 
         guild_id = interaction.guild_id
         admin_role_id = rol_admin.id if rol_admin else None
+        bot_owner_id = propietario_bot.id if propietario_bot else interaction.user.id
 
         async with aiosqlite.connect(self.bot.db_name) as db:
             await db.execute(
                 """
                 INSERT INTO guild_config (
                     guild_id, sos_channel_id, log_channel_id, upload_channel_id,
-                    update_interval, admin_role_id, battlemetrics_urls
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    update_interval, admin_role_id, bot_owner_id, battlemetrics_urls
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(guild_id) DO UPDATE SET
                     sos_channel_id = excluded.sos_channel_id,
                     log_channel_id = excluded.log_channel_id,
                     upload_channel_id = excluded.upload_channel_id,
                     update_interval = excluded.update_interval,
                     admin_role_id = excluded.admin_role_id,
+                    bot_owner_id = excluded.bot_owner_id,
                     battlemetrics_urls = excluded.battlemetrics_urls
             """,
                 (
@@ -167,6 +171,7 @@ class Admin(commands.Cog):
                     canal_archivos.id,
                     intervalo_act,
                     admin_role_id,
+                    bot_owner_id,
                     battlemetrics,
                 ),
             )
@@ -191,6 +196,13 @@ class Admin(commands.Cog):
         )
         if rol_admin:
             embed.add_field(name="🛡️ Rol Admin", value=rol_admin.mention, inline=False)
+        # Mostrar el propietario del bot configurado para este servidor
+        owner_mention = (
+            propietario_bot.mention if propietario_bot else interaction.user.mention
+        )
+        embed.add_field(
+            name="👑 Propietario del Bot", value=owner_mention, inline=False
+        )
 
         await interaction.response.send_message(embed=embed)
 

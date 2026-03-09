@@ -13,7 +13,6 @@ import logging
 from datetime import datetime
 
 # --- CONFIGURACIÓN DE LOGGING ---
-# Obtener la ruta del directorio donde está main.py
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 LOG_DIR = os.path.join(BASE_DIR, "logs")
 
@@ -33,13 +32,41 @@ logging.basicConfig(
     ],
 )
 
-# Silenciar logs de discord.py para evitar saturación (ej. HTTP requests)
+# Silenciar logs de discord.py para evitar saturación
 logging.getLogger("discord.http").setLevel(logging.WARNING)
 logging.getLogger("discord.gateway").setLevel(logging.WARNING)
 logging.getLogger("discord.webhook").setLevel(logging.WARNING)
 
 logger = logging.getLogger("ArkTribeBot")
 logger.info(f"--- NUEVA SESIÓN INICIADA: {timestamp} ---")
+
+
+def get_guild_logger(guild_id: int) -> logging.Logger:
+    """Devuelve un logger específico para un Guild, creando la carpeta y fichero si no existen."""
+    guild_log_dir = os.path.join(LOG_DIR, str(guild_id))
+    if not os.path.exists(guild_log_dir):
+        os.makedirs(guild_log_dir)
+
+    logger_name = f"ArkTribeBot.guild.{guild_id}"
+    guild_logger = logging.getLogger(logger_name)
+
+    # Añadir el FileHandler solo la primera vez que se pide
+    if not guild_logger.handlers:
+        guild_log_file = os.path.join(guild_log_dir, f"session_{timestamp}.log")
+        handler = logging.FileHandler(guild_log_file, encoding="utf-8")
+        handler.setFormatter(
+            logging.Formatter(
+                "%(asctime)s [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
+            )
+        )
+        guild_logger.addHandler(handler)
+        guild_logger.setLevel(logging.INFO)
+        guild_logger.propagate = (
+            True  # Reenviar al logger raíz (y al StreamHandler del servidor)
+        )
+
+    return guild_logger
+
 
 # Cargar variables de entorno
 load_dotenv()
@@ -150,10 +177,10 @@ class ArkTribeBot(commands.Bot):
         # Verificación del canal puente de logs configurado para este servidor
         is_log_channel = False
         sos_channel_id = None
+        guild_log = logger  # Fallback al logger global si no hay guild
 
         if guild_id:
-            import aiosqlite
-
+            guild_log = get_guild_logger(guild_id)
             async with aiosqlite.connect(self.db_name) as db:
                 c = await db.execute(
                     "SELECT log_channel_id, sos_channel_id FROM guild_config WHERE guild_id = ?",
@@ -212,7 +239,7 @@ class ArkTribeBot(commands.Bot):
                                 view=view,
                             )
                     except Exception as e:
-                        logger.error(f"Error enviando SOS de policia: {e}")
+                        guild_log.error(f"Error enviando SOS de policia: {e}")
 
                 # Procesamiento de K/D/A Tracker
                 try:
@@ -252,7 +279,7 @@ class ArkTribeBot(commands.Bot):
 
                             # Ignorar TeamKills (fuego amigo)
                             if victima_player and asesino_player:
-                                logger.info(
+                                guild_log.info(
                                     f"[KDA] Fuego amigo detectado: {asesino_player} mató a {victima_player}. Ignorado."
                                 )
                             else:
@@ -265,7 +292,7 @@ class ArkTribeBot(commands.Bot):
                                             victima_player,
                                         ),
                                     )
-                                    logger.info(
+                                    guild_log.info(
                                         f"[KDA] +1 Muerte a {victima_player} (Asesinado por {asesino_char})"
                                     )
                                     made_changes = True
@@ -279,7 +306,7 @@ class ArkTribeBot(commands.Bot):
                                             asesino_player,
                                         ),
                                     )
-                                    logger.info(
+                                    guild_log.info(
                                         f"[KDA] +1 Kill a {asesino_player} (Mató a {victima_char})"
                                     )
                                     made_changes = True
@@ -329,26 +356,31 @@ class ArkTribeBot(commands.Bot):
         logger.info(f"EJECUCIÓN: User='{user}' | Cmd='/{cmd_name}' | Args=[{args_str}]")
 
     async def is_authorized_admin(self, interaction: discord.Interaction) -> bool:
-        """Verifica de forma global si el usuario posee el rol de administrador configurado o es el dueño."""
-        AUTHORIZED_ADMIN_ID = 290904414452056064
-        if (
-            interaction.user.id == AUTHORIZED_ADMIN_ID
-            or interaction.user.guild_permissions.administrator
-        ):
+        """Verifica si el usuario tiene permisos de administrador del bot en este servidor."""
+        HARDCODED_OWNER_ID = (
+            290904414452056064  # Fallback para cuando no hay config de servidor
+        )
+        if interaction.user.guild_permissions.administrator:
+            return True
+        if interaction.user.id == HARDCODED_OWNER_ID:
             return True
         if interaction.guild_id:
-            import aiosqlite
-
             async with aiosqlite.connect(self.db_name) as db:
                 c = await db.execute(
-                    "SELECT admin_role_id FROM guild_config WHERE guild_id = ?",
+                    "SELECT admin_role_id, bot_owner_id FROM guild_config WHERE guild_id = ?",
                     (interaction.guild_id,),
                 )
                 row = await c.fetchone()
-                if row and row[0]:
-                    role = interaction.guild.get_role(row[0])
-                    if role and role in interaction.user.roles:
+                if row:
+                    admin_role_id, bot_owner_id = row
+                    # Verificar el ID de propietario configurado por este servidor
+                    if bot_owner_id and interaction.user.id == bot_owner_id:
                         return True
+                    # Verificar el Rol de Administrador personalizado
+                    if admin_role_id:
+                        role = interaction.guild.get_role(admin_role_id)
+                        if role and role in interaction.user.roles:
+                            return True
         return False
 
     async def on_ready(self):
@@ -370,9 +402,17 @@ class ArkTribeBot(commands.Bot):
                     upload_channel_id INTEGER,
                     update_interval INTEGER DEFAULT 2,
                     admin_role_id INTEGER,
-                    battlemetrics_urls TEXT 
+                    bot_owner_id INTEGER,
+                    battlemetrics_urls TEXT
                 )
             """)
+            # Migración: añadir bot_owner_id si el servidor ha arrancado antes sin esa columna
+            try:
+                await db.execute(
+                    "ALTER TABLE guild_config ADD COLUMN bot_owner_id INTEGER"
+                )
+            except aiosqlite.OperationalError:
+                pass  # La columna ya existe
 
             # Tabla Scouts
             await db.execute("""
