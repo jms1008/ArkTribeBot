@@ -80,7 +80,30 @@ Un bot de Discord diseñado a medida y altamente interactivo para gestionar, aut
    SOS_ROLE_ID=id_del_rol_para_alertas_sos
    ```
 
-6. **Ejecutar el bot:**
+6. **Invitar el Bot al Servidor con los Permisos Correctos:**
+
+   Al añadir el bot a un servidor de Discord, asegúrate de que tiene exactamente los siguientes permisos (y no más). Puedes usar el enlace de OAuth2 de tu aplicación en el [Portal de Desarrolladores de Discord](https://discord.com/developers/applications) y marcar únicamente:
+
+   | Permiso | Para qué lo necesita |
+   | --- | --- |
+   | **Ver Canales** | Leer el canal de logs del juego y los canales configurados |
+   | **Enviar Mensajes** | Enviar alertas SOS, embeds de estado y respuestas a comandos |
+   | **Gestionar Mensajes** | Eliminar mensajes residuales de usuarios tras ciertas interacciones |
+   | **Insertar Enlace** | Renderizar correctamente los embeds enriquecidos |
+   | **Adjuntar Archivos** | Subir capturas de scouts al canal de archivos |
+   | **Leer el Historial de Mensajes** | Editar mensajes persistentes (dashboards) ya enviados |
+   | **Mencionar a todos** | Enviar alertas `@here` en el canal SOS durante una raid |
+   | **Usar Emojis Externos** | Mostrar emojis personalizados en embeds y botones |
+
+   > **Scope requerido:** `bot` + `applications.commands`
+
+   El valor de permisos resultante es `519168`. Sustituye `TU_CLIENT_ID` con el ID de tu aplicación:
+
+   ```text
+   https://discord.com/oauth2/authorize?client_id=TU_CLIENT_ID&permissions=519168&integration_type=0&scope=bot+applications.commands
+   ```
+
+7. **Ejecutar el bot:**
 
    ```bash
    python main.py
