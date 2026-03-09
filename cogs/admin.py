@@ -108,6 +108,93 @@ class Admin(commands.Cog):
             logger.error(f"Error sync: {e}")
 
     @app_commands.command(
+        name="inicio_ark",
+        description="[Admin/Dueño] Configura ArkTribeBot para este servidor (Multi-Guild Setup).",
+    )
+    @app_commands.describe(
+        canal_sos="Canal de retransmisión de alertas (SOS).",
+        canal_logs="Canal puente donde el bot lee eventos del juego (Tribemember Killed, @policía).",
+        canal_archivos="Canal o Hilo para almacenamiento redundante de imágenes (Scouts).",
+        intervalo_act="Frecuencia (minutos) para actualizar dashboards (Ej: 2, 5, 10).",
+        rol_admin="Rol de Discord autorizado para usar comandos protegidos del bot.",
+        battlemetrics="Opcional. URLs o IDs para trackeo de servidores.",
+    )
+    async def inicio_ark(
+        self,
+        interaction: discord.Interaction,
+        canal_sos: discord.TextChannel,
+        canal_logs: discord.TextChannel,
+        canal_archivos: discord.TextChannel,
+        intervalo_act: int = 2,
+        rol_admin: discord.Role = None,
+        battlemetrics: str = None,
+    ):
+        # Solo el dueño del servidor o verdaderos Admins de Discord pueden configurar el bot inicialmente
+        AUTHORIZED_ADMIN_ID = 290904414452056064
+        if (
+            interaction.user.id != AUTHORIZED_ADMIN_ID
+            and interaction.user.id != interaction.guild.owner_id
+            and not interaction.user.guild_permissions.administrator
+        ):
+            await interaction.response.send_message(
+                "❌ **Acceso denegado.** Solo el Dueño del Servidor o Administradores pueden configurar el bot.",
+                ephemeral=True,
+            )
+            return
+
+        guild_id = interaction.guild_id
+        admin_role_id = rol_admin.id if rol_admin else None
+
+        async with aiosqlite.connect(self.bot.db_name) as db:
+            await db.execute(
+                """
+                INSERT INTO guild_config (
+                    guild_id, sos_channel_id, log_channel_id, upload_channel_id,
+                    update_interval, admin_role_id, battlemetrics_urls
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(guild_id) DO UPDATE SET
+                    sos_channel_id = excluded.sos_channel_id,
+                    log_channel_id = excluded.log_channel_id,
+                    upload_channel_id = excluded.upload_channel_id,
+                    update_interval = excluded.update_interval,
+                    admin_role_id = excluded.admin_role_id,
+                    battlemetrics_urls = excluded.battlemetrics_urls
+            """,
+                (
+                    guild_id,
+                    canal_sos.id,
+                    canal_logs.id,
+                    canal_archivos.id,
+                    intervalo_act,
+                    admin_role_id,
+                    battlemetrics,
+                ),
+            )
+            await db.commit()
+
+        embed = discord.Embed(
+            title="✅ ArkTribeBot Configurado Correctamente",
+            description="El servidor ha sido vinculado con éxito a la base de datos.",
+            color=discord.Color.green(),
+        )
+        embed.add_field(name="🚨 Canal SOS", value=canal_sos.mention, inline=False)
+        embed.add_field(
+            name="📜 Canal de Logs (Oyente)", value=canal_logs.mention, inline=False
+        )
+        embed.add_field(
+            name="📁 Canal de Archivos", value=canal_archivos.mention, inline=False
+        )
+        embed.add_field(
+            name="⏱️ Intervalo Dashboards",
+            value=f"{intervalo_act} minutos",
+            inline=False,
+        )
+        if rol_admin:
+            embed.add_field(name="🛡️ Rol Admin", value=rol_admin.mention, inline=False)
+
+        await interaction.response.send_message(embed=embed)
+
+    @app_commands.command(
         name="wipe_db", description="☢️ BORRA TODOS LOS DATOS (Solo Admin)."
     )
     async def wipe_db(self, interaction: discord.Interaction):
