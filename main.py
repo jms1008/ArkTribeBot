@@ -579,8 +579,8 @@ class ArkTribeBot(commands.Bot):
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     guild_id INTEGER NOT NULL,
                     tribe_signature TEXT,
-                    UNIQUE(guild_id, tribe_signature),
-                    custom_name TEXT
+                    custom_name TEXT,
+                    UNIQUE(guild_id, tribe_signature)
                 )
             """)
             await db.execute("""
@@ -595,8 +595,8 @@ class ArkTribeBot(commands.Bot):
                 CREATE TABLE IF NOT EXISTS k4ultra_aliases (
                     player_name TEXT,
                     guild_id INTEGER NOT NULL,
+                    alias TEXT,
                     PRIMARY KEY (guild_id, player_name)
-                    alias TEXT
                 )
             """)
 
@@ -606,17 +606,17 @@ class ArkTribeBot(commands.Bot):
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     guild_id INTEGER NOT NULL,
                     player_name TEXT,
-                    UNIQUE(guild_id, player_name),
                     kills INTEGER DEFAULT 0,
-                    deaths INTEGER DEFAULT 0
+                    deaths INTEGER DEFAULT 0,
+                    UNIQUE(guild_id, player_name)
                 )
             """)
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS tribe_characters (
                     character_name TEXT,
                     guild_id INTEGER NOT NULL,
+                    player_name TEXT,
                     PRIMARY KEY (guild_id, character_name)
-                    player_name TEXT
                 )
             """)
             await db.execute("""
