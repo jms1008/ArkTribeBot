@@ -14,14 +14,18 @@ class ScoutView(discord.ui.View):
         self.map_filter = map_filter
 
     @discord.ui.button(
-        label="Eliminar Scout",
-        style=discord.ButtonStyle.danger,
-        custom_id="scout_delete_btn",
+        label="Añadir Scout",
+        style=discord.ButtonStyle.success,
+        custom_id="scout_add_btn",
+        emoji="🗡️",
     )
-    async def delete_scout_btn(
+    async def add_scout_btn(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
-        await interaction.response.send_modal(DeleteScoutModal(self.bot))
+        await interaction.response.send_message(
+            "Para registrar una nueva base usa el comando `/scout_add` en el chat.",
+            ephemeral=True,
+        )
 
     @discord.ui.button(
         label="Modificar Scout",
@@ -33,6 +37,16 @@ class ScoutView(discord.ui.View):
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
         await interaction.response.send_modal(ModifyScoutModal(self.bot))
+
+    @discord.ui.button(
+        label="Eliminar Scout",
+        style=discord.ButtonStyle.danger,
+        custom_id="scout_delete_btn",
+    )
+    async def delete_scout_btn(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        await interaction.response.send_modal(DeleteScoutModal(self.bot))
 
 
 async def update_scout_dashboards(bot, target_map=None):
@@ -98,16 +112,16 @@ async def update_scout_dashboards(bot, target_map=None):
                 # Resolución de imagen activa (A partir de Message ID de backup o URL histórica)
                 if row["url_imagen"] and row["url_imagen"] != "N/A":
                     try:
-                        # Detección de Message ID numérico (Dato purgado)
+                        # Detección de Message ID numérico (dato de backup)
                         if str(row["url_imagen"]).strip().isdigit():
                             msg_id = int(str(row["url_imagen"]).strip())
-                            async with aiosqlite.connect(bot.db_name) as db:
-                                c = await db.execute(
+                            async with aiosqlite.connect(bot.db_name) as _db:
+                                c = await _db.execute(
                                     "SELECT upload_channel_id FROM guild_config WHERE guild_id = ?",
                                     (dash["guild_id"],),
                                 )
-                                row = await c.fetchone()
-                                upload_id = row[0] if row else None
+                                cfg_row = await c.fetchone()
+                                upload_id = cfg_row[0] if cfg_row else None
 
                             thread = None
                             if upload_id:
@@ -180,15 +194,46 @@ class DeleteScoutModal(discord.ui.Modal, title="Eliminar Scout"):
             return
 
         async with aiosqlite.connect(self.bot.db_name) as db:
-            cursor = await db.execute("SELECT mapa FROM scouts WHERE id = ?", (sid,))
-            row = await cursor.fetchone()
-            if not row:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute(
+                "SELECT mapa, url_imagen, guild_id FROM scouts WHERE id = ?", (sid,)
+            )
+            scout = await cursor.fetchone()
+            if not scout:
                 await interaction.response.send_message(
                     "❌ No encontrado.", ephemeral=True
                 )
                 return
 
-            target_map = row[0]
+            target_map = scout["mapa"]
+
+            # Eliminar imagen del hilo de archivos si existe
+            url_img = scout["url_imagen"]
+            if url_img and str(url_img).strip().isdigit():
+                try:
+                    guild_id = scout["guild_id"] or interaction.guild_id
+                    c2 = await db.execute(
+                        "SELECT upload_channel_id FROM guild_config WHERE guild_id = ?",
+                        (guild_id,),
+                    )
+                    cfg = await c2.fetchone()
+                    if cfg and cfg[0]:
+                        thread = self.bot.get_channel(
+                            cfg[0]
+                        ) or await self.bot.fetch_channel(cfg[0])
+                        if thread:
+                            try:
+                                img_msg = await thread.fetch_message(
+                                    int(url_img.strip())
+                                )
+                                await img_msg.delete()
+                            except Exception:
+                                pass  # Mensaje ya eliminado o inaccesible
+                except Exception as e:
+                    logging.getLogger("ArkTribeBot").warning(
+                        f"No se pudo eliminar imagen del scout #{sid}: {e}"
+                    )
+
             await db.execute("DELETE FROM scouts WHERE id = ?", (sid,))
             await db.commit()
 
@@ -345,8 +390,20 @@ class Scouting(commands.Cog):
         notas: str = "",
     ):
         await interaction.response.defer(ephemeral=False)
-        url_imagen = "N/A"
 
+        # Insertar primero para obtener el ID autogenerado
+        async with aiosqlite.connect(self.bot.db_name) as db:
+            cursor = await db.execute(
+                """
+                INSERT INTO scouts (tribu_enemiga, mapa, coordenadas, nivel_amenaza, url_imagen, notas)
+                VALUES (?, ?, ?, ?, 'N/A', ?)
+            """,
+                (tribu, mapa, coords, amenaza, notas),
+            )
+            scout_id = cursor.lastrowid
+            await db.commit()
+
+        url_imagen = "N/A"
         if imagen:
             try:
                 async with aiosqlite.connect(self.bot.db_name) as db:
@@ -354,8 +411,8 @@ class Scouting(commands.Cog):
                         "SELECT upload_channel_id FROM guild_config WHERE guild_id = ?",
                         (interaction.guild_id,),
                     )
-                    row = await c.fetchone()
-                    upload_id = row[0] if row else None
+                    cfg_row = await c.fetchone()
+                    upload_id = cfg_row[0] if cfg_row else None
 
                 thread = None
                 if upload_id:
@@ -364,8 +421,10 @@ class Scouting(commands.Cog):
                     ) or await self.bot.fetch_channel(upload_id)
                 if thread:
                     f = await imagen.to_file()
-                    upload_msg = await thread.send(file=f)
-                    # Almacenamiento de ID (backup) para evitar caducidad de URLs provistas por Discord
+                    # Caption identificativa con el ID del scout
+                    caption = f"Scout #{scout_id} — {tribu} ({mapa})"
+                    upload_msg = await thread.send(caption, file=f)
+                    # Almacenamiento de ID para evitar caducidad de URLs de Discord
                     url_imagen = str(upload_msg.id)
                 else:
                     url_imagen = imagen.url
@@ -375,17 +434,17 @@ class Scouting(commands.Cog):
                 )
                 url_imagen = imagen.url
 
-        async with aiosqlite.connect(self.bot.db_name) as db:
-            await db.execute(
-                """
-                INSERT INTO scouts (tribu_enemiga, mapa, coordenadas, nivel_amenaza, url_imagen, notas)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """,
-                (tribu, mapa, coords, amenaza, url_imagen, notas),
-            )
-            await db.commit()
+            # Actualizar url_imagen ahora que ya tenemos el mensaje subido
+            async with aiosqlite.connect(self.bot.db_name) as db:
+                await db.execute(
+                    "UPDATE scouts SET url_imagen = ? WHERE id = ?",
+                    (url_imagen, scout_id),
+                )
+                await db.commit()
 
-        await interaction.followup.send(f"✅ Base de **{tribu}** ({mapa}) registrada.")
+        await interaction.followup.send(
+            f"✅ Base de **{tribu}** ({mapa}) registrada. [Scout **#{scout_id}**]"
+        )
         await update_scout_dashboards(self.bot, mapa)
 
         await asyncio.sleep(5)
