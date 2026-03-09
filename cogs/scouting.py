@@ -117,9 +117,19 @@ async def update_scout_dashboards(bot, target_map=None):
                         # Detección de Message ID numérico (Dato purgado)
                         if str(row["url_imagen"]).strip().isdigit():
                             msg_id = int(str(row["url_imagen"]).strip())
-                            thread = bot.get_channel(
-                                1476691633943875875
-                            ) or await bot.fetch_channel(1476691633943875875)
+                            async with aiosqlite.connect(bot.db_name) as db:
+                                c = await db.execute(
+                                    "SELECT upload_channel_id FROM guild_config WHERE guild_id = ?",
+                                    (dash["guild_id"],),
+                                )
+                                row = await c.fetchone()
+                                upload_id = row[0] if row else None
+
+                            thread = None
+                            if upload_id:
+                                thread = bot.get_channel(
+                                    upload_id
+                                ) or await bot.fetch_channel(upload_id)
                             if thread:
                                 backup_msg = await thread.fetch_message(msg_id)
                                 if backup_msg.attachments:
@@ -344,9 +354,19 @@ class Scouting(commands.Cog):
 
         if imagen:
             try:
-                thread = self.bot.get_channel(
-                    1476691633943875875
-                ) or await self.bot.fetch_channel(1476691633943875875)
+                async with aiosqlite.connect(self.bot.db_name) as db:
+                    c = await db.execute(
+                        "SELECT upload_channel_id FROM guild_config WHERE guild_id = ?",
+                        (interaction.guild_id,),
+                    )
+                    row = await c.fetchone()
+                    upload_id = row[0] if row else None
+
+                thread = None
+                if upload_id:
+                    thread = self.bot.get_channel(
+                        upload_id
+                    ) or await self.bot.fetch_channel(upload_id)
                 if thread:
                     f = await imagen.to_file()
                     upload_msg = await thread.send(file=f)
@@ -439,9 +459,19 @@ class Scouting(commands.Cog):
                     try:
                         if str(row["url_imagen"]).strip().isdigit():
                             msg_id = int(str(row["url_imagen"]).strip())
-                            thread = self.bot.get_channel(
-                                1476691633943875875
-                            ) or await self.bot.fetch_channel(1476691633943875875)
+                            async with aiosqlite.connect(self.bot.db_name) as db:
+                                c = await db.execute(
+                                    "SELECT upload_channel_id FROM guild_config WHERE guild_id = ?",
+                                    (interaction.guild_id,),
+                                )
+                                row = await c.fetchone()
+                                upload_id = row[0] if row else None
+
+                            thread = None
+                            if upload_id:
+                                thread = self.bot.get_channel(
+                                    upload_id
+                                ) or await self.bot.fetch_channel(upload_id)
                             if thread:
                                 backup_msg = await thread.fetch_message(msg_id)
                                 if backup_msg.attachments:

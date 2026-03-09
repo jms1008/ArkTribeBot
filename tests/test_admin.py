@@ -17,6 +17,9 @@ async def test_wipe_db_command(admin_cog, mock_interaction, mock_bot, mocker):
     mock_conn = mocker.AsyncMock()
     mock_db.return_value.__aenter__.return_value = mock_conn
 
+    # Mock the new is_authorized_admin checking from main.py
+    mock_interaction.client.is_authorized_admin = mocker.AsyncMock(return_value=True)
+
     # We call the function directly
     await admin_cog.wipe_db.callback(admin_cog, mock_interaction)
 

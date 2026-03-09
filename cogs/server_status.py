@@ -129,10 +129,7 @@ class ServerStatus(commands.Cog):
     async def status_permanente(
         self, interaction: discord.Interaction, mapa: app_commands.Choice[str]
     ):
-        if (
-            interaction.user.id != AUTHORIZED_ADMIN_ID
-            and not interaction.user.guild_permissions.administrator
-        ):
+        if not await interaction.client.is_authorized_admin(interaction):
             await interaction.response.send_message(
                 "❌ **ACCESO DENEGADO.**", ephemeral=True
             )
@@ -332,10 +329,7 @@ class ServerStatus(commands.Cog):
         description="Muestra todos los servidores, jugadores y nombres, actualizándose cada 2 mins.",
     )
     async def status_online(self, interaction: discord.Interaction):
-        if (
-            interaction.user.id != AUTHORIZED_ADMIN_ID
-            and not interaction.user.guild_permissions.administrator
-        ):
+        if not await interaction.client.is_authorized_admin(interaction):
             await interaction.response.send_message(
                 "❌ **ACCESO DENEGADO.**", ephemeral=True
             )

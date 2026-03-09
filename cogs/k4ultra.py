@@ -1,7 +1,7 @@
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
-from cogs.server_status import SERVERS, AUTHORIZED_ADMIN_ID
+from cogs.server_status import SERVERS
 import a2s
 import asyncio
 import aiosqlite
@@ -1197,10 +1197,7 @@ class K4Ultra(commands.Cog):
     ):
 
         # Validación de permisos (Admin o ID autorizado)
-        if (
-            interaction.user.id != AUTHORIZED_ADMIN_ID
-            and not interaction.user.guild_permissions.administrator
-        ):
+        if not await interaction.client.is_authorized_admin(interaction):
             await interaction.response.send_message(
                 "❌ **ACCESO DENEGADO.**", ephemeral=True
             )
@@ -1253,10 +1250,7 @@ class K4Ultra(commands.Cog):
         description="[Admin] Limpia y fusiona perfiles duplicados (_1, _2) con su nombre base.",
     )
     async def k4ultra_cleanup(self, interaction: discord.Interaction):
-        if (
-            interaction.user.id != AUTHORIZED_ADMIN_ID
-            and not interaction.user.guild_permissions.administrator
-        ):
+        if not await interaction.client.is_authorized_admin(interaction):
             await interaction.response.send_message(
                 "❌ Acceso denegado.", ephemeral=True
             )
@@ -1387,10 +1381,7 @@ class K4Ultra(commands.Cog):
     async def fijar_tribu(
         self, interaction: discord.Interaction, nombre: str, jugadores: str
     ):
-        if (
-            interaction.user.id != AUTHORIZED_ADMIN_ID
-            and not interaction.user.guild_permissions.administrator
-        ):
+        if not await interaction.client.is_authorized_admin(interaction):
             await interaction.response.send_message(
                 "❌ Acceso denegado.", ephemeral=True
             )
@@ -1431,10 +1422,7 @@ class K4Ultra(commands.Cog):
     )
     @app_commands.describe(nombre="Nombre exacto de la tribu a eliminar")
     async def unfijar_tribu(self, interaction: discord.Interaction, nombre: str):
-        if (
-            interaction.user.id != AUTHORIZED_ADMIN_ID
-            and not interaction.user.guild_permissions.administrator
-        ):
+        if not await interaction.client.is_authorized_admin(interaction):
             await interaction.response.send_message(
                 "❌ Acceso denegado.", ephemeral=True
             )
@@ -1471,10 +1459,7 @@ class K4Ultra(commands.Cog):
     async def set_alias(
         self, interaction: discord.Interaction, jugador: str, alias: str
     ):
-        if (
-            interaction.user.id != AUTHORIZED_ADMIN_ID
-            and not interaction.user.guild_permissions.administrator
-        ):
+        if not await interaction.client.is_authorized_admin(interaction):
             await interaction.response.send_message(
                 "❌ Acceso denegado.", ephemeral=True
             )
@@ -1503,10 +1488,7 @@ class K4Ultra(commands.Cog):
     async def k4ultra_merge(
         self, interaction: discord.Interaction, origen: str, destino: str
     ):
-        if (
-            interaction.user.id != AUTHORIZED_ADMIN_ID
-            and not interaction.user.guild_permissions.administrator
-        ):
+        if not await interaction.client.is_authorized_admin(interaction):
             await interaction.response.send_message(
                 "❌ Acceso denegado.", ephemeral=True
             )
@@ -1610,10 +1592,7 @@ class K4Ultra(commands.Cog):
     async def k4ultra_split(
         self, interaction: discord.Interaction, origen: str, destino: str
     ):
-        if (
-            interaction.user.id != AUTHORIZED_ADMIN_ID
-            and not interaction.user.guild_permissions.administrator
-        ):
+        if not await interaction.client.is_authorized_admin(interaction):
             await interaction.response.send_message(
                 "❌ Acceso denegado.", ephemeral=True
             )

@@ -145,131 +145,163 @@ class ArkTribeBot(commands.Bot):
         if message.author.id == self.user.id:
             return
 
-        # Extraer texto de Embeds enviados por webhooks/bots de logs
-        content_lower = message.content.lower()
-        if message.embeds:
-            for embed in message.embeds:
-                if embed.description:
-                    content_lower += " " + embed.description.lower()
-                if embed.title:
-                    content_lower += " " + embed.title.lower()
+        guild_id = message.guild.id if message.guild else None
 
-        # Lectura case-insensitive
-        # Detección de mención al rol @policia y emoji 🔪
-        contains_policia = "@policia" in content_lower or "<@&" in content_lower
-        contains_knife = (
-            "was :knife: by" in content_lower
-            or "fue :knife: por" in content_lower
-            or "was 🔪 by" in content_lower
-            or "fue 🔪 por" in content_lower
-        )
+        # Verificación del canal puente de logs configurado para este servidor
+        is_log_channel = False
+        sos_channel_id = None
 
-        if contains_knife:
-            import re
+        if guild_id:
+            import aiosqlite
 
-            # Extraer contenido original formateado
-            texto_original = message.content
-            if not texto_original and message.embeds and message.embeds[0].description:
-                texto_original = message.embeds[0].description
-
-            # Procesamiento de SOS de Policía
-            if contains_policia:
-                map_match = re.search(r"\((.*?)\)", texto_original)
-                map_name = map_match.group(1) if map_match else "Desconocido"
-                try:
-                    sos_channel = self.get_channel(
-                        1471900560776233080
-                    ) or await self.fetch_channel(1471900560776233080)
-                    if sos_channel:
-                        view = PoliciaSosView()
-                        await sos_channel.send(
-                            f"@here 🚨 **SOS en {map_name}** 🚨\n📝 Log original:\n> {texto_original}",
-                            view=view,
-                        )
-                except Exception as e:
-                    logger.error(f"Error enviando SOS de policia: {e}")
-
-            # Procesamiento de K/D/A Tracker
-            # Formato esperado: @here (Gn2) Day 1, 23:28: Tribemember Lacomeabuelas - Lvl 2 was :knife: by Larry Capija - Lvl 105 (UNNAMED)!
-            try:
-                # Normalización de texto para regex
-                t_clean = texto_original.replace(":knife:", "🔪").replace(
-                    "was 🔪 by", "fue 🔪 por"
+            async with aiosqlite.connect(self.db_name) as db:
+                c = await db.execute(
+                    "SELECT log_channel_id, sos_channel_id FROM guild_config WHERE guild_id = ?",
+                    (guild_id,),
                 )
+                config = await c.fetchone()
+                if config:
+                    log_channel_id, sos_channel_id = config
+                    if log_channel_id and message.channel.id == log_channel_id:
+                        is_log_channel = True
 
-                # Buscamos: Tribemember [Victima] - Lvl [X] fue 🔪 por [Asesino] - Lvl [Y]
-                # Regex para capturar nombres con espacios o guiones
-                match = re.search(
-                    r"Tribemember (.*?) - Lvl.*?fue 🔪 por (.*?) - Lvl",
-                    t_clean,
-                    re.IGNORECASE,
-                )
+        if is_log_channel:
+            # Extraer texto de Embeds enviados por webhooks/bots de logs
+            content_lower = message.content.lower()
+            if message.embeds:
+                for embed in message.embeds:
+                    if embed.description:
+                        content_lower += " " + embed.description.lower()
+                    if embed.title:
+                        content_lower += " " + embed.title.lower()
 
-                if match:
-                    victima_char = match.group(1).strip()
-                    asesino_char = match.group(2).strip()
+            # Lectura case-insensitive
+            # Detección de mención al rol @policia y emoji 🔪
+            contains_policia = "@policia" in content_lower or "<@&" in content_lower
+            contains_knife = (
+                "was :knife: by" in content_lower
+                or "fue :knife: por" in content_lower
+                or "was 🔪 by" in content_lower
+                or "fue 🔪 por" in content_lower
+            )
 
-                    async with aiosqlite.connect(self.db_name) as db:
-                        # Mapeo de personajes in-game a jugadores reales
-                        c1 = await db.execute(
-                            "SELECT player_name FROM tribe_characters WHERE character_name = ?",
-                            (victima_char,),
-                        )
-                        victima_res = await c1.fetchone()
-                        victima_player = victima_res[0] if victima_res else None
+            if contains_knife:
+                import re
 
-                        c2 = await db.execute(
-                            "SELECT player_name FROM tribe_characters WHERE character_name = ?",
-                            (asesino_char,),
-                        )
-                        asesino_res = await c2.fetchone()
-                        asesino_player = asesino_res[0] if asesino_res else None
+                # Extraer contenido original formateado
+                texto_original = message.content
+                if (
+                    not texto_original
+                    and message.embeds
+                    and message.embeds[0].description
+                ):
+                    texto_original = message.embeds[0].description
 
-                        made_changes = False
-
-                        # Ignorar TeamKills (fuego amigo)
-                        if victima_player and asesino_player:
-                            logger.info(
-                                f"[KDA] Fuego amigo detectado: {asesino_player} mató a {victima_player}. Ignorado."
+                # Procesamiento de SOS de Policía
+                if contains_policia and sos_channel_id:
+                    map_match = re.search(r"\((.*?)\)", texto_original)
+                    map_name = map_match.group(1) if map_match else "Desconocido"
+                    try:
+                        sos_channel = self.get_channel(
+                            sos_channel_id
+                        ) or await self.fetch_channel(sos_channel_id)
+                        if sos_channel:
+                            view = PoliciaSosView()
+                            await sos_channel.send(
+                                f"@here 🚨 **SOS en {map_name}** 🚨\n📝 Log original:\n> {texto_original}",
+                                view=view,
                             )
+                    except Exception as e:
+                        logger.error(f"Error enviando SOS de policia: {e}")
 
-                        else:
-                            # Registro de bajas sufridas
-                            if victima_player:
-                                await db.execute(
-                                    "INSERT INTO tribe_kda (player_name, deaths) VALUES (?, 1) ON CONFLICT(player_name) DO UPDATE SET deaths = deaths + 1",
-                                    (victima_player,),
-                                )
+                # Procesamiento de K/D/A Tracker
+                try:
+                    # Normalización de texto para regex
+                    t_clean = texto_original.replace(":knife:", "🔪").replace(
+                        "was 🔪 by", "fue 🔪 por"
+                    )
+
+                    # Buscamos: Tribemember [Victima] - Lvl [X] fue 🔪 por [Asesino] - Lvl [Y]
+                    match = re.search(
+                        r"Tribemember (.*?) - Lvl.*?fue 🔪 por (.*?) - Lvl",
+                        t_clean,
+                        re.IGNORECASE,
+                    )
+
+                    if match:
+                        victima_char = match.group(1).strip()
+                        asesino_char = match.group(2).strip()
+
+                        async with aiosqlite.connect(self.db_name) as db:
+                            # Mapeo de personajes in-game a jugadores reales
+                            c1 = await db.execute(
+                                "SELECT player_name FROM tribe_characters WHERE character_name = ? AND guild_id = ?",
+                                (victima_char, guild_id),
+                            )
+                            victima_res = await c1.fetchone()
+                            victima_player = victima_res[0] if victima_res else None
+
+                            c2 = await db.execute(
+                                "SELECT player_name FROM tribe_characters WHERE character_name = ? AND guild_id = ?",
+                                (asesino_char, guild_id),
+                            )
+                            asesino_res = await c2.fetchone()
+                            asesino_player = asesino_res[0] if asesino_res else None
+
+                            made_changes = False
+
+                            # Ignorar TeamKills (fuego amigo)
+                            if victima_player and asesino_player:
                                 logger.info(
-                                    f"[KDA] +1 Muerte a {victima_player} (Asesinado por {asesino_char})"
+                                    f"[KDA] Fuego amigo detectado: {asesino_player} mató a {victima_player}. Ignorado."
                                 )
-                                made_changes = True
+                            else:
+                                # Registro de bajas sufridas
+                                if victima_player:
+                                    await db.execute(
+                                        "INSERT INTO tribe_kda (guild_id, player_name, deaths) VALUES (?, ?, 1) ON CONFLICT(guild_id, player_name) DO UPDATE SET deaths = deaths + 1",
+                                        (
+                                            guild_id,
+                                            victima_player,
+                                        ),
+                                    )
+                                    logger.info(
+                                        f"[KDA] +1 Muerte a {victima_player} (Asesinado por {asesino_char})"
+                                    )
+                                    made_changes = True
 
-                            # Registro de bajas causadas
-                            if asesino_player:
-                                await db.execute(
-                                    "INSERT INTO tribe_kda (player_name, kills) VALUES (?, 1) ON CONFLICT(player_name) DO UPDATE SET kills = kills + 1",
-                                    (asesino_player,),
-                                )
-                                logger.info(
-                                    f"[KDA] +1 Kill a {asesino_player} (Mató a {victima_char})"
-                                )
-                                made_changes = True
+                                # Registro de bajas causadas
+                                if asesino_player:
+                                    await db.execute(
+                                        "INSERT INTO tribe_kda (guild_id, player_name, kills) VALUES (?, ?, 1) ON CONFLICT(guild_id, player_name) DO UPDATE SET kills = kills + 1",
+                                        (
+                                            guild_id,
+                                            asesino_player,
+                                        ),
+                                    )
+                                    logger.info(
+                                        f"[KDA] +1 Kill a {asesino_player} (Mató a {victima_char})"
+                                    )
+                                    made_changes = True
 
-                        if made_changes:
-                            await db.commit()
-                            # Actualización de dashboards K/D/A
-                            try:
-                                warfare_cog = self.get_cog("Warfare")
-                                if warfare_cog and hasattr(
-                                    warfare_cog, "update_kda_dashboards"
-                                ):
-                                    await warfare_cog.update_kda_dashboards()
-                            except Exception as e:
-                                logger.error(f"[KDA] Error recargando dashboards: {e}")
+                            if made_changes:
+                                await db.commit()
+                                # Actualización de dashboards K/D/A
+                                try:
+                                    warfare_cog = self.get_cog("Warfare")
+                                    if warfare_cog and hasattr(
+                                        warfare_cog, "update_kda_dashboards"
+                                    ):
+                                        await warfare_cog.update_kda_dashboards(
+                                            guild_id=guild_id
+                                        )
+                                except Exception as e:
+                                    logger.error(
+                                        f"[KDA] Error recargando dashboards: {e}"
+                                    )
 
-            except Exception as e:
-                logger.error(f"[KDA] Error parseando kill log: {e}")
+                except Exception as e:
+                    logger.error(f"[KDA] Error parseando kill log: {e}")
 
         await self.process_commands(message)
 
@@ -296,6 +328,29 @@ class ArkTribeBot(commands.Bot):
         args_str = ", ".join(args_list) if args_list else "Sin argumentos"
         logger.info(f"EJECUCIÓN: User='{user}' | Cmd='/{cmd_name}' | Args=[{args_str}]")
 
+    async def is_authorized_admin(self, interaction: discord.Interaction) -> bool:
+        """Verifica de forma global si el usuario posee el rol de administrador configurado o es el dueño."""
+        AUTHORIZED_ADMIN_ID = 290904414452056064
+        if (
+            interaction.user.id == AUTHORIZED_ADMIN_ID
+            or interaction.user.guild_permissions.administrator
+        ):
+            return True
+        if interaction.guild_id:
+            import aiosqlite
+
+            async with aiosqlite.connect(self.db_name) as db:
+                c = await db.execute(
+                    "SELECT admin_role_id FROM guild_config WHERE guild_id = ?",
+                    (interaction.guild_id,),
+                )
+                row = await c.fetchone()
+                if row and row[0]:
+                    role = interaction.guild.get_role(row[0])
+                    if role and role in interaction.user.roles:
+                        return True
+        return False
+
     async def on_ready(self):
         logger.info(f"Conectado como {self.user} (ID: {self.user.id})")
         # Uso de Custom Activity para evitar el truncamiento de "Jugando a..." en Discord
@@ -304,12 +359,26 @@ class ArkTribeBot(commands.Bot):
         )
 
     async def init_db(self):
-        """Crea las tablas necesarias si no existen."""
+        """Inicializa la base de datos y crea las tablas estructurales si no existen."""
         async with aiosqlite.connect(self.db_name) as db:
+            # Tabla de Configuración de Servidores
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS guild_config (
+                    guild_id INTEGER PRIMARY KEY,
+                    sos_channel_id INTEGER,
+                    log_channel_id INTEGER,
+                    upload_channel_id INTEGER,
+                    update_interval INTEGER DEFAULT 2,
+                    admin_role_id INTEGER,
+                    battlemetrics_urls TEXT 
+                )
+            """)
+
             # Tabla Scouts
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS scouts (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id INTEGER NOT NULL,
                     tribu_enemiga TEXT,
                     mapa TEXT,
                     coordenadas TEXT,
@@ -323,6 +392,7 @@ class ArkTribeBot(commands.Bot):
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS todos (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id INTEGER NOT NULL,
                     tarea TEXT,
                     asignado_a INTEGER,
                     estado TEXT DEFAULT 'Pendiente'
@@ -333,6 +403,7 @@ class ArkTribeBot(commands.Bot):
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS todo_messages (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id INTEGER NOT NULL,
                     channel_id INTEGER,
                     message_id INTEGER
                 )
@@ -342,6 +413,7 @@ class ArkTribeBot(commands.Bot):
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS scout_messages (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id INTEGER NOT NULL,
                     channel_id INTEGER,
                     message_id INTEGER,
                     map_filter TEXT
@@ -352,6 +424,7 @@ class ArkTribeBot(commands.Bot):
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS breeding_messages (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id INTEGER NOT NULL,
                     channel_id INTEGER,
                     message_id INTEGER
                 )
@@ -361,6 +434,7 @@ class ArkTribeBot(commands.Bot):
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS dinos (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id INTEGER NOT NULL,
                     especie TEXT,
                     sexo TEXT,
                     hp INTEGER,
@@ -379,6 +453,7 @@ class ArkTribeBot(commands.Bot):
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS blacklist (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id INTEGER NOT NULL,
                     player TEXT,
                     tribe TEXT,
                     map TEXT,
@@ -391,6 +466,7 @@ class ArkTribeBot(commands.Bot):
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS blacklist_messages (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id INTEGER NOT NULL,
                     channel_id INTEGER,
                     message_id INTEGER
                 )
@@ -400,6 +476,7 @@ class ArkTribeBot(commands.Bot):
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS status_messages (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id INTEGER NOT NULL,
                     channel_id INTEGER,
                     message_id INTEGER,
                     map_name TEXT
@@ -410,6 +487,7 @@ class ArkTribeBot(commands.Bot):
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS status_online_messages (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id INTEGER NOT NULL,
                     channel_id INTEGER,
                     message_id INTEGER
                 )
@@ -418,7 +496,9 @@ class ArkTribeBot(commands.Bot):
             # Tabla de Usuarios Suscritos a Puntos Diarios
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS daily_points_users (
-                    user_id INTEGER PRIMARY KEY
+                    user_id INTEGER,
+                    guild_id INTEGER NOT NULL,
+                    PRIMARY KEY (guild_id, user_id)
                 )
             """)
             # Migración para Puntos Diarios Configurable
@@ -439,6 +519,7 @@ class ArkTribeBot(commands.Bot):
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS k4ultra_players_log (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id INTEGER NOT NULL,
                     player_name TEXT,
                     map_name TEXT,
                     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -447,6 +528,7 @@ class ArkTribeBot(commands.Bot):
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS k4ultra_playtime (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id INTEGER NOT NULL,
                     player_name TEXT,
                     map_name TEXT,
                     total_minutes INTEGER DEFAULT 0,
@@ -456,16 +538,18 @@ class ArkTribeBot(commands.Bot):
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS k4ultra_relationships (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id INTEGER NOT NULL,
                     player1 TEXT,
                     player2 TEXT,
                     probability_score INTEGER DEFAULT 0,
                     is_manual INTEGER DEFAULT 0,
-                    UNIQUE(player1, player2)
+                    UNIQUE(guild_id, player1, player2)
                 )
             """)
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS k4ultra_snapshots (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id INTEGER NOT NULL,
                     week_number INTEGER,
                     embed_json TEXT,
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -474,6 +558,7 @@ class ArkTribeBot(commands.Bot):
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS k4ultra_messages (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id INTEGER NOT NULL,
                     channel_id INTEGER,
                     message_id INTEGER
                 )
@@ -481,6 +566,7 @@ class ArkTribeBot(commands.Bot):
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS k4ultra_sessions (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id INTEGER NOT NULL,
                     player_name TEXT,
                     map_name TEXT,
                     start_time DATETIME,
@@ -491,20 +577,25 @@ class ArkTribeBot(commands.Bot):
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS k4ultra_tribe_names (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    tribe_signature TEXT UNIQUE,
+                    guild_id INTEGER NOT NULL,
+                    tribe_signature TEXT,
+                    UNIQUE(guild_id, tribe_signature),
                     custom_name TEXT
                 )
             """)
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS k4ultra_fixed_tribes (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id INTEGER NOT NULL,
                     name TEXT,
                     members_json TEXT
                 )
             """)
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS k4ultra_aliases (
-                    player_name TEXT PRIMARY KEY,
+                    player_name TEXT,
+                    guild_id INTEGER NOT NULL,
+                    PRIMARY KEY (guild_id, player_name)
                     alias TEXT
                 )
             """)
@@ -513,20 +604,25 @@ class ArkTribeBot(commands.Bot):
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS tribe_kda (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    player_name TEXT UNIQUE,
+                    guild_id INTEGER NOT NULL,
+                    player_name TEXT,
+                    UNIQUE(guild_id, player_name),
                     kills INTEGER DEFAULT 0,
                     deaths INTEGER DEFAULT 0
                 )
             """)
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS tribe_characters (
-                    character_name TEXT PRIMARY KEY,
+                    character_name TEXT,
+                    guild_id INTEGER NOT NULL,
+                    PRIMARY KEY (guild_id, character_name)
                     player_name TEXT
                 )
             """)
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS kda_messages (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id INTEGER NOT NULL,
                     channel_id INTEGER,
                     message_id INTEGER
                 )
@@ -536,6 +632,7 @@ class ArkTribeBot(commands.Bot):
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS breeding_alarms (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id INTEGER NOT NULL,
                     user_id INTEGER,
                     channel_id INTEGER,
                     alert_time TIMESTAMP
@@ -546,6 +643,7 @@ class ArkTribeBot(commands.Bot):
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS events (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id INTEGER NOT NULL,
                     title TEXT,
                     description TEXT,
                     creator_id INTEGER,
@@ -558,6 +656,7 @@ class ArkTribeBot(commands.Bot):
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS event_options (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id INTEGER NOT NULL,
                     event_id INTEGER,
                     option_text TEXT,
                     voter_ids TEXT DEFAULT '[]',

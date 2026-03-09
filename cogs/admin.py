@@ -6,8 +6,7 @@ import aiosqlite
 
 logger = logging.getLogger("ArkTribeBot")
 
-# ID del administrador autorizado
-AUTHORIZED_ADMIN_ID = 290904414452056064
+logger = logging.getLogger("ArkTribeBot")
 
 
 class Admin(commands.Cog):
@@ -29,10 +28,7 @@ class Admin(commands.Cog):
     async def bind_k4ultra(
         self, interaction: discord.Interaction, message_id: str, channel_id: str = None
     ):
-        if (
-            interaction.user.id != AUTHORIZED_ADMIN_ID
-            and not interaction.user.guild_permissions.administrator
-        ):
+        if not await interaction.client.is_authorized_admin(interaction):
             await interaction.response.send_message(
                 "❌ Acceso denegado.", ephemeral=True
             )
@@ -116,10 +112,7 @@ class Admin(commands.Cog):
     )
     async def wipe_db(self, interaction: discord.Interaction):
         # Verificación de permisos de administrador
-        if (
-            interaction.user.id != AUTHORIZED_ADMIN_ID
-            and not interaction.user.guild_permissions.administrator
-        ):
+        if not await interaction.client.is_authorized_admin(interaction):
             await interaction.response.send_message(
                 "❌ **ACCESO DENEGADO.** No tienes permisos para usar este comando.",
                 ephemeral=True,
@@ -147,11 +140,13 @@ class Admin(commands.Cog):
                     "status_messages",
                 ]
 
+                guild_id = interaction.guild_id
+
                 for table in tables:
-                    await db.execute(f"DELETE FROM {table}")
                     await db.execute(
-                        f"DELETE FROM sqlite_sequence WHERE name='{table}'"
-                    )  # Reinicio de autoincrement
+                        f"DELETE FROM {table} WHERE guild_id = ?", (guild_id,)
+                    )
+                    # Exclusión explícita de `sqlite_sequence` para proteger el autoincremental de datos unificados
 
                 await db.commit()
 
@@ -173,10 +168,7 @@ class Admin(commands.Cog):
     )
     async def clear_updates(self, interaction: discord.Interaction):
         # Verificación de permisos de administrador
-        if (
-            interaction.user.id != AUTHORIZED_ADMIN_ID
-            and not interaction.user.guild_permissions.administrator
-        ):
+        if not await interaction.client.is_authorized_admin(interaction):
             await interaction.response.send_message(
                 "❌ **ACCESO DENEGADO.** No tienes permisos para usar este comando.",
                 ephemeral=True,
@@ -196,9 +188,13 @@ class Admin(commands.Cog):
                     "status_messages",
                 ]
 
+                guild_id = interaction.guild_id
+
                 for table in tables:
-                    await db.execute(f"DELETE FROM {table}")
-                    # Vaciado simple sin reinicio de autoincrement
+                    await db.execute(
+                        f"DELETE FROM {table} WHERE guild_id = ?", (guild_id,)
+                    )
+                    # Vaciado estructural simple preservando el conteo incremental
 
                 await db.commit()
 
@@ -220,10 +216,7 @@ class Admin(commands.Cog):
     )
     async def log(self, interaction: discord.Interaction):
         # Verificación de permisos de administrador
-        if (
-            interaction.user.id != AUTHORIZED_ADMIN_ID
-            and not interaction.user.guild_permissions.administrator
-        ):
+        if not await interaction.client.is_authorized_admin(interaction):
             await interaction.response.send_message(
                 "❌ **ACCESO DENEGADO.** Necesitas permisos de Administrador.",
                 ephemeral=True,

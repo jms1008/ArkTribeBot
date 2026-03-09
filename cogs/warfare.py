@@ -92,11 +92,14 @@ async def update_blacklist_dashboards(bot):
             await db.commit()
 
 
-async def update_kda_dashboards(bot):
+async def update_kda_dashboards(bot, guild_id=None):
     """Actualiza todos los mensajes persistentes del Ranking KDA (El Más Manco)."""
     async with aiosqlite.connect(bot.db_name) as db:
         db.row_factory = aiosqlite.Row
-        cursor = await db.execute("SELECT * FROM kda_messages")
+        if guild_id:
+            cursor = await db.execute("SELECT * FROM kda_messages WHERE guild_id = ?", (guild_id,))
+        else:
+            cursor = await db.execute("SELECT * FROM kda_messages")
         dashboards = await cursor.fetchall()
 
     if not dashboards:
@@ -107,12 +110,21 @@ async def update_kda_dashboards(bot):
         db.row_factory = aiosqlite.Row
         # Ordenación ascendente por K/D (Peor ratio = "El Más Manco").
         # Prevención de división por cero tratando muertes=0 como 1 lógicamente en la consulta.
-        cursor = await db.execute("""
-            SELECT player_name, kills, deaths,
-                   CAST(kills AS FLOAT) / CASE WHEN deaths = 0 THEN 1 ELSE deaths END as kd_ratio
-            FROM tribe_kda
-            ORDER BY kd_ratio ASC, deaths DESC
-        """)
+        if guild_id:
+            cursor = await db.execute("""
+                SELECT player_name, kills, deaths,
+                       CAST(kills AS FLOAT) / CASE WHEN deaths = 0 THEN 1 ELSE deaths END as kd_ratio
+                FROM tribe_kda
+                WHERE guild_id = ?
+                ORDER BY kd_ratio ASC, deaths DESC
+            """, (guild_id,))
+        else:
+            cursor = await db.execute("""
+                SELECT player_name, kills, deaths,
+                       CAST(kills AS FLOAT) / CASE WHEN deaths = 0 THEN 1 ELSE deaths END as kd_ratio
+                FROM tribe_kda
+                ORDER BY kd_ratio ASC, deaths DESC
+            """)
         rows = await cursor.fetchall()
 
     if not rows:
