@@ -5,22 +5,7 @@ from discord.ext import commands
 import aiosqlite
 import asyncio
 import datetime
-
-# Definición de Mapas Base (Utilizado para sugerencias híbridas)
-BASE_MAPS = [
-    "The Island",
-    "Scorched Earth",
-    "Aberration",
-    "Extinction",
-    "Genesis 1",
-    "Genesis 2",
-    "The Center",
-    "Ragnarok",
-    "Valguero",
-    "Crystal Isles",
-    "Lost Island",
-    "Fjordur",
-]
+from cogs.server_status import get_guild_servers
 
 
 async def update_blacklist_dashboards(bot):
@@ -97,7 +82,9 @@ async def update_kda_dashboards(bot, guild_id=None):
     async with aiosqlite.connect(bot.db_name) as db:
         db.row_factory = aiosqlite.Row
         if guild_id:
-            cursor = await db.execute("SELECT * FROM kda_messages WHERE guild_id = ?", (guild_id,))
+            cursor = await db.execute(
+                "SELECT * FROM kda_messages WHERE guild_id = ?", (guild_id,)
+            )
         else:
             cursor = await db.execute("SELECT * FROM kda_messages")
         dashboards = await cursor.fetchall()
@@ -111,13 +98,16 @@ async def update_kda_dashboards(bot, guild_id=None):
         # Ordenación ascendente por K/D (Peor ratio = "El Más Manco").
         # Prevención de división por cero tratando muertes=0 como 1 lógicamente en la consulta.
         if guild_id:
-            cursor = await db.execute("""
+            cursor = await db.execute(
+                """
                 SELECT player_name, kills, deaths,
                        CAST(kills AS FLOAT) / CASE WHEN deaths = 0 THEN 1 ELSE deaths END as kd_ratio
                 FROM tribe_kda
                 WHERE guild_id = ?
                 ORDER BY kd_ratio ASC, deaths DESC
-            """, (guild_id,))
+            """,
+                (guild_id,),
+            )
         else:
             cursor = await db.execute("""
                 SELECT player_name, kills, deaths,
@@ -289,8 +279,9 @@ class Warfare(commands.Cog):
     async def map_autocomplete(
         self, interaction: discord.Interaction, current: str
     ) -> list[app_commands.Choice[str]]:
-        # Fusión interactiva de mapas base predefinidos y mapas registrados
-        choices = [m for m in BASE_MAPS if current.lower() in m.lower()]
+        """Autocomplete dinámico de mapas basado en los servidores del Guild."""
+        servers = await get_guild_servers(self.bot, interaction.guild_id)
+        choices = [name for name in servers.keys() if current.lower() in name.lower()]
         return [app_commands.Choice(name=m, value=m) for m in choices[:25]]
 
     # --- Definición de Comandos ---

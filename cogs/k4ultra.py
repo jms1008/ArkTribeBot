@@ -1,7 +1,6 @@
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
-from cogs.server_status import SERVERS
 import a2s
 import asyncio
 import aiosqlite
@@ -338,9 +337,23 @@ class K4Ultra(commands.Cog):
         """Tarea en segundo plano que recopila datos de los jugadores cada 5 minutos."""
         await self.bot.wait_until_ready()
 
+        # Recorrido de todos los Guilds configurados para obtener sus servidores
+        from cogs.server_status import get_guild_servers
+
+        async with aiosqlite.connect(self.bot.db_name) as _cfg_db:
+            cfg_cursor = await _cfg_db.execute("SELECT guild_id FROM guild_config")
+            guild_rows = await cfg_cursor.fetchall()
+
+        all_guild_servers = {}
+        for (guild_id,) in guild_rows:
+            g_servers = await get_guild_servers(self.bot, guild_id)
+            all_guild_servers.update(
+                g_servers
+            )  # Merge (nombre de mapa único en el clúster)
+
         tasks_list = [
             self.fetch_server_players(name, ip, port)
-            for name, (ip, port) in SERVERS.items()
+            for name, (ip, port) in all_guild_servers.items()
         ]
         results = await asyncio.gather(*tasks_list)
 

@@ -403,16 +403,21 @@ class ArkTribeBot(commands.Bot):
                     update_interval INTEGER DEFAULT 2,
                     admin_role_id INTEGER,
                     bot_owner_id INTEGER,
-                    battlemetrics_urls TEXT
+                    battlemetrics_urls TEXT,
+                    daily_points_enabled INTEGER DEFAULT 1,
+                    vote_urls TEXT
                 )
             """)
-            # Migración: añadir bot_owner_id si el servidor ha arrancado antes sin esa columna
-            try:
-                await db.execute(
-                    "ALTER TABLE guild_config ADD COLUMN bot_owner_id INTEGER"
-                )
-            except aiosqlite.OperationalError:
-                pass  # La columna ya existe
+            # Migraciones: añadir columnas nuevas si la tabla ya existía de versiones anteriores
+            for migration_sql in [
+                "ALTER TABLE guild_config ADD COLUMN bot_owner_id INTEGER",
+                "ALTER TABLE guild_config ADD COLUMN daily_points_enabled INTEGER DEFAULT 1",
+                "ALTER TABLE guild_config ADD COLUMN vote_urls TEXT",
+            ]:
+                try:
+                    await db.execute(migration_sql)
+                except aiosqlite.OperationalError:
+                    pass  # La columna ya existe
 
             # Tabla Scouts
             await db.execute("""

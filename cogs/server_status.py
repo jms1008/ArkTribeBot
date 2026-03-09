@@ -9,27 +9,47 @@ import logging
 # Configuración de Logging
 logger = logging.getLogger("ArkTribeBot")
 
-AUTHORIZED_ADMIN_ID = 290904414452056064
 
-# Diccionario de Servidores (IP:Port)
-SERVERS = {
-    "Hub": ("24.157.220.28", 21000),
-    "Valguero": ("24.157.220.28", 21023),
-    "Scorched Earth": ("24.157.220.28", 21012),
-    "Crystal Isles": ("24.157.220.28", 21011),
-    "Lost Island": ("24.157.220.28", 21010),
-    "Gen1": ("24.157.220.28", 21009),
-    "The Island": ("24.157.220.28", 21008),
-    "Extinction": ("24.157.220.28", 21007),
-    "Aberration": ("24.157.220.28", 21006),
-    "Gen2": ("24.157.220.28", 21005),
-    "Fjordur": ("24.157.220.28", 21004),
-    "The Center": ("24.157.220.28", 21003),
-    "Ragnarok": ("24.157.220.28", 21001),
-}
+def parse_battlemetrics(bm_string: str) -> dict:
+    """Parsea el campo battlemetrics_urls del formato 'MapName|IP:PORT,Map2|IP:PORT2'.
 
-# Creación de opciones para el comando (Autocomplete)
-SERVER_CHOICES = [app_commands.Choice(name=name, value=name) for name in SERVERS.keys()]
+    Devuelve un diccionario {nombre_mapa: (ip, puerto)}.
+    """
+    servers = {}
+    if not bm_string:
+        return servers
+    for entry in bm_string.split(","):
+        entry = entry.strip()
+        if "|" not in entry:
+            continue
+        parts = entry.split("|", 1)
+        if len(parts) != 2:
+            continue
+        map_name = parts[0].strip()
+        address_str = parts[1].strip()
+        if ":" not in address_str:
+            continue
+        addr_parts = address_str.rsplit(":", 1)
+        try:
+            ip = addr_parts[0].strip()
+            port = int(addr_parts[1].strip())
+            servers[map_name] = (ip, port)
+        except (ValueError, IndexError):
+            continue
+    return servers
+
+
+async def get_guild_servers(bot, guild_id: int) -> dict:
+    """Recupera el diccionario de servidores configurados para un Guild desde la Base de Datos."""
+    async with aiosqlite.connect(bot.db_name) as db:
+        c = await db.execute(
+            "SELECT battlemetrics_urls FROM guild_config WHERE guild_id = ?",
+            (guild_id,),
+        )
+        row = await c.fetchone()
+    if row and row[0]:
+        return parse_battlemetrics(row[0])
+    return {}
 
 
 class ServerStatus(commands.Cog):
@@ -43,12 +63,12 @@ class ServerStatus(commands.Cog):
         self.status_loop.cancel()
         self.global_status_loop.cancel()
 
-    async def get_server_embed(self, server_name):
+    async def get_server_embed(self, server_name: str, servers: dict):
         """Genera el Embed con el estado del servidor."""
-        if server_name not in SERVERS:
+        if server_name not in servers:
             return None
 
-        ip, port = SERVERS[server_name]
+        ip, port = servers[server_name]
         address = (ip, port)
 
         try:
@@ -99,24 +119,31 @@ class ServerStatus(commands.Cog):
             embed.set_footer(text="Se reintentará en 5 minutos.")
             return embed
 
+    async def mapa_autocomplete(self, interaction: discord.Interaction, current: str):
+        """Autocomplete dinámico basado en los servidores configurados en el Guild."""
+        servers = await get_guild_servers(self.bot, interaction.guild_id)
+        return [
+            app_commands.Choice(name=name, value=name)
+            for name in servers.keys()
+            if current.lower() in name.lower()
+        ][:25]
+
     @app_commands.command(
         name="status",
         description="Muestra el estado de un servidor de ARK (consulta única).",
     )
     @app_commands.describe(mapa="Selecciona el servidor/mapa a consultar")
-    @app_commands.choices(mapa=SERVER_CHOICES)
-    async def status(
-        self, interaction: discord.Interaction, mapa: app_commands.Choice[str]
-    ):
+    @app_commands.autocomplete(mapa=mapa_autocomplete)
+    async def status(self, interaction: discord.Interaction, mapa: str):
         await interaction.response.defer()
-        server_name = mapa.value
-
-        embed = await self.get_server_embed(server_name)
+        servers = await get_guild_servers(self.bot, interaction.guild_id)
+        embed = await self.get_server_embed(mapa, servers)
         if embed:
             await interaction.followup.send(embed=embed)
         else:
             await interaction.followup.send(
-                "❌ Servidor no configurado.", ephemeral=True
+                "❌ Servidor no configurado. Usa `/inicio_ark` para añadir tus servidores.",
+                ephemeral=True,
             )
 
     @app_commands.command(
@@ -124,11 +151,8 @@ class ServerStatus(commands.Cog):
         description="Crea un mensaje que se actualiza cada 2 minutos con el estado.",
     )
     @app_commands.describe(mapa="Selecciona el servidor/mapa para monitorizar")
-    @app_commands.choices(mapa=SERVER_CHOICES)
-    # @app_commands.default_permissions(administrator=True) # Check manual para permitir ID específico
-    async def status_permanente(
-        self, interaction: discord.Interaction, mapa: app_commands.Choice[str]
-    ):
+    @app_commands.autocomplete(mapa=mapa_autocomplete)
+    async def status_permanente(self, interaction: discord.Interaction, mapa: str):
         if not await interaction.client.is_authorized_admin(interaction):
             await interaction.response.send_message(
                 "❌ **ACCESO DENEGADO.**", ephemeral=True
@@ -136,9 +160,8 @@ class ServerStatus(commands.Cog):
             return
 
         await interaction.response.defer()
-        server_name = mapa.value
-
-        embed = await self.get_server_embed(server_name)
+        servers = await get_guild_servers(self.bot, interaction.guild_id)
+        embed = await self.get_server_embed(mapa, servers)
         if not embed:
             await interaction.followup.send(
                 "❌ Error al generar el estado inicial.", ephemeral=True
@@ -152,14 +175,12 @@ class ServerStatus(commands.Cog):
         async with aiosqlite.connect(self.bot.db_name) as db:
             await db.execute(
                 """
-                INSERT INTO status_messages (channel_id, message_id, map_name)
-                VALUES (?, ?, ?)
+                INSERT INTO status_messages (guild_id, channel_id, message_id, map_name)
+                VALUES (?, ?, ?, ?)
             """,
-                (interaction.channel_id, message.id, server_name),
+                (interaction.guild_id, interaction.channel_id, message.id, mapa),
             )
             await db.commit()
-
-        # Nota: El seguimiento (followup) del mensaje persistente actúa como confirmación inicial
 
     @tasks.loop(minutes=2)
     async def status_loop(self):
@@ -172,17 +193,20 @@ class ServerStatus(commands.Cog):
         async with aiosqlite.connect(self.bot.db_name) as db:
             db.row_factory = aiosqlite.Row
             cursor = await db.execute(
-                "SELECT id, channel_id, message_id, map_name FROM status_messages"
+                "SELECT id, guild_id, channel_id, message_id, map_name FROM status_messages"
             )
             rows = await cursor.fetchall()
 
             for row in rows:
                 row_id = row["id"]
+                guild_id = row["guild_id"]
                 channel_id = row["channel_id"]
                 message_id = row["message_id"]
                 map_name = row["map_name"]
 
                 try:
+                    # Carga dinámica de servidores configurados para este Guild
+                    servers = await get_guild_servers(self.bot, guild_id)
                     channel = self.bot.get_channel(
                         channel_id
                     ) or await self.bot.fetch_channel(channel_id)
@@ -194,9 +218,7 @@ class ServerStatus(commands.Cog):
                         continue
 
                     message = await channel.fetch_message(message_id)
-                    new_embed = await self.get_server_embed(
-                        map_name
-                    )  # Llamada reutilizable para generar el estado actualizado
+                    new_embed = await self.get_server_embed(map_name, servers)
 
                     if new_embed:
                         await message.edit(embed=new_embed)
@@ -225,11 +247,17 @@ class ServerStatus(commands.Cog):
                     )
                 await db.commit()
 
-    async def get_global_status_embed(self):
-        """Genera un Embed unificado para todos los servidores, ordenado e inteligentemente agrupado."""
+    async def get_global_status_embed(self, servers: dict):
+        """Genera un Embed unificado para todos los servidores del Guild, ordenado por jugadores."""
         embed = discord.Embed(
             title="🌐 Estado Global de Servidores de ARK", color=discord.Color.blue()
         )
+
+        if not servers:
+            embed.description = (
+                "⚠️ No hay servidores configurados. Usa `/inicio_ark` para añadirlos."
+            )
+            return embed
 
         async def fetch_server(name, ip, port):
             address = (ip, port)
@@ -266,8 +294,10 @@ class ServerStatus(commands.Cog):
             except Exception as e:
                 return {"name": name, "error": str(e)}
 
-        tasks = [fetch_server(name, ip, port) for name, (ip, port) in SERVERS.items()]
-        results = await asyncio.gather(*tasks)
+        fetch_tasks = [
+            fetch_server(name, ip, port) for name, (ip, port) in servers.items()
+        ]
+        results = await asyncio.gather(*fetch_tasks)
 
         populated_servers = []
         empty_servers = []
@@ -337,16 +367,17 @@ class ServerStatus(commands.Cog):
 
         await interaction.response.defer()
 
-        embed = await self.get_global_status_embed()
+        servers = await get_guild_servers(self.bot, interaction.guild_id)
+        embed = await self.get_global_status_embed(servers)
         message = await interaction.followup.send(embed=embed)
 
         async with aiosqlite.connect(self.bot.db_name) as db:
             await db.execute(
                 """
-                INSERT INTO status_online_messages (channel_id, message_id)
-                VALUES (?, ?)
+                INSERT INTO status_online_messages (guild_id, channel_id, message_id)
+                VALUES (?, ?, ?)
             """,
-                (interaction.channel_id, message.id),
+                (interaction.guild_id, interaction.channel_id, message.id),
             )
             await db.commit()
 
@@ -358,17 +389,24 @@ class ServerStatus(commands.Cog):
         async with aiosqlite.connect(self.bot.db_name) as db:
             db.row_factory = aiosqlite.Row
             cursor = await db.execute(
-                "SELECT id, channel_id, message_id FROM status_online_messages"
+                "SELECT id, guild_id, channel_id, message_id FROM status_online_messages"
             )
             rows = await cursor.fetchall()
 
             if not rows:
                 return
 
-            new_embed = await self.get_global_status_embed()
+            # Generar un embed por Guild, agrupando los mensajes
+            guild_embeds = {}
+            for row in rows:
+                guild_id = row["guild_id"]
+                if guild_id not in guild_embeds:
+                    servers = await get_guild_servers(self.bot, guild_id)
+                    guild_embeds[guild_id] = await self.get_global_status_embed(servers)
 
             for row in rows:
                 row_id = row["id"]
+                guild_id = row["guild_id"]
                 channel_id = row["channel_id"]
                 message_id = row["message_id"]
 
@@ -381,6 +419,7 @@ class ServerStatus(commands.Cog):
                         continue
 
                     message = await channel.fetch_message(message_id)
+                    new_embed = guild_embeds.get(guild_id)
 
                     if new_embed:
                         await message.edit(embed=new_embed)

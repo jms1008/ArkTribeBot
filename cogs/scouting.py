@@ -4,23 +4,7 @@ from discord.ext import commands
 import aiosqlite
 import asyncio
 import logging
-
-# Definición de opciones de mapas soportados
-MAP_CHOICES = [
-    app_commands.Choice(name="The Hub", value="Hub"),
-    app_commands.Choice(name="Valguero", value="Valguero"),
-    app_commands.Choice(name="Scorched Earth", value="Scorched Earth"),
-    app_commands.Choice(name="Crystal Isles", value="Crystal Isles"),
-    app_commands.Choice(name="Lost Island", value="Lost Island"),
-    app_commands.Choice(name="Gen1", value="Gen1"),
-    app_commands.Choice(name="The Island", value="The Island"),
-    app_commands.Choice(name="Extinction", value="Extinction"),
-    app_commands.Choice(name="Aberration", value="Aberration"),
-    app_commands.Choice(name="Gen2", value="Gen2"),
-    app_commands.Choice(name="Fjordur", value="Fjordur"),
-    app_commands.Choice(name="The Center", value="The Center"),
-    app_commands.Choice(name="Ragnarok", value="Ragnarok"),
-]
+from cogs.server_status import get_guild_servers
 
 
 class ScoutView(discord.ui.View):
@@ -327,10 +311,21 @@ class Scouting(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
+    async def mapa_autocomplete(
+        self, interaction: discord.Interaction, current: str
+    ) -> list[app_commands.Choice[str]]:
+        """Autocomplete dinámico de mapas basado en los servidores del Guild."""
+        servers = await get_guild_servers(self.bot, interaction.guild_id)
+        return [
+            app_commands.Choice(name=name, value=name)
+            for name in servers.keys()
+            if current.lower() in name.lower()
+        ][:25]
+
     @app_commands.command(
         name="scout_add", description="Registra una base enemiga (Con imagen)."
     )
-    @app_commands.choices(mapa=MAP_CHOICES)
+    @app_commands.autocomplete(mapa=mapa_autocomplete)
     @app_commands.describe(
         tribu="Nombre de la tribu enemiga",
         mapa="Mapa donde se encuentra",
@@ -343,7 +338,7 @@ class Scouting(commands.Cog):
         self,
         interaction: discord.Interaction,
         tribu: str,
-        mapa: app_commands.Choice[str],
+        mapa: str,
         coords: str,
         amenaza: int,
         imagen: discord.Attachment = None,
@@ -386,14 +381,12 @@ class Scouting(commands.Cog):
                 INSERT INTO scouts (tribu_enemiga, mapa, coordenadas, nivel_amenaza, url_imagen, notas)
                 VALUES (?, ?, ?, ?, ?, ?)
             """,
-                (tribu, mapa.value, coords, amenaza, url_imagen, notas),
+                (tribu, mapa, coords, amenaza, url_imagen, notas),
             )
             await db.commit()
 
-        await interaction.followup.send(
-            f"✅ Base de **{tribu}** ({mapa.value}) registrada."
-        )
-        await update_scout_dashboards(self.bot, mapa.value)
+        await interaction.followup.send(f"✅ Base de **{tribu}** ({mapa}) registrada.")
+        await update_scout_dashboards(self.bot, mapa)
 
         await asyncio.sleep(5)
         try:
@@ -406,16 +399,14 @@ class Scouting(commands.Cog):
         name="scout_list",
         description="Menú de Scouting: Sin argumentos = Dashboard PÚBLICO. Con mapa = Vista PRIVADA.",
     )
-    @app_commands.choices(mapa=MAP_CHOICES)
+    @app_commands.autocomplete(mapa=mapa_autocomplete)
     @app_commands.describe(mapa="Filtrar por mapa (Opcional)")
-    async def scout_list(
-        self, interaction: discord.Interaction, mapa: app_commands.Choice[str] = None
-    ):
+    async def scout_list(self, interaction: discord.Interaction, mapa: str = None):
         # División lógica según presencia de parámetro de mapa
         # Sin mapa: Modo Global Público (Dashboard persistente)
         # Con mapa: Modo Privado Temporal (Snapshot efímero)
 
-        target_map = mapa.value if mapa else "Global"
+        target_map = mapa if mapa else "Global"
         ephemeral_mode = True if mapa else False
 
         # Recuperación de registros de la Base de Datos

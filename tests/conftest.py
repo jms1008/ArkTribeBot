@@ -52,6 +52,12 @@ def mock_bot():
                 await db.execute(
                     "CREATE TABLE IF NOT EXISTS point_subscriptions (user_id INTEGER PRIMARY KEY, hour INTEGER, timezone TEXT)"
                 )
+                await db.execute(
+                    "CREATE TABLE IF NOT EXISTS guild_config (guild_id INTEGER PRIMARY KEY, sos_channel_id INTEGER, log_channel_id INTEGER, upload_channel_id INTEGER, update_interval INTEGER DEFAULT 2, admin_role_id INTEGER, bot_owner_id INTEGER, battlemetrics_urls TEXT, daily_points_enabled INTEGER DEFAULT 1, vote_urls TEXT)"
+                )
+                await db.execute(
+                    "CREATE TABLE IF NOT EXISTS daily_points_users (user_id INTEGER PRIMARY KEY, alert_hour INTEGER, timezone TEXT, last_sent_date TEXT)"
+                )
 
                 # Tablas de Eventos
                 await db.execute(
