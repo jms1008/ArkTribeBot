@@ -118,7 +118,7 @@ class Admin(commands.Cog):
         intervalo_act="Frecuencia (minutos) para actualizar dashboards (Ej: 2, 5, 10).",
         rol_admin="Rol de Discord autorizado para usar comandos protegidos del bot.",
         propietario_bot="Tu usuario de Discord. Será el propietario permanente de este bot en este servidor.",
-        battlemetrics="Opcional. URLs o IDs para trackeo de servidores.",
+        battlemetrics="Servidores del clúster. Formato: 'Mapa|IP:Puerto' separados por comas. Ej: Fjordur|1.2.3.4:21004,Gen2|1.2.3.4:21005",
     )
     async def inicio_ark(
         self,

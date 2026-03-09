@@ -167,6 +167,71 @@ class ArkTribeBot(commands.Bot):
         except Exception as e:
             logger.error(f"Error registrando vistas persistentes de Eventos: {e}")
 
+    async def on_guild_join(self, guild: discord.Guild):
+        """Bienvenida automática al unirse a un nuevo servidor."""
+        # Buscar el canal de sistema o el primer canal de texto accesible
+        canal = guild.system_channel
+        if not canal or not canal.permissions_for(guild.me).send_messages:
+            canal = next(
+                (
+                    ch
+                    for ch in guild.text_channels
+                    if ch.permissions_for(guild.me).send_messages
+                ),
+                None,
+            )
+
+        if not canal:
+            return
+
+        embed = discord.Embed(
+            title="🦖 ¡ArkTribeBot ha llegado al servidor!",
+            description=(
+                "Gracias por añadirme. Soy un bot especializado en la gestión de clanes de **ARK: Survival Evolved**.\n\n"
+                "Antes de empezar, el dueño del servidor o un administrador debe ejecutar la **configuración inicial**."
+            ),
+            color=discord.Color.from_rgb(35, 135, 80),
+        )
+
+        embed.add_field(
+            name="⚙️ Configuración inicial",
+            value=(
+                "`/inicio_ark` — Vincula el bot a este servidor (canales, rol admin, servidores Ark, propietario del bot).\n"
+                "Este comando **debe ejecutarse primero** para que el resto de funciones estén disponibles."
+            ),
+            inline=False,
+        )
+        embed.add_field(
+            name="📋 Comandos de configuración",
+            value=(
+                "`/config_puntos` — Activa/desactiva los recordatorios de puntos diarios y configura los enlaces de voto.\n"
+                "`/puntos_diarios` — Cada jugador activa sus propias notificaciones diarias.\n"
+                "`/status_permanente` — Dashboard de estado de servidores (auto-actualizable).\n"
+                "`/status_online` — Vista global de todos los servidores del clúster."
+            ),
+            inline=False,
+        )
+        embed.add_field(
+            name="📖 Funcionalidades principales",
+            value=(
+                "• **Scouting** — Registro de bases enemigas con imágenes y coordenadas.\n"
+                "• **KDA Tracker** — Seguimiento automático de kills y muertes vía logs del juego.\n"
+                "• **K4Ultra** — Seguimiento de sesiones y tiempo de juego por jugador y mapa.\n"
+                "• **Blacklist** — Lista negra de jugadores hostiles.\n"
+                "• **Crianza** — Gestión de líneas de dinos y estadísticas.\n"
+                "• **SOS** — Sistema de alertas de raid en tiempo real.\n"
+                "• **Eventos** — Sistema de votaciones y eventos de tribu."
+            ),
+            inline=False,
+        )
+        embed.set_footer(text="ArkTribeBot v1.2.0 • github.com/jms1008/ArkTribeBot")
+
+        try:
+            await canal.send(embed=embed)
+            logger.info(f"Mensaje de bienvenida enviado en {guild.name} ({guild.id})")
+        except Exception as e:
+            logger.error(f"Error enviando embed de bienvenida en {guild.name}: {e}")
+
     async def on_message(self, message: discord.Message):
         # Ignorar mensajes del propio bot
         if message.author.id == self.user.id:
