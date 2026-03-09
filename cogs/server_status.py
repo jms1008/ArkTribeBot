@@ -28,14 +28,14 @@ SERVERS = {
     "Ragnarok": ("24.157.220.28", 21001),
 }
 
-# Crear opciones para el comando
+# Creación de opciones para el comando (Autocomplete)
 SERVER_CHOICES = [app_commands.Choice(name=name, value=name) for name in SERVERS.keys()]
 
 
 class ServerStatus(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        # Iniciar la tarea en segundo plano al cargar el Cog de forma segura
+        # Inicio seguro de las tareas en segundo plano al cargar el Cog
         self.status_loop.start()
         self.global_status_loop.start()
 
@@ -52,7 +52,7 @@ class ServerStatus(commands.Cog):
         address = (ip, port)
 
         try:
-            # Ejecutar consultas
+            # Ejecución asíncrona de consultas A2S
             info = await asyncio.wait_for(
                 asyncio.to_thread(a2s.info, address), timeout=5.0
             )
@@ -71,7 +71,7 @@ class ServerStatus(commands.Cog):
 
             player_list = ", ".join(valid_players)
 
-            # Gestión de lista vacía
+            # Manejo de servidor sin jugadores activos
             if p_count == 0:
                 player_list = "Nadie conectado."
 
@@ -148,10 +148,10 @@ class ServerStatus(commands.Cog):
             )
             return
 
-        # Enviar mensaje inicial
+        # Envío del mensaje inicial
         message = await interaction.followup.send(embed=embed)
 
-        # Guardar en Base de Datos
+        # Persistencia del mensaje en Base de Datos
         async with aiosqlite.connect(self.bot.db_name) as db:
             await db.execute(
                 """
@@ -162,13 +162,12 @@ class ServerStatus(commands.Cog):
             )
             await db.commit()
 
-        # Confirmación efímera (opcional, o editar el mensaje original para quitarla si se prefiere limpieza)
-        # Aquí el mensaje persistente YA es el mensaje de estado.
+        # Nota: El seguimiento (followup) del mensaje persistente actúa como confirmación inicial
 
     @tasks.loop(minutes=2)
     async def status_loop(self):
         """Tarea en segundo plano que actualiza los mensajes registrados."""
-        # Esperar a que el bot esté listo antes de empezar el loop real
+        # Espera de inicialización completa del bot
         await self.bot.wait_until_ready()
 
         messages_to_remove = []
@@ -200,7 +199,7 @@ class ServerStatus(commands.Cog):
                     message = await channel.fetch_message(message_id)
                     new_embed = await self.get_server_embed(
                         map_name
-                    )  # Reutilizamos la lógica
+                    )  # Llamada reutilizable para generar el estado actualizado
 
                     if new_embed:
                         await message.edit(embed=new_embed)
@@ -209,7 +208,7 @@ class ServerStatus(commands.Cog):
                         )
 
                 except discord.NotFound:
-                    # El mensaje fue borrado manualmente
+                    # Intercepción: El mensaje fue eliminado manualmente de Discord
                     logger.warning(
                         f"Mensaje {message_id} no encontrado. Eliminando de DB."
                     )
@@ -221,7 +220,7 @@ class ServerStatus(commands.Cog):
                 except Exception as e:
                     logger.error(f"Error actualizando mensaje {row_id}: {e}")
 
-            # Limpiar mensajes muertos
+            # Purgado de registros inválidos en Base de Datos
             if messages_to_remove:
                 for msg_id in messages_to_remove:
                     await db.execute(
@@ -238,7 +237,7 @@ class ServerStatus(commands.Cog):
         async def fetch_server(name, ip, port):
             address = (ip, port)
             try:
-                # Add a timeout so A2S query doesn't hang forever
+                # Límite de tiempo en la consulta A2S para prevenir bloqueos de la rutina
                 info = await asyncio.wait_for(
                     asyncio.to_thread(a2s.info, address), timeout=5.0
                 )
@@ -252,7 +251,7 @@ class ServerStatus(commands.Cog):
                 player_list = ", ".join(valid_players)
                 ping_ms = int(info.ping * 1000)
 
-                # Gestión de lista vacía
+                # Manejo de respuesta vacía (0 jugadores)
                 if p_count == 0:
                     player_list = "Nadie conectado."
 
@@ -292,10 +291,10 @@ class ServerStatus(commands.Cog):
                 else:
                     empty_servers.append(res)
 
-        # Ordenar poblados de mayor a menor cantidad de jugadores
+        # Clasificación de servidores activos por afluencia de jugadores (Descendente)
         populated_servers.sort(key=lambda x: x["players"], reverse=True)
 
-        # 1. Servidores Poblados (Aparecen primero, con detalle completo)
+        # 1. Servidores Poblados (Prioridad de visualización con detalle completo)
         for s in populated_servers:
             embed.add_field(
                 name=f"🟢 {s['name']} - {s['players']}/{s['max_players']} Jugadores | 📶 {s['ping']}ms",
@@ -303,7 +302,7 @@ class ServerStatus(commands.Cog):
                 inline=False,
             )
 
-        # 2. Servidores Vacíos (Agrupados para ahorrar espacio)
+        # 2. Servidores Vacíos (Agrupación para condensación de espacio)
         if empty_servers:
             empty_list_str = "\n".join(
                 [f"🔸 **{s['name']}** - `{s['ping']}ms`" for s in empty_servers]
@@ -312,7 +311,7 @@ class ServerStatus(commands.Cog):
                 name="🟡 Servidores Vacíos (Online)", value=empty_list_str, inline=False
             )
 
-        # 3. Servidores Offline
+        # 3. Servidores Inactivos (Offline/Timeout)
         if offline_servers:
             offline_list_str = "\n".join([f"❌ **{s}**" for s in offline_servers])
             embed.add_field(

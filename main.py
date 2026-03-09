@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 import logging
 from datetime import datetime
 
-# --- CONFIGURACIÓN DE LOGGING (Relative Path) ---
+# --- CONFIGURACIÓN DE LOGGING ---
 # Obtener la ruta del directorio donde está main.py
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 LOG_DIR = os.path.join(BASE_DIR, "logs")
@@ -33,7 +33,7 @@ logging.basicConfig(
     ],
 )
 
-# Silenciar los logs de discord.py que saturan el archivo (ej: HTTP requests de editar mensajes)
+# Silenciar logs de discord.py para evitar saturación (ej. HTTP requests)
 logging.getLogger("discord.http").setLevel(logging.WARNING)
 logging.getLogger("discord.gateway").setLevel(logging.WARNING)
 logging.getLogger("discord.webhook").setLevel(logging.WARNING)
@@ -46,7 +46,7 @@ load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
 DB_NAME = "tribe_data.db"
 
-# Definir Intents
+# Configuración de Intents
 intents = discord.Intents.default()
 intents.message_content = True
 
@@ -83,9 +83,9 @@ class DismissAlarmView(discord.ui.View):
     async def dismiss_btn(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
-        # Borrar el mensaje de alarma
+        # Eliminar mensaje de alarma
         await interaction.message.delete()
-        # Enviar respuesta efímera para que Discord no dé error de interacción fallida
+        # Respuesta efímera para evitar error de interacción en Discord
         await interaction.response.send_message(
             "Alarma silenciada y eliminada.", ephemeral=True
         )
@@ -111,7 +111,7 @@ class ArkTribeBot(commands.Bot):
         # Registrar Listener para Logging de Comandos
         self.tree.on_command_completion = self.on_app_command_completion
 
-        # Registrar Vistas Persistentes
+        # Registro de Vistas Persistentes
         self.add_view(TodoView(self))
         self.add_view(BlacklistView(self))
         self.add_view(ScoutView(self, map_filter="Global"))
@@ -128,7 +128,7 @@ class ArkTribeBot(commands.Bot):
 
         self.add_view(DismissAlarmView())
 
-        # Registrar vistas dinámicas para encuestas de Eventos activos
+        # Registro de vistas dinámicas para Eventos activos
         try:
             from cogs.events import EventPollView
 
@@ -141,11 +141,11 @@ class ArkTribeBot(commands.Bot):
             logger.error(f"Error registrando vistas persistentes de Eventos: {e}")
 
     async def on_message(self, message: discord.Message):
-        # No procesar mensajes de sí mismo
+        # Ignorar mensajes del propio bot
         if message.author.id == self.user.id:
             return
 
-        # Para los webhooks o bots que mandan logs, a veces el texto viene en los Embeds
+        # Extraer texto de Embeds enviados por webhooks/bots de logs
         content_lower = message.content.lower()
         if message.embeds:
             for embed in message.embeds:
@@ -154,8 +154,8 @@ class ArkTribeBot(commands.Bot):
                 if embed.title:
                     content_lower += " " + embed.title.lower()
 
-        # Asegurar que leemos sin case sensitive
-        # A veces @policia es una mención de rol real (<@&ID>) y el emoji del cuchillo es literal 🔪
+        # Lectura case-insensitive
+        # Detección de mención al rol @policia y emoji 🔪
         contains_policia = "@policia" in content_lower or "<@&" in content_lower
         contains_knife = (
             "was :knife: by" in content_lower
@@ -167,12 +167,12 @@ class ArkTribeBot(commands.Bot):
         if contains_knife:
             import re
 
-            # Buscar el contenido original formateado
+            # Extraer contenido original formateado
             texto_original = message.content
             if not texto_original and message.embeds and message.embeds[0].description:
                 texto_original = message.embeds[0].description
 
-            # Procesar SOS de Policía
+            # Procesamiento de SOS de Policía
             if contains_policia:
                 map_match = re.search(r"\((.*?)\)", texto_original)
                 map_name = map_match.group(1) if map_match else "Desconocido"
@@ -189,16 +189,16 @@ class ArkTribeBot(commands.Bot):
                 except Exception as e:
                     logger.error(f"Error enviando SOS de policia: {e}")
 
-            # Procesar K/D/A Tracker (Manco)
+            # Procesamiento de K/D/A Tracker
             # Formato esperado: @here (Gn2) Day 1, 23:28: Tribemember Lacomeabuelas - Lvl 2 was :knife: by Larry Capija - Lvl 105 (UNNAMED)!
             try:
-                # Normalizamos texto para facilitar regex (quitar comillas, arreglar cuchillo)
+                # Normalización de texto para regex
                 t_clean = texto_original.replace(":knife:", "🔪").replace(
                     "was 🔪 by", "fue 🔪 por"
                 )
 
                 # Buscamos: Tribemember [Victima] - Lvl [X] fue 🔪 por [Asesino] - Lvl [Y]
-                # Modificamos la regex para capturar nombres que pueden contener espacios o guiones
+                # Regex para capturar nombres con espacios o guiones
                 match = re.search(
                     r"Tribemember (.*?) - Lvl.*?fue 🔪 por (.*?) - Lvl",
                     t_clean,
@@ -210,7 +210,7 @@ class ArkTribeBot(commands.Bot):
                     asesino_char = match.group(2).strip()
 
                     async with aiosqlite.connect(self.db_name) as db:
-                        # Convertir personajes in-game a Jugadores Reales
+                        # Mapeo de personajes in-game a jugadores reales
                         c1 = await db.execute(
                             "SELECT player_name FROM tribe_characters WHERE character_name = ?",
                             (victima_char,),
@@ -227,14 +227,14 @@ class ArkTribeBot(commands.Bot):
 
                         made_changes = False
 
-                        # Si ambos existen, es un TeamKill (lo ignoramos)
+                        # Ignorar TeamKills (fuego amigo)
                         if victima_player and asesino_player:
                             logger.info(
                                 f"[KDA] Fuego amigo detectado: {asesino_player} mató a {victima_player}. Ignorado."
                             )
 
                         else:
-                            # 1. ¿Murió alguien de la tribu?
+                            # Registro de bajas sufridas
                             if victima_player:
                                 await db.execute(
                                     "INSERT INTO tribe_kda (player_name, deaths) VALUES (?, 1) ON CONFLICT(player_name) DO UPDATE SET deaths = deaths + 1",
@@ -245,7 +245,7 @@ class ArkTribeBot(commands.Bot):
                                 )
                                 made_changes = True
 
-                            # 2. ¿Mató alguien de la tribu?
+                            # Registro de bajas causadas
                             if asesino_player:
                                 await db.execute(
                                     "INSERT INTO tribe_kda (player_name, kills) VALUES (?, 1) ON CONFLICT(player_name) DO UPDATE SET kills = kills + 1",
@@ -258,7 +258,7 @@ class ArkTribeBot(commands.Bot):
 
                         if made_changes:
                             await db.commit()
-                            # Disparar actualización de dashboards
+                            # Actualización de dashboards K/D/A
                             try:
                                 warfare_cog = self.get_cog("Warfare")
                                 if warfare_cog and hasattr(
@@ -298,7 +298,7 @@ class ArkTribeBot(commands.Bot):
 
     async def on_ready(self):
         logger.info(f"Conectado como {self.user} (ID: {self.user.id})")
-        # Discord a veces trunca "Jugando a..." si es largo, usamos Custom Activity para que se vea completo.
+        # Uso de Custom Activity para evitar el truncamiento de "Jugando a..." en Discord
         await self.change_presence(
             activity=discord.CustomActivity(name="ARK: Survival Evolved | By @k4nekis")
         )

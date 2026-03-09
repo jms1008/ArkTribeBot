@@ -5,7 +5,7 @@ import aiosqlite
 import asyncio
 import logging
 
-# Lista de Mapas
+# Definición de opciones de mapas soportados
 MAP_CHOICES = [
     app_commands.Choice(name="The Hub", value="Hub"),
     app_commands.Choice(name="Valguero", value="Valguero"),
@@ -56,7 +56,7 @@ async def update_scout_dashboards(bot, target_map=None):
 
     async with aiosqlite.connect(bot.db_name) as db:
         db.row_factory = aiosqlite.Row
-        # Actualizamos Dashboards Globales Y Dashboards del mapa específico
+        # Actualización dual: Dashboards Globales y Dashboards del mapa afectado
         if target_map:
             cursor = await db.execute(
                 "SELECT * FROM scout_messages WHERE map_filter = ? OR map_filter = 'Global'",
@@ -74,7 +74,7 @@ async def update_scout_dashboards(bot, target_map=None):
     for dash in dashboards:
         map_filter = dash["map_filter"]
 
-        # Construir Embed
+        # Construcción de Embed
         async with aiosqlite.connect(bot.db_name) as db:
             db.row_factory = aiosqlite.Row
             if map_filter == "Global":
@@ -107,14 +107,14 @@ async def update_scout_dashboards(bot, target_map=None):
                     break
 
                 amenaza_str = "⭐" * row["nivel_amenaza"]
-                # Si es Global, añadir prefijo de mapa
+                # Adición de prefijo de mapa (Solo vista Global)
                 prefix = f"**[{row['mapa']}]** " if map_filter == "Global" else ""
 
                 link_img = ""
-                # "N/A" es cuando no hay imagen. Si es un número (message_id) o URL vieja, intentamos conseguir el enlace fresco
+                # Resolución de imagen activa (A partir de Message ID de backup o URL histórica)
                 if row["url_imagen"] and row["url_imagen"] != "N/A":
                     try:
-                        # Si es un message_id guardado (cifras puras)
+                        # Detección de Message ID numérico (Dato purgado)
                         if str(row["url_imagen"]).strip().isdigit():
                             msg_id = int(str(row["url_imagen"]).strip())
                             thread = bot.get_channel(
@@ -123,10 +123,10 @@ async def update_scout_dashboards(bot, target_map=None):
                             if thread:
                                 backup_msg = await thread.fetch_message(msg_id)
                                 if backup_msg.attachments:
-                                    # Formato clickeable
+                                    # Generación de hipervínculo clickeable
                                     link_img = f" [[📷 Ver Imagen]({backup_msg.attachments[0].url})]"
                         else:
-                            # Retrocompatibilidad
+                            # Mantenimiento de retrocompatibilidad con URLs antiguas
                             link_img = f" [[📷 Ver Imagen]({row['url_imagen']})]"
                     except Exception as e:
                         logging.getLogger("ArkTribeBot").warning(
@@ -161,7 +161,7 @@ async def update_scout_dashboards(bot, target_map=None):
         except Exception as e:
             print(f"Error update scout dash {dash['id']}: {e}")
 
-    # Limpieza
+    # Limpieza de registros inactivos o mensajes borrados
     if messages_to_remove:
         async with aiosqlite.connect(bot.db_name) as db:
             for mid in messages_to_remove:
@@ -350,7 +350,7 @@ class Scouting(commands.Cog):
                 if thread:
                     f = await imagen.to_file()
                     upload_msg = await thread.send(file=f)
-                    # En lugar de guardar .url (que caduca), guardamos la ID del mensaje backup
+                    # Almacenamiento de ID (backup) para evitar caducidad de URLs provistas por Discord
                     url_imagen = str(upload_msg.id)
                 else:
                     url_imagen = imagen.url
@@ -391,14 +391,14 @@ class Scouting(commands.Cog):
     async def scout_list(
         self, interaction: discord.Interaction, mapa: app_commands.Choice[str] = None
     ):
-        # Lógica dividida:
-        # Si NO hay mapa -> Modo Global Público (Dashboard persistente)
-        # Si SI hay mapa -> Modo Privado (Snapshot ephemeral)
+        # División lógica según presencia de parámetro de mapa
+        # Sin mapa: Modo Global Público (Dashboard persistente)
+        # Con mapa: Modo Privado Temporal (Snapshot efímero)
 
         target_map = mapa.value if mapa else "Global"
         ephemeral_mode = True if mapa else False
 
-        # Recuperar datos
+        # Recuperación de registros de la Base de Datos
         async with aiosqlite.connect(self.bot.db_name) as db:
             db.row_factory = aiosqlite.Row
             if target_map == "Global":
@@ -412,7 +412,7 @@ class Scouting(commands.Cog):
                 )
             rows = await cursor.fetchall()
 
-        # Crear Embed
+        # Creación del Embed principal
         if not rows:
             embed = discord.Embed(
                 title=f"📡 Scouting: {target_map}",
@@ -431,7 +431,7 @@ class Scouting(commands.Cog):
                     )
                     break
                 amenaza_str = "⭐" * row["nivel_amenaza"]
-                # Prefijo mapa si es Global
+                # Inserción de prefijo identificador de mapa (sólo Global)
                 prefix = f"**[{row['mapa']}]** " if target_map == "Global" else ""
 
                 link_img = ""
@@ -462,15 +462,15 @@ class Scouting(commands.Cog):
             if count < 20:
                 embed.set_footer(text="💡 Usa /scout_add para añadir una nueva base.")
 
-        # Crear Vista con botones
+        # Vinculación de vista interactiva (View)
         view = ScoutView(self.bot, target_map)
 
-        # Enviar mensaje
+        # Envío de la respuesta
         await interaction.response.send_message(
             embed=embed, view=view, ephemeral=ephemeral_mode
         )
 
-        # Si es modo Global (Público), lo guardamos para auto-updates.
+        # Persistencia en Modo Global para garantizar auto-actualizaciones
         if not ephemeral_mode:
             message = await interaction.original_response()
             async with aiosqlite.connect(self.bot.db_name) as db:

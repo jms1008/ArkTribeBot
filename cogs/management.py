@@ -43,7 +43,7 @@ class TodoView(discord.ui.View):
 
 async def update_all_dashboards(bot):
     """Actualiza todos los mensajes de lista de tareas registrados."""
-    # 1. Generar el nuevo Embed
+    # 1. Generación del nuevo Embed
     async with aiosqlite.connect(bot.db_name) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute("SELECT * FROM todos")
@@ -65,7 +65,7 @@ async def update_all_dashboards(bot):
 
     view = TodoView(bot)
 
-    # 2. Buscar mensajes y editar
+    # 2. Búsqueda y edición de mensajes registrados
     messages_to_remove = []
     async with aiosqlite.connect(bot.db_name) as db:
         db.row_factory = aiosqlite.Row
@@ -85,11 +85,13 @@ async def update_all_dashboards(bot):
                 else:
                     messages_to_remove.append(row["id"])
             except (discord.NotFound, discord.Forbidden):
-                messages_to_remove.append(row["id"])  # Mensaje borrado o sin permisos
+                messages_to_remove.append(
+                    row["id"]
+                )  # Inaccesible (borrado o sin permisos)
             except Exception as e:
                 print(f"Error actualizando dashboard {row['id']}: {e}")
 
-        # Limpiar
+        # Limpieza de registros inactivos
         if messages_to_remove:
             for mid in messages_to_remove:
                 await db.execute("DELETE FROM todo_messages WHERE id = ?", (mid,))
@@ -160,15 +162,15 @@ class ClaimTaskModal(discord.ui.Modal, title="Reclamar Tarea"):
             )
             await db.commit()
 
-        # Feedback temporal
+        # Envío de feedback temporal
         await interaction.response.send_message(
             f"✅ Has reclamado la tarea **#{t_id}**.", ephemeral=False
         )
 
-        # Actualizar dashboards
+        # Actualización de dashboards
         await update_all_dashboards(self.bot)
 
-        # Borrar feedback a los 5s
+        # Borrado del mensaje de feedback tras 5 segundos
         await asyncio.sleep(5)
         try:
             msg = await interaction.original_response()
@@ -235,15 +237,15 @@ class Management(commands.Cog):
             await db.execute("INSERT INTO todos (tarea) VALUES (?)", (tarea,))
             await db.commit()
 
-        # Feedback
+        # Envío de feedback
         await interaction.response.send_message(
             f"✅ Tarea añadida: **{tarea}**", ephemeral=False
         )
 
-        # Actualizar listas
+        # Actualización de listas (dashboards)
         await update_all_dashboards(self.bot)
 
-        # Borrar feedback
+        # Borrado del mensaje de feedback
         await asyncio.sleep(5)
         try:
             msg = await interaction.original_response()
@@ -255,7 +257,7 @@ class Management(commands.Cog):
         name="todo_list", description="Crea un panel de tareas auto-actualizable."
     )
     async def todo_list(self, interaction: discord.Interaction):
-        # Generar embed inicial
+        # Generación del Embed inicial
         async with aiosqlite.connect(self.bot.db_name) as db:
             db.row_factory = aiosqlite.Row
             cursor = await db.execute("SELECT * FROM todos")
@@ -279,7 +281,7 @@ class Management(commands.Cog):
         await interaction.response.send_message(embed=embed, view=view)
         message = await interaction.original_response()
 
-        # Registrar mensaje para updates futuros
+        # Registro del mensaje para futuras actualizaciones
         async with aiosqlite.connect(self.bot.db_name) as db:
             await db.execute(
                 "INSERT INTO todo_messages (channel_id, message_id) VALUES (?, ?)",

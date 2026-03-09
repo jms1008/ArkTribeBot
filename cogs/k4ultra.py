@@ -11,7 +11,7 @@ import json
 
 logger = logging.getLogger("ArkTribeBot")
 
-# Reuse SERVERS from server_status.py
+# Reutilización de constantes y dependencias de server_status
 
 
 class AddRelationshipModal(discord.ui.Modal, title="Añadir Relación"):
@@ -30,12 +30,12 @@ class AddRelationshipModal(discord.ui.Modal, title="Añadir Relación"):
         p1 = self.jugador1.value.strip()
         p2 = self.jugador2.value.strip()
 
-        # Normalize order so p1 < p2
+        # Normalización de orden alfabético
         if p1 > p2:
             p1, p2 = p2, p1
 
         async with aiosqlite.connect(self.bot.db_name) as db:
-            # Check if exists
+            # Verificación de existencia previa
             cursor = await db.execute(
                 "SELECT id FROM k4ultra_relationships WHERE player1 = ? AND player2 = ?",
                 (p1, p2),
@@ -73,7 +73,7 @@ class RemoveRelationshipModal(discord.ui.Modal, title="Eliminar Relación"):
         p1 = self.jugador1.value.strip()
         p2 = self.jugador2.value.strip()
 
-        # Normalize order
+        # Normalización de orden alfabético
         if p1 > p2:
             p1, p2 = p2, p1
 
@@ -109,10 +109,9 @@ class RenameTribeModal(discord.ui.Modal, title="Asignar Nombre a Tribu"):
 
         async with aiosqlite.connect(self.bot.db_name) as db:
             db.row_factory = aiosqlite.Row
-            # We identify the tribe by the reference member
-            # Since the algorithm clusters them purely by graph, we'll store the rename rule using the member's exact name
-            # A more robust way is to just use 'k4ultra_tribe_names' with 'tribe_signature' = miembro
-            # Let's save the custom name associated with this member.
+            # Identificación de tribu mediante miembro de referencia
+            # Almacenamiento regla de renombrado (basada en el grafo de relaciones subyacente)
+            # Método de asignación de nombre personalizado
 
             cursor = await db.execute(
                 "SELECT id FROM k4ultra_tribe_names WHERE tribe_signature = ?",
@@ -199,7 +198,7 @@ class PlayerSelectMenu(discord.ui.Select):
                 title=f"👤 Perfil Detallado: {player_name}", color=discord.Color.blue()
             )
 
-            # Añadir alias si existe
+            # Adición de alias (si consta en el registro)
             try:
                 cursor = await db.execute(
                     "SELECT alias FROM k4ultra_aliases WHERE player_name = ?",
@@ -221,7 +220,7 @@ class PlayerSelectMenu(discord.ui.Select):
                 name="⏰ Hora Frecuente (Inicio)", value=f"{best_hour}:00", inline=True
             )
 
-            # Extraer info de la blacklist si existe
+            # Extracción de datos de Blacklist
             try:
                 cursor = await db.execute(
                     "SELECT tribe, notes FROM blacklist WHERE player = ?",
@@ -317,7 +316,7 @@ class K4Ultra(commands.Cog):
         self.calculate_relationships.cancel()
 
     async def fetch_server_players(self, map_name, ip, port):
-        """Fetches players from A2S and returns valid names + session durations."""
+        """Obtiene jugadores mediante A2S, devolviendo nombres válidos y duraciones de sesión."""
         address = (ip, port)
         valid_players = []
         try:
@@ -325,7 +324,7 @@ class K4Ultra(commands.Cog):
                 asyncio.to_thread(a2s.players, address), timeout=5.0
             )
             for p in players:
-                # Omitir jugadores que no tienen nombre (ocultos de Steam/Epic)
+                # Omisión de jugadores sin nombre (perfiles ocultos Steam/Epic)
                 if not p.name:
                     continue
                 valid_players.append({"name": p.name.strip(), "duration": p.duration})
@@ -380,7 +379,7 @@ class K4Ultra(commands.Cog):
                 map_m = fp["map"]
                 raw_name = fp["raw_name"]
 
-                # Pasada 1: Solo buscar sesiones exactas activas en el mismo mapa
+                # Pasada 1: Búsqueda de sesiones activas coincidentes en el mismo mapa
                 true_identity = None
                 for sid, s in active_pool_dict.items():
                     if sid not in seen_identities and s["map_name"] == map_m:
@@ -395,7 +394,7 @@ class K4Ultra(commands.Cog):
                             fp["true_identity"] = true_identity
                             break
 
-            # Pasada 2: Resolver reconexiones, transferencias y nuevos jugadores
+            # Pasada 2: Resolución de reconexiones, transferencias o nuevas sesiones
             for fp in all_fetched:
                 if fp.get("matched"):
                     continue
@@ -404,8 +403,8 @@ class K4Ultra(commands.Cog):
                 raw_name = fp["raw_name"]
                 true_identity = None
 
-                # 2. Look for recent disconnected session to inherit (Transferencia o reconexión)
-                # Excluye identidades que ya hayan sido asimiladas en este tick (estén online en otro lado)
+                # Verificación de desconexiones recientes (transferencias o reconexiones)
+                # Exclusión de identidades ya procesadas en este ciclo (multicuenta rápida)
                 identities_already_online = [
                     active_pool_dict[sid]["player_name"]
                     for sid in seen_identities
@@ -415,16 +414,16 @@ class K4Ultra(commands.Cog):
                 generic_names = {"123", "human", "humano", "survivor", "player", "bob"}
                 is_generic = raw_name.lower() in generic_names
 
-                # Para genéricos, buscamos CUALQUIER sesión inactiva de la DB (incluso hace >10 min) para reaprovechar el ID
-                # Para no genéricos, usamos el pool de transferencias (últimos 10 mins)
+                # Reutilización de ID para nombres genéricos en cualquier sesión inactiva
+                # Uso de transferencias recientes (últimos 10 min) para nombres únicos
                 pool_to_check = recent_closed_pool
                 if is_generic:
-                    # Fetch all inactive sessions for this exact base name to recycle
+                    # Recuperación de sesiones inactivas bajo el mismo nombre base
                     cursor = await db.execute(
                         "SELECT id, player_name, map_name, start_time, end_time FROM k4ultra_sessions WHERE is_active = 0 AND player_name LIKE ? ORDER BY end_time DESC",
                         (f"{raw_name}_%",),
                     )
-                    # Also include the base name itself if it exists and is inactive
+                    # Inclusión del propio nombre base si constaba inactivo
                     cursor2 = await db.execute(
                         "SELECT id, player_name, map_name, start_time, end_time FROM k4ultra_sessions WHERE is_active = 0 AND player_name = ? ORDER BY end_time DESC",
                         (raw_name,),
@@ -433,13 +432,13 @@ class K4Ultra(commands.Cog):
                     generic_inactive = [dict(s) for s in await cursor.fetchall()]
                     generic_inactive.extend([dict(s) for s in await cursor2.fetchall()])
 
-                    # También incluir aquellos genéricos que están activos pero desconectaron en este mismo tick (no en seen_identities)
+                    # Inclusión de reconexiones instantáneas en el mismo ciclo (tick)
                     for sid, sinfo in active_pool_dict.items():
                         if (
                             sid not in seen_identities
                             and extract_base(sinfo["player_name"]) == raw_name
                         ):
-                            # Hacer una copia manual simulando una sesión inactiva reciente (end_time = now)
+                            # Simulación de sesión inactiva reciente
                             dummy_inactive = {
                                 "id": sinfo["id"],
                                 "player_name": sinfo["player_name"],
@@ -449,11 +448,11 @@ class K4Ultra(commands.Cog):
                             }
                             generic_inactive.append(dummy_inactive)
 
-                    # Ordenar todo por end_time descendente (para reutilizar el desconectado más reciente)
+                    # Ordenación descendente por tiempo límite para reutilización
                     generic_inactive.sort(key=lambda x: x["end_time"], reverse=True)
 
-                    # Forzar a coger siempre el nombre base ("123") si ambos (ej. "123" y "123_1") tienen tiempos iguales
-                    # Para ello, podemos priorizar los que no tienen sufijo haciendo una ordenación secundaria por longitud de nombre (más corto primero)
+                    # Priorización del nombre base sobre los variantes ante colisiones
+                    # Ordenación secundaria por menor longitud
                     generic_inactive.sort(
                         key=lambda x: (x["end_time"], -len(x["player_name"])),
                         reverse=True,
@@ -467,7 +466,7 @@ class K4Ultra(commands.Cog):
                         and s["player_name"] not in identities_already_online
                     ):
                         true_identity = s["player_name"]
-                        # Crear nueva sesión para esta reconexión/salto
+                        # Creación de nueva sesión tras salto o reconexión
                         cursor = await db.execute(
                             "INSERT INTO k4ultra_sessions (player_name, map_name, start_time, end_time, is_active) VALUES (?, ?, ?, ?, 1)",
                             (
@@ -488,9 +487,9 @@ class K4Ultra(commands.Cog):
                         break
 
                 if not true_identity:
-                    # 3. New concurrent user (Concurrencia extrema o nuevo absoluto)
+                    # Procesamiento de nuevo usuario recurrente absoluto
                     if is_generic:
-                        # En este punto, todos los sufijos _x están online (o no hay). Creamos el siguiente.
+                        # Generación de un nuevo sufijo (si los anteriores están ocupados)
                         cursor = await db.execute(
                             "SELECT player_name FROM k4ultra_sessions WHERE player_name LIKE ?",
                             (f"{raw_name}_%",),
@@ -508,8 +507,8 @@ class K4Ultra(commands.Cog):
                                 if val > max_suffix:
                                     max_suffix = val
 
-                        # Si raw_name ("123") no está online ni en bd inactiva, pero encontramos "123_1",
-                        # comprobamos si raw_name base ya está online. De lo contrario se usa sufijo _1, _2
+                        # Si el inicial y la BD inactiva no coinciden...
+                        # ...comprobación sobre el nombre base online para asignar siguiente sufijo
                         if raw_name not in identities_already_online and not any(
                             e["player_name"] == raw_name for e in existing
                         ):
@@ -517,7 +516,7 @@ class K4Ultra(commands.Cog):
                         else:
                             true_identity = f"{raw_name}_{max_suffix + 1}"
                     else:
-                        # Para jugadores normales, se usa su nombre original siempre
+                        # Asignación de nombre original a jugadores no genéricos
                         true_identity = raw_name
 
                     cursor = await db.execute(
@@ -538,13 +537,13 @@ class K4Ultra(commands.Cog):
                     }
                     fp["true_identity"] = true_identity
 
-                # Logs
+                # Registros de Log
                 await db.execute(
                     "INSERT INTO k4ultra_players_log (player_name, map_name) VALUES (?, ?)",
                     (true_identity, map_m),
                 )
 
-                # Playtime
+                # Análisis de Playtime
                 cursor = await db.execute(
                     "SELECT id FROM k4ultra_playtime WHERE player_name = ? AND map_name = ?",
                     (true_identity, map_m),
@@ -561,18 +560,18 @@ class K4Ultra(commands.Cog):
                         (true_identity, map_m, 5, now.strftime("%Y-%m-%d %H:%M:%S")),
                     )
 
-            # Marcar inactivos los que han desaparecido
+            # Marcado de inactividad de sesiones cerradas
             for sid, s in active_pool_dict.items():
                 if sid not in seen_identities and sid in [
                     a["id"] for a in active_pool
-                ]:  # Only close originally active ones
+                ]:  # Cierre exclusivo de sesiones previamente activas
                     await db.execute(
                         "UPDATE k4ultra_sessions SET is_active = 0 WHERE id = ?", (sid,)
                     )
 
             await db.commit()
 
-            # --- Auto-Blacklist Logic ---
+            # --- Lógica de Auto-Blacklist ---
             try:
                 cursor = await db.execute(
                     "SELECT members_json FROM k4ultra_fixed_tribes WHERE name = 'UNNAMED'"
@@ -621,7 +620,7 @@ class K4Ultra(commands.Cog):
                                     blacklisted.add(t_name)
                                     new_blacklist_count += 1
                                 except aiosqlite.OperationalError:
-                                    pass  # Might not exist
+                                    pass  # Continuamos (posible ignorado)
 
                     if new_blacklist_count > 0:
                         await db.commit()
@@ -636,7 +635,7 @@ class K4Ultra(commands.Cog):
             except Exception as e:
                 logger.error(f"[K4Ultra] Auto-blacklist check failed: {e}")
 
-            # --- Actualizar mensajes persistentes K4Ultra ---
+            # --- Actualización de Dashboards K4Ultra ---
             db.row_factory = aiosqlite.Row
             cursor = await db.execute(
                 "SELECT id, channel_id, message_id FROM k4ultra_messages"
@@ -662,7 +661,7 @@ class K4Ultra(commands.Cog):
 
                         message = await channel.fetch_message(message_id)
 
-                        # Re-attach the view to secure buttons on restarts
+                        # Reconexión de la vista interactiva (View) del Embed
                         view = K4UltraView(self.bot, top_players)
                         await message.edit(embed=new_embed, view=view)
                     except discord.NotFound:
@@ -711,7 +710,7 @@ class K4Ultra(commands.Cog):
         async with aiosqlite.connect(self.bot.db_name) as db:
             db.row_factory = aiosqlite.Row
 
-            # Evitar doble ejecución por reinicios
+            # Prevención de doble ejecución tras reinicios bruscos
             await db.execute(
                 "CREATE TABLE IF NOT EXISTS k4ultra_config (key TEXT PRIMARY KEY, value TEXT)"
             )
@@ -721,13 +720,13 @@ class K4Ultra(commands.Cog):
             row = await cursor.fetchone()
             today_str = now.strftime("%Y-%m-%d")
             if row and row["value"] == today_str:
-                return  # Ya hemos calculado los puntos de hoy
+                return  # Cálculo previo del día finalizado con éxito
             await db.execute(
                 "INSERT OR REPLACE INTO k4ultra_config (key, value) VALUES ('last_calc_date', ?)",
                 (today_str,),
             )
 
-            # Preparar pilar de minutos compartidos si no existe
+            # Preparación de la columna extra de minutos compartidos (Migración DB)
             try:
                 await db.execute(
                     "ALTER TABLE k4ultra_relationships ADD COLUMN shared_minutes INTEGER DEFAULT 0"
@@ -735,7 +734,7 @@ class K4Ultra(commands.Cog):
             except Exception:
                 pass
 
-            # 1. Traer las sesiones finalizadas o con actividad en "Ayer"
+            # Extracción de sesiones con actividad en la víspera ("Ayer")
             cursor = await db.execute(
                 "SELECT player_name, map_name, start_time, end_time FROM k4ultra_sessions WHERE start_time >= ? AND start_time < ?",
                 (ys_str, ye_str),
@@ -758,7 +757,7 @@ class K4Ultra(commands.Cog):
             parsed_sessions = []
             for s in sessions:
                 st = datetime.strptime(s["start_time"], "%Y-%m-%d %H:%M:%S")
-                # Si una sesión sigue activa o su end_time sobrepasa el día, cap en ye_str
+                # Restricción (cap) del end_time al día correspondiente si excede
                 end_str = s["end_time"]
                 if end_str > ye_str:
                     end_str = ye_str
@@ -786,7 +785,7 @@ class K4Ultra(commands.Cog):
                     s1_list = player_sessions[p1]
                     s2_list = player_sessions[p2]
 
-                    # Regla A: Minutos compartidos (solapados en mismo mapa)
+                    # Regla A: Acumulación de minutos superpuestos (mismo mapa)
                     for s1 in s1_list:
                         for s2 in s2_list:
                             if s1["m"] == s2["m"]:
@@ -799,7 +798,7 @@ class K4Ultra(commands.Cog):
                                     )
                                     add_mins(p1, p2, mins)
 
-                    # Regla C: Sincronización Login/Logout (<= 10 mins)
+                    # Regla C: Sincronía en Login/Logout (margen <= 10 mins)
                     if (
                         abs((s1_list[0]["st"] - s2_list[0]["st"]).total_seconds())
                         <= 600
@@ -811,14 +810,16 @@ class K4Ultra(commands.Cog):
                     ):
                         add_points(p1, p2, 2)
 
-                    # Regla B: Transferencias simultáneas (<= 5 mins)
+                    # Regla B: Transferencias simultáneas (margen <= 5 mins)
                     for k1 in range(len(s1_list) - 1):
                         t1_end = s1_list[k1]["et"]
                         t1_map1 = s1_list[k1]["m"]
                         t1_start2 = s1_list[k1 + 1]["st"]
                         t1_map2 = s1_list[k1 + 1]["m"]
 
-                        if t1_map1 != t1_map2:  # Hubo transferencia real
+                        if (
+                            t1_map1 != t1_map2
+                        ):  # Confirmación de transferencia de mapa aislada
                             for k2 in range(len(s2_list) - 1):
                                 t2_end = s2_list[k2]["et"]
                                 t2_map1 = s2_list[k2]["m"]
@@ -833,7 +834,7 @@ class K4Ultra(commands.Cog):
                                     ):
                                         add_points(p1, p2, 5)
 
-            # Volcar datos a SQL
+            # Volcado de puntuación de relaciones a SQL
             for (p1, p2), mins in shared_mins_to_add.items():
                 cursor = await db.execute(
                     "SELECT probability_score, shared_minutes, is_manual FROM k4ultra_relationships WHERE player1 = ? AND player2 = ?",
@@ -847,7 +848,7 @@ class K4Ultra(commands.Cog):
                         row["shared_minutes"] if "shared_minutes" in row.keys() else 0
                     )
                     new_mins = old_mins + mins
-                    # Calculamos los Puntos de la Regla A sumados
+                    # Cálculo de puntos adicionales derivados de Regla A
                     pts_to_add += (new_mins // 180) - (old_mins // 180)
 
                     if row["is_manual"] == 0:
@@ -863,7 +864,7 @@ class K4Ultra(commands.Cog):
                             (p1, p2, pts_to_add, mins),
                         )
 
-            # Aplicar Puntos que provienen únicamente de transferencias o sync loops sin cruce de minutos
+            # Aplicación de puntos exclusivos de Reglas B y C (sin Regla A combinada)
             for (p1, p2), pts in points_to_add.items():
                 if (p1, p2) not in shared_mins_to_add:
                     cursor = await db.execute(
@@ -884,14 +885,14 @@ class K4Ultra(commands.Cog):
                                 (p1, p2, pts),
                             )
 
-            # Limpieza mensual de logs crudos para evitar petar la DB (manteniendo sesiones!)
+            # Limpieza mensual de registros crudos (Logs) para preservación de DB
             await db.execute(
                 "DELETE FROM k4ultra_players_log WHERE timestamp < datetime('now', '-30 days')"
             )
 
             await db.commit()
 
-            # Guardar Snapshot Si es Lunes
+            # Captura de Snapshot semanal (Lunes)
             if now.weekday() == 0:  # Lunes
                 current_week = now.isocalendar()[1]
                 cursor = await db.execute(
@@ -899,7 +900,7 @@ class K4Ultra(commands.Cog):
                     (current_week,),
                 )
                 if not await cursor.fetchone():
-                    # Generar embed para guardar
+                    # Generación de Embed para guardado en Snapshot
                     embed, _ = await self.generate_k4ultra_embed()
                     embed.title = (
                         f"🌐 Tracker de Jugadores K4Ultra - Semana {current_week}"
@@ -940,14 +941,14 @@ class K4Ultra(commands.Cog):
                     {"map": row["map_name"], "mins": row["total_minutes"]}
                 )
 
-            # Obtenemos los jugadores actualmente conectados desde k4ultra_sessions
+            # Obtención de jugadores conectados en este instante
             cursor = await db.execute(
                 "SELECT player_name FROM k4ultra_sessions WHERE is_active = 1"
             )
             active_sessions = await cursor.fetchall()
             active_players = {s["player_name"] for s in active_sessions}
 
-            # Obtenemos aliases (currently unused)
+            # Obtención de alias (funcionalidad base)
 
             sorted_players = sorted(p_totals.items(), key=lambda x: x[1], reverse=True)[
                 :25
@@ -956,7 +957,7 @@ class K4Ultra(commands.Cog):
             players_text = ""
             for p_name, total_m in sorted_players:
                 top_player_names.append(p_name)
-                # Solo pintamos los 15 primeros en el Embed, pero devolvemos 25 para el Select Menu
+                # Límite visual de 15 jugadores (25 para Select Menu interactivo)
                 if len(top_player_names) <= 15:
                     h = total_m // 60
                     m = total_m % 60
@@ -986,7 +987,7 @@ class K4Ultra(commands.Cog):
                     for mm in maps_for_p:
                         pct = int((mm["mins"] / total_m) * 100) if total_m > 0 else 0
                         if pct > 0:
-                            # Buscar en el diccionario o usar el default de las 4 primeras letras
+                            # Búsqueda de acrónimo en diccionario o formateo por defecto
                             raw_map = mm["map"]
                             acronym = map_acronyms.get(
                                 raw_map, raw_map.replace(" ", "")[:4].capitalize()
@@ -994,22 +995,22 @@ class K4Ultra(commands.Cog):
                             map_str_list.append(f"*{pct}% {acronym}*")
 
                     map_joined = ", ".join(map_str_list)
-                    # Añadir marca de conexión
+                    # Identificador visual de jugador en línea
                     online_marker = "🟢 " if p_name in active_players else ""
                     players_text += (
                         f"- **{online_marker}{p_name}** ⏱️ {time_str}: {map_joined}\n"
                     )
 
             if players_text:
-                # Split players_text into chunks of max 1024 chars safely
+                # Fragmentación segura de texto para evasión de límite de 1024 caracteres
                 chunks = []
                 while len(players_text) > 900:
-                    # Find a good place to break (newline) within the first 900 chars
+                    # Localización de salto de línea ideal (límite de 900 caracteres)
                     break_point = players_text.rfind("\n", 0, 900)
                     if break_point == -1:
                         break_point = 900
                     else:
-                        break_point += 1  # Include the newline in the chunk
+                        break_point += 1  # Inclusión del salto de línea
                     chunks.append(players_text[:break_point])
                     players_text = players_text[break_point:]
 
@@ -1030,7 +1031,7 @@ class K4Ultra(commands.Cog):
                     inline=False,
                 )
 
-            # Tribus Fijadas (/fijar_tribu)
+            # Consulta de Tribus Fijas
             cursor = await db.execute(
                 "SELECT name, members_json FROM k4ultra_fixed_tribes"
             )
@@ -1043,7 +1044,7 @@ class K4Ultra(commands.Cog):
                 for m in members:
                     fixed_players.add(m)
 
-            # Relaciones Calculadas
+            # Consulta de Relaciones Dinámicas Calculadas
             cursor = await db.execute(
                 "SELECT player1, player2 FROM k4ultra_relationships WHERE probability_score >= 10 OR is_manual = 1"
             )
@@ -1052,7 +1053,7 @@ class K4Ultra(commands.Cog):
             adjacency = {}
             for r in rels:
                 p1, p2 = r["player1"], r["player2"]
-                # Ignorar jugadores que ya están en tribus fijadas para que no se mezclen
+                # Exclusión de jugadores de Tribus Fijas en algoritmos dinámicos
                 if p1 in fixed_players or p2 in fixed_players:
                     continue
                 if p1 not in adjacency:
@@ -1085,7 +1086,7 @@ class K4Ultra(commands.Cog):
 
             rels_text = ""
 
-            # Pintar Tribus Fijadas Primero
+            # Representación visual de Tribus Fijas (prioritario)
             for fr in fixed_rows:
                 tribe_name = fr["name"]
                 members = json.loads(fr["members_json"])
@@ -1110,7 +1111,7 @@ class K4Ultra(commands.Cog):
 
                 rels_text += f"**{tribe_name}** [🛡️ Fijada] ({len(members)}){map_info}\n└ {tribe_str}\n"
 
-            # Pintar Tribus Dinámicas
+            # Representación visual de Tribus Dinámicas calculadas
             for i, tribe in enumerate(dynamic_tribes[:8]):
                 if not tribe:
                     continue
@@ -1195,7 +1196,7 @@ class K4Ultra(commands.Cog):
         self, interaction: discord.Interaction, semana: int = None
     ):
 
-        # Ensure user has access (Admin implicitly or specified ID)
+        # Validación de permisos (Admin o ID autorizado)
         if (
             interaction.user.id != AUTHORIZED_ADMIN_ID
             and not interaction.user.guild_permissions.administrator
@@ -1206,7 +1207,7 @@ class K4Ultra(commands.Cog):
             return
 
         if semana:
-            # Query the snapshot
+            # Consulta de Snapshot histórico
             await interaction.response.defer(ephemeral=True)
             async with aiosqlite.connect(self.bot.db_name) as db:
                 cursor = await db.execute(
@@ -1225,7 +1226,7 @@ class K4Ultra(commands.Cog):
                         ephemeral=True,
                     )
         else:
-            # Show live stats and save as persistent message
+            # Visualización de estadísticas en vivo y guardado como mensaje persistente
             await interaction.response.defer(ephemeral=False)
             embed, top_players = await self.generate_k4ultra_embed()
             view = K4UltraView(self.bot, top_players)
@@ -1266,7 +1267,7 @@ class K4Ultra(commands.Cog):
         async with aiosqlite.connect(self.bot.db_name) as db:
             db.row_factory = aiosqlite.Row
 
-            # Buscar jugadores con sufijo _[numero]
+            # Búsqueda de jugadores con sufijos numéricos (ej. _1, _2)
             import re
 
             cursor = await db.execute(
@@ -1274,7 +1275,7 @@ class K4Ultra(commands.Cog):
             )
             all_players = [r["player_name"] for r in await cursor.fetchall()]
 
-            # Identify base names and duplicates
+            # Identificación de nombres base y copias asociadas
             duplicates_to_merge = []
             generic_names = {"123", "human", "humano", "survivor", "player", "bob"}
 
@@ -1282,7 +1283,7 @@ class K4Ultra(commands.Cog):
                 match = re.search(r"^(.*)_(\d+)$", p)
                 if match:
                     base_name = match.group(1)
-                    # No fusionar nombres genéricos, ya que es normal que tengan _1, _2
+                    # Exclusión de nombres genéricos en la fusión (comparten base de forma legítima)
                     if base_name.lower() not in generic_names:
                         duplicates_to_merge.append((p, base_name))
 
@@ -1295,7 +1296,7 @@ class K4Ultra(commands.Cog):
 
             merged_count = 0
             for dup_name, base_name in duplicates_to_merge:
-                # 1. Merge Playtime
+                # 1. Fusión de Playtime (Minutos jugados)
                 cursor = await db.execute(
                     "SELECT map_name, total_minutes, last_seen FROM k4ultra_playtime WHERE player_name = ?",
                     (dup_name,),
@@ -1303,7 +1304,7 @@ class K4Ultra(commands.Cog):
                 dup_maps = await cursor.fetchall()
 
                 for dm in dup_maps:
-                    # Check if base name already has playtime on this map
+                    # Comprobación de existencia de Playtime previo para el nombre base en ese mapa
                     c2 = await db.execute(
                         "SELECT total_minutes, last_seen FROM k4ultra_playtime WHERE player_name = ? AND map_name = ?",
                         (base_name, dm["map_name"]),
@@ -1311,7 +1312,7 @@ class K4Ultra(commands.Cog):
                     base_map = await c2.fetchone()
 
                     if base_map:
-                        # Add minutes, keep latest last_seen
+                        # Suma de minutos reteniendo la última conexión ("last_seen")
                         new_mins = base_map["total_minutes"] + dm["total_minutes"]
                         new_last_seen = max(base_map["last_seen"], dm["last_seen"])
                         await db.execute(
@@ -1319,7 +1320,7 @@ class K4Ultra(commands.Cog):
                             (new_mins, new_last_seen, base_name, dm["map_name"]),
                         )
                     else:
-                        # Insert as base name
+                        # Inserción de registro nuevo bajo el nombre base
                         await db.execute(
                             "INSERT INTO k4ultra_playtime (player_name, map_name, total_minutes, last_seen) VALUES (?, ?, ?, ?)",
                             (
@@ -1334,14 +1335,14 @@ class K4Ultra(commands.Cog):
                     "DELETE FROM k4ultra_playtime WHERE player_name = ?", (dup_name,)
                 )
 
-                # 2. Update Sessions
+                # 2. Actualización de Sesiones
                 await db.execute(
                     "UPDATE k4ultra_sessions SET player_name = ? WHERE player_name = ?",
                     (base_name, dup_name),
                 )
 
-                # 3. Update Relationships
-                # Since relationships involve pairs, we handle carefully
+                # 3. Actualización de Relaciones
+                # Modificación cuidadosa de pares para evitar pérdida de datos
                 await db.execute(
                     "UPDATE k4ultra_relationships SET player1 = ? WHERE player1 = ?",
                     (base_name, dup_name),
@@ -1351,12 +1352,12 @@ class K4Ultra(commands.Cog):
                     (base_name, dup_name),
                 )
 
-                # Limpiar auto-relaciones
+                # Limpieza de auto-relaciones generadas por la fusión
                 await db.execute(
                     "DELETE FROM k4ultra_relationships WHERE player1 = player2"
                 )
 
-                # 4. Cleanup Blacklist and Aliases
+                # 4. Limpieza en Blacklist y Alias
                 await db.execute("DELETE FROM blacklist WHERE player = ?", (dup_name,))
                 await db.execute(
                     "DELETE FROM k4ultra_aliases WHERE player_name = ?", (dup_name,)
@@ -1395,7 +1396,7 @@ class K4Ultra(commands.Cog):
             )
             return
 
-        # Limpiar comillas accidentales y espacios
+        # Saneamiento de comillas accidentales y espacios
         nombre = nombre.strip().strip("'\"")
         miembros = [
             m.strip().strip("'\"")
@@ -1525,7 +1526,7 @@ class K4Ultra(commands.Cog):
         async with aiosqlite.connect(self.bot.db_name) as db:
             db.row_factory = aiosqlite.Row
 
-            # Verificar si el origen existe
+            # Verificación de existencia del perfil de origen
             cursor = await db.execute(
                 "SELECT * FROM k4ultra_playtime WHERE player_name = ?", (origen,)
             )
@@ -1632,7 +1633,7 @@ class K4Ultra(commands.Cog):
         async with aiosqlite.connect(self.bot.db_name) as db:
             db.row_factory = aiosqlite.Row
 
-            # Buscar si el origen tiene una sesión ACTIVA actualmente
+            # Comprobación de existencia de sesión activa para el perfil de origen
             cursor = await db.execute(
                 "SELECT id, map_name FROM k4ultra_sessions WHERE player_name = ? AND is_active = 1",
                 (origen,),
@@ -1656,13 +1657,13 @@ class K4Ultra(commands.Cog):
             session_id = active_sessions[0]["id"]
             map_name = active_sessions[0]["map_name"]
 
-            # 1. Cambiar la identidad de esa sesión
+            # 1. Modificación de identidad en la sesión activa
             await db.execute(
                 "UPDATE k4ultra_sessions SET player_name = ? WHERE id = ?",
                 (destino, session_id),
             )
 
-            # 2. Asegurarnos que el destino existe en playtime para evitar crashes en el dashboard
+            # 2. Garantía de existencia del destino en Playtime (prevención de errores visuales)
             cursor = await db.execute(
                 "SELECT total_minutes FROM k4ultra_playtime WHERE player_name = ? AND map_name = ?",
                 (destino, map_name),

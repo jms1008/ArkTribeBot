@@ -6,7 +6,7 @@ import aiosqlite
 import asyncio
 import datetime
 
-# Constantes de Mapas (base para sugerencias, se ampliará con la DB)
+# Definición de Mapas Base (Utilizado para sugerencias híbridas)
 BASE_MAPS = [
     "The Island",
     "Scorched Earth",
@@ -34,7 +34,7 @@ async def update_blacklist_dashboards(bot):
     if not dashboards:
         return
 
-    # Obtener Blacklist
+    # Recuperación de registros de la Blacklist
     async with aiosqlite.connect(bot.db_name) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute("SELECT * FROM blacklist ORDER BY id DESC")
@@ -84,7 +84,7 @@ async def update_blacklist_dashboards(bot):
         except Exception as e:
             print(f"Error updating blacklist dash {dash['id']}: {e}")
 
-    # Limpiar dashboards rotos
+    # Purgado de dashboards inactivos o inaccesibles
     if messages_to_remove:
         async with aiosqlite.connect(bot.db_name) as db:
             for mid in messages_to_remove:
@@ -102,11 +102,11 @@ async def update_kda_dashboards(bot):
     if not dashboards:
         return
 
-    # Obtener Leaderboard calculando K/D
+    # Generación del Leaderboard con cálculo dinámico de K/D
     async with aiosqlite.connect(bot.db_name) as db:
         db.row_factory = aiosqlite.Row
-        # Ordenamos por K/D ascendente (Peor ratio primero = "El Más Manco")
-        # Si deaths es 0, tratamos como 1 para evitar división por cero, o podemos dar prioridad a kills
+        # Ordenación ascendente por K/D (Peor ratio = "El Más Manco").
+        # Prevención de división por cero tratando muertes=0 como 1 lógicamente en la consulta.
         cursor = await db.execute("""
             SELECT player_name, kills, deaths,
                    CAST(kills AS FLOAT) / CASE WHEN deaths = 0 THEN 1 ELSE deaths END as kd_ratio
@@ -165,7 +165,7 @@ async def update_kda_dashboards(bot):
         except Exception as e:
             print(f"Error updating KDA dash {dash['id']}: {e}")
 
-    # Limpiar dashboards rotos
+    # Purgado de dashboards inactivos
     if messages_to_remove:
         async with aiosqlite.connect(bot.db_name) as db:
             for mid in messages_to_remove:
@@ -221,27 +221,27 @@ class BlacklistView(discord.ui.View):
 class Warfare(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        # Migración rápida por si acaso (aunque main.py lo maneja al inicio, esto es extra safety para columnas nuevas)
+        # Rutina de seguridad para asegurar el esquema correcto (Migración legacy)
         asyncio.create_task(self.check_schema())
 
     async def check_schema(self):
         async with aiosqlite.connect(self.bot.db_name) as db:
-            # Check if table exists with old schema (steam_id instead of id)
+            # Comprobación de existencia del esquema antiguo (steam_id vs id)
             try:
-                # Try to select the new ID column
+                # Intento de lectura de la columna ID (Nuevo estándar)
                 await db.execute("SELECT id FROM blacklist LIMIT 1")
             except aiosqlite.OperationalError:
-                # Column id not found, likely old schema.
+                # Falla de lectura: Detectado esquema antiguo
                 print("⚠️ Detectada versión antigua de Blacklist. Migrando tabla...")
                 try:
-                    # Rename old table
+                    # Renombrado de la tabla legacy (Backup)
                     backup_name = (
                         f"blacklist_backup_{int(datetime.datetime.now().timestamp())}"
                     )
                     await db.execute(f"ALTER TABLE blacklist RENAME TO {backup_name}")
                     print(f"✅ Tabla antigua renombrada a {backup_name}")
 
-                    # Create new table
+                    # Creación de la tabla saneada (Nuevo esquema)
                     await db.execute("""
                         CREATE TABLE blacklist (
                             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -257,7 +257,7 @@ class Warfare(commands.Cog):
                 except Exception as e:
                     print(f"❌ Error durante la migración de Blacklist: {e}")
 
-    # --- Autocompletes ---
+    # --- Funciones de Autocompletado ---
     async def tribe_autocomplete(
         self, interaction: discord.Interaction, current: str
     ) -> list[app_commands.Choice[str]]:
@@ -271,27 +271,28 @@ class Warfare(commands.Cog):
         choices = [
             app_commands.Choice(name=row[0], value=row[0]) for row in rows if row[0]
         ]
-        # Si la búsqueda no está en la lista, sugerirla como nueva
-        # (Aunque Discord permite escribir libremente si no se restringe, el autocomplete ayuda)
+        # Retorno de coincidencias o permite texto libre por defecto (Discord behavior)
         return choices
 
     async def map_autocomplete(
         self, interaction: discord.Interaction, current: str
     ) -> list[app_commands.Choice[str]]:
-        # Combinar mapas base con mapas usados en DB
+        # Fusión interactiva de mapas base predefinidos y mapas registrados
         choices = [m for m in BASE_MAPS if current.lower() in m.lower()]
         return [app_commands.Choice(name=m, value=m) for m in choices[:25]]
 
-    # --- Comandos ---
+    # --- Definición de Comandos ---
 
     @app_commands.command(
         name="blacklist",
         description="Muestra el dashboard de la Blacklist (Auto-actualizable).",
     )
     async def blacklist(self, interaction: discord.Interaction):
-        await interaction.response.defer(thinking=True)  # Defer por si tarda
+        await interaction.response.defer(
+            thinking=True
+        )  # Aplazamiento de respuesta para prevenir Timeout de la interacción
 
-        # Generar mensaje inicial vacío (se actualizará inmediatamente)
+        # Generación del placeholder inicial (Actualización sincrónica inminente)
         embed = discord.Embed(
             title="Cargando Blacklist...", color=discord.Color.dark_grey()
         )
@@ -370,7 +371,7 @@ class Warfare(commands.Cog):
         campo: app_commands.Choice[str],
         nuevo_valor: str,
     ):
-        # Verificar si existe ID
+        # Validación de existencia del registro por ID
         async with aiosqlite.connect(self.bot.db_name) as db:
             cursor = await db.execute("SELECT id FROM blacklist WHERE id = ?", (id,))
             row = await cursor.fetchone()
@@ -430,12 +431,12 @@ class Warfare(commands.Cog):
         defensores: int = None,
         notas: str = None,
     ):
-        # Obtener rol del entorno
+        # Recuperación del Rol SOS desde variables de entorno
         role_id = os.getenv("SOS_ROLE_ID")
         role_mention = f"<@&{role_id}>" if role_id else "@everyone"
 
         if not tipo and not mapa and not atacantes and not defensores and not notas:
-            # Modo: SOS GENERAL
+            # Fallback: Dispatch de SOS Generalizado (Falta de argumentos)
             embed = discord.Embed(
                 title="🚨 ¡SOS GENERAL! 🚨",
                 description=f"**¡SE NECESITA AYUDA URGENTE!**\n\nEl usuario {interaction.user.mention} ha solicitado asistencia inmediata.\n¡Entrad al canal de voz YA!",
@@ -443,7 +444,7 @@ class Warfare(commands.Cog):
             )
             embed.set_footer(text="⚠️ Alerta de Prioridad MÁXIMA")
         else:
-            # Modo: SOS DETALLADO
+            # Dispatch: SOS Estructurado y Detallado
             titulo = (
                 f"🚨 ALERTA: {tipo.value.upper()}" if tipo else "🚨 ALERTA DE COMBATE"
             )
@@ -457,7 +458,7 @@ class Warfare(commands.Cog):
             if tipo:
                 embed.add_field(name="🔥 Tipo", value=tipo.value, inline=True)
 
-            # Fila de números
+            # Formateo de recuento de fuerzas (Enemigos/Aliados)
             atack_str = str(atacantes) if atacantes is not None else "?"
             def_str = str(defensores) if defensores is not None else "?"
             embed.add_field(
@@ -471,7 +472,7 @@ class Warfare(commands.Cog):
 
             embed.set_footer(text="¡Dejad lo que estéis haciendo y venid!")
 
-        # Enviar
+        # Broadcast de la alerta al canal de registro
         await interaction.channel.send(content=role_mention, embed=embed)
         await interaction.response.send_message(
             "✅ Alerta SOS enviada.", ephemeral=True
@@ -513,12 +514,12 @@ class Warfare(commands.Cog):
         self, interaction: discord.Interaction, jugador: str, personaje: str
     ):
         async with aiosqlite.connect(self.bot.db_name) as db:
-            # Insertar en tabla de personajes (ignora si existe, o reemplaza)
+            # Upsert (Insert or Update) del vínculo Personaje-Jugador
             await db.execute(
                 "INSERT INTO tribe_characters (character_name, player_name) VALUES (?, ?) ON CONFLICT(character_name) DO UPDATE SET player_name=excluded.player_name",
                 (personaje, jugador),
             )
-            # Asegurarse que el jugador existe en la tabla principal KDA aunque empiece a 0
+            # Inicialización segura del perfil del jugador en el Tracker KDA a 0
             await db.execute(
                 "INSERT OR IGNORE INTO tribe_kda (player_name, kills, deaths) VALUES (?, 0, 0)",
                 (jugador,),

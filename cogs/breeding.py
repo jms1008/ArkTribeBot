@@ -6,7 +6,7 @@ import logging
 import datetime
 from discord.ext import commands, tasks
 
-# Opciones de Estadísticas
+# Opciones del menú de estadísticas
 STAT_CHOICES = [
     app_commands.Choice(name="Vida (HP)", value="hp"),
     app_commands.Choice(name="Estamina", value="stam"),
@@ -24,7 +24,7 @@ class StatSelectView(discord.ui.View):
         self.bot = bot
         self.dino = dino
 
-        # Opciones para el select
+        # Configuración de opciones del menú desplegable
         options = [
             discord.SelectOption(label="Vida (HP)", value="hp"),
             discord.SelectOption(label="Estamina", value="stam"),
@@ -62,7 +62,7 @@ class StatSelectView(discord.ui.View):
                     (new_val, self.dino),
                 )
 
-                # Log the mutation
+                # Registro de mutación en log
                 logging.getLogger("ArkTribeBot").info(
                     f"MUTATION: {self.dino} {stat_selected} +2"
                 )
@@ -75,7 +75,7 @@ class StatSelectView(discord.ui.View):
 
             await db.commit()
 
-        # Refrescar dashboard
+        # Actualización del dashboard
         await interaction.response.edit_message(
             content=f"✅ Muta registrada: **{self.dino}** (+2 en {stat_selected}). Nuevo valor: {new_val}",
             view=None,
@@ -89,7 +89,7 @@ class DinoSelectView(discord.ui.View):
         self.bot = bot
 
         options = []
-        # Discord Select limits to 25 items
+        # Límite de 25 elementos en select de Discord
         for dino in dinos[:25]:
             options.append(discord.SelectOption(label=dino, value=dino))
 
@@ -210,7 +210,7 @@ class BreedingDashboardView(discord.ui.View):
 async def update_breeding_dashboards(bot):
     """Actualiza todos los mensajes de lista de líneas (dashboards)."""
 
-    # Obtener datos de todos los dashboards activos
+    # Extracción de dashboards activos
     async with aiosqlite.connect(bot.db_name) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute("SELECT * FROM breeding_messages")
@@ -219,13 +219,13 @@ async def update_breeding_dashboards(bot):
     if not dashboards:
         return
 
-    # Consultar Dinos (Modo Single Row per Species)
+    # Consulta de especies registradas
     async with aiosqlite.connect(bot.db_name) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute("SELECT * FROM dinos ORDER BY especie ASC")
         rows = await cursor.fetchall()
 
-    # Construir Embed
+    # Construcción de Embed
     if not rows:
         embed = discord.Embed(
             title="🧬 Líneas de Crianza",
@@ -240,7 +240,7 @@ async def update_breeding_dashboards(bot):
             title="🧬 Líneas de Crianza (Top Stats)", color=discord.Color.gold()
         )
         for row in rows:
-            # Formatear valores (si son None, poner 0)
+            # Formateo de valores (asignando 0 si es None)
             hp = row["hp"] or 0
             stam = row["stam"] or 0
             weight = row["weight"] or 0
@@ -294,7 +294,7 @@ async def update_breeding_dashboards(bot):
         except Exception as e:
             print(f"Error updating breeding dash {dash['id']}: {e}")
 
-    # Limpiar dashboards rotos
+    # Limpieza de dashboards inactivos o rotos
     if messages_to_remove:
         async with aiosqlite.connect(bot.db_name) as db:
             for mid in messages_to_remove:
@@ -305,7 +305,7 @@ async def update_breeding_dashboards(bot):
 class Breeding(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        # Intentar migración de columnas por si la DB es vieja
+        # Intento de migración de columnas por versión antigua de DB
         asyncio.create_task(self.check_schema())
         self.check_alarms.start()
 
@@ -346,7 +346,7 @@ class Breeding(commands.Cog):
                             f"Error procesando alarma {alarm['id']}: {e}"
                         )
 
-                    # Borrar ejecutada
+                    # Eliminación de alarma ejecutada
                     await db.execute(
                         "DELETE FROM breeding_alarms WHERE id = ?", (alarm["id"],)
                     )
@@ -384,13 +384,13 @@ class Breeding(commands.Cog):
     async def upsert_stat(self, dino, stat_col, puntos):
         """Helper para Insertar o Actualizar una stat de una especie."""
         async with aiosqlite.connect(self.bot.db_name) as db:
-            # Verificar si existe
+            # Verificación de existencia
             db.row_factory = aiosqlite.Row
             cursor = await db.execute("SELECT * FROM dinos WHERE especie = ?", (dino,))
             row = await cursor.fetchone()
 
             if row:
-                # Update
+                # Actualización
                 old_val = row[stat_col] or 0
                 diff = puntos - old_val
 
@@ -399,7 +399,7 @@ class Breeding(commands.Cog):
                 )
                 action = "stats actualizados"
 
-                # Log Mutations
+                # Registro de mutaciones en log
                 if diff == 2:
                     logging.getLogger("ArkTribeBot").info(
                         f"MUTATION: {dino} {stat_col} +2"
@@ -410,7 +410,7 @@ class Breeding(commands.Cog):
                     )
 
             else:
-                # Insert
+                # Inserción
                 await db.execute(
                     f"INSERT INTO dinos (especie, {stat_col}) VALUES (?, ?)",
                     (dino, puntos),
@@ -482,7 +482,7 @@ class Breeding(commands.Cog):
         estadistica: app_commands.Choice[str],
         puntos: int,
     ):
-        # Es funcionalmente idéntico a linea_add con la nueva lógica de 'Single Row'
+        # Flujo idéntico a linea_add utilizando lógica Single Row
         await self.upsert_stat(dino, estadistica.value, puntos)
 
         await interaction.response.send_message(
@@ -503,7 +503,7 @@ class Breeding(commands.Cog):
         description="Muestra el panel de líneas de crianza (Auto-actualizable).",
     )
     async def lineas(self, interaction: discord.Interaction):
-        # Generar contenido inicial
+        # Generación de contenido inicial
         async with aiosqlite.connect(self.bot.db_name) as db:
             db.row_factory = aiosqlite.Row
             cursor = await db.execute("SELECT * FROM dinos ORDER BY especie ASC")
@@ -564,7 +564,7 @@ class Breeding(commands.Cog):
         await interaction.response.send_message(embed=embed, view=view)
         message = await interaction.original_response()
 
-        # Guardar Message ID para updates
+        # Guardado de Message ID para futuras actualizaciones
         async with aiosqlite.connect(self.bot.db_name) as db:
             await db.execute(
                 "INSERT INTO breeding_messages (channel_id, message_id) VALUES (?, ?)",
@@ -629,7 +629,7 @@ class Breeding(commands.Cog):
         mutations = []
 
         try:
-            # Leer todos los archivos .log en la carpeta
+            # Lectura de ficheros .log del directorio
             for filename in os.listdir(log_dir):
                 if filename.endswith(".log"):
                     filepath = os.path.join(log_dir, filename)
@@ -640,7 +640,8 @@ class Breeding(commands.Cog):
                                 if len(parts) < 2:
                                     continue
 
-                                timestamp = line[:19]  # yyyy-mm-dd hh:mm:ss
+                                # yyyy-mm-dd hh:mm:ss
+                                timestamp = line[:19]
                                 content = parts[1].strip()
 
                                 try:
@@ -669,10 +670,10 @@ class Breeding(commands.Cog):
                     "No se han registrado mutaciones históricamente.", ephemeral=True
                 )
             else:
-                # Sort by timestamp ascending, then reverse to get most recent first
+                # Ordenación descendente por marca de tiempo
                 mutations.sort(key=lambda x: x[0], reverse=True)
 
-                # Take top 20
+                # Límite de 20 registros más recientes
                 recent_mutations = [mut[1] for mut in mutations[:20]]
                 response_text = "\n".join(recent_mutations)
 
