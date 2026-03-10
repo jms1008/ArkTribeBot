@@ -49,85 +49,6 @@ def build_blacklist_embed(rows: list, page: int = 0) -> discord.Embed:
     return embed, page, total_pages
 
 
-async def build_player_detail_embed(bot, player_name):
-    """Construye un embed detallado de un jugador combinando Blacklist + K4Ultra."""
-    async with aiosqlite.connect(bot.db_name) as db:
-        db.row_factory = aiosqlite.Row
-
-        # 1. Datos de Blacklist
-        cursor = await db.execute(
-            "SELECT * FROM blacklist WHERE player = ?", (player_name,)
-        )
-        bl_row = await cursor.fetchone()
-
-        if not bl_row:
-            return discord.Embed(
-                title="❌ Error",
-                description=f"No se encontró a **{player_name}** en la blacklist.",
-                color=discord.Color.red(),
-            )
-
-        # 2. Datos de K4Ultra - Playtime y Mapas
-        cursor = await db.execute(
-            "SELECT map_name, total_minutes, last_seen FROM k4ultra_playtime WHERE player_name = ? ORDER BY total_minutes DESC",
-            (player_name,),
-        )
-        pt_rows = await cursor.fetchall()
-
-        total_mins = sum(r["total_minutes"] for r in pt_rows)
-        total_hours = total_mins / 60
-
-        maps_visited = []
-        for r in pt_rows:
-            h = r["total_minutes"] / 60
-            maps_visited.append(f"• **{r['map_name']}**: {h:.1f}h")
-
-        # 3. Datos de K4Ultra - Relaciones (Top 5)
-        cursor = await db.execute(
-            """
-            SELECT player2 as ally, probability_score as prob FROM k4ultra_relationships WHERE player1 = ?
-            UNION
-            SELECT player1 as ally, probability_score as prob FROM k4ultra_relationships WHERE player2 = ?
-            ORDER BY prob DESC LIMIT 5
-            """,
-            (player_name, player_name),
-        )
-        rel_rows = await cursor.fetchall()
-        allies = [f"• **{r['ally']}** ({r['prob']}%)" for r in rel_rows]
-
-        # Construcción del Embed
-        embed = discord.Embed(
-            title=f"💀 Ficha de Objetivo: {player_name}",
-            description=f"**Tribu**: {bl_row['tribe']}\n**Notas**: {bl_row['notes']}",
-            color=discord.Color.dark_red(),
-        )
-
-        embed.add_field(
-            name="📅 Fecha de Registro", value=bl_row["created_at"], inline=True
-        )
-        embed.add_field(
-            name="🕒 Tiempo Total (K4)", value=f"{total_hours:.1f} horas", inline=True
-        )
-
-        last_seen = bl_row["last_seen"] or "Desconocido"
-        embed.add_field(name="📍 Último Avistamiento", value=last_seen, inline=False)
-
-        if maps_visited:
-            embed.add_field(
-                name="🗺️ Actividad por Mapas",
-                value="\n".join(maps_visited),
-                inline=False,
-            )
-
-        if allies:
-            embed.add_field(
-                name="👥 Aliados Cercanos", value="\n".join(allies), inline=False
-            )
-
-        embed.set_footer(text="Datos cruzados con Radar K4Ultra")
-        return embed
-
-
 async def update_blacklist_dashboards(bot, page: int = 0):
     """Actualiza todos los mensajes de lista negra (dashboards)."""
 
@@ -294,13 +215,12 @@ class AddBlacklistModal(discord.ui.Modal, title="Añadir a Blacklist"):
     async def on_submit(self, interaction: discord.Interaction):
         async with aiosqlite.connect(self.bot.db_name) as db:
             await db.execute(
-                "INSERT INTO blacklist (player, tribe, map, notes, created_at) VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO blacklist (player, tribe, map, notes) VALUES (?, ?, ?, ?)",
                 (
                     self.player.value,
                     self.tribe.value or "Desconocido",
                     self.map_name.value or "Desconocido",
                     self.notes.value or "",
-                    datetime.datetime.now().isoformat(),
                 ),
             )
             await db.commit()
@@ -389,101 +309,75 @@ class DeleteBlacklistModal(discord.ui.Modal, title="Eliminar de Blacklist"):
         await update_blacklist_dashboards(self.bot)
 
 
-class PlayerDetailSelect(discord.ui.Select):
-    def __init__(self, bot, players):
-        self.bot = bot
-        options = [discord.SelectOption(label=p, emoji="🔍") for p in players[:25]]
-        super().__init__(
-            placeholder="Selecciona un jugador para ver detalles...",
-            min_values=1,
-            max_values=1,
-            options=options,
-            row=1,
-        )
-
-    async def callback(self, interaction: discord.Interaction):
-        player_name = self.values[0]
-        embed = await build_player_detail_embed(self.bot, player_name)
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-
-
 class BlacklistView(discord.ui.View):
     def __init__(self, bot, rows=None, page: int = 0):
         super().__init__(timeout=None)
         self.bot = bot
         self.rows = rows or []
         self.page = page
+        total_pages = max(1, (len(self.rows) + PAGE_SIZE - 1) // PAGE_SIZE)
+        # Deshabilitar flechas si no hay páginas
+        self.prev_btn.disabled = page == 0
+        self.next_btn.disabled = page >= total_pages - 1
 
-        # Desplegable de detalles (fila 1)
-        player_names = [
-            r["player"] for r in rows[page * PAGE_SIZE : (page + 1) * PAGE_SIZE]
-        ]
-        if player_names:
-            self.add_item(PlayerDetailSelect(bot, player_names))
-
-        # Botones de navegación (fila 2)
-        # Se añaden manualmente para controlar el orden y las filas
-        self.prev_btn = discord.ui.Button(
-            label="◀",
-            style=discord.ButtonStyle.secondary,
-            disabled=page == 0,
-            row=2,
-        )
-        self.prev_btn.callback = self.prev_page_callback
-        self.add_item(self.prev_btn)
-
-        self.next_btn = discord.ui.Button(
-            label="▶",
-            style=discord.ButtonStyle.secondary,
-            disabled=(page + 1) * PAGE_SIZE >= len(rows),
-            row=2,
-        )
-        self.next_btn.callback = self.next_page_callback
-        self.add_item(self.next_btn)
-
-        # Botones de Acción (fila 3)
-        self.add_btn = discord.ui.Button(
-            label="Añadir",
-            style=discord.ButtonStyle.success,
-            emoji="➕",
-            row=3,
-        )
-        self.add_btn.callback = self.add_callback
-        self.add_item(self.add_btn)
-
-        self.mod_btn = discord.ui.Button(
-            label="Modificar",
-            style=discord.ButtonStyle.primary,
-            emoji="📝",
-            row=3,
-        )
-        self.mod_btn.callback = self.mod_callback
-        self.add_item(self.mod_btn)
-
-        self.del_btn = discord.ui.Button(
-            label="Eliminar",
-            style=discord.ButtonStyle.danger,
-            emoji="🗑️",
-            row=3,
-        )
-        self.del_btn.callback = self.del_callback
-        self.add_item(self.del_btn)
-
-    async def add_callback(self, interaction: discord.Interaction):
+    @discord.ui.button(
+        label="Añadir",
+        style=discord.ButtonStyle.success,
+        custom_id="blacklist_add_btn",
+        emoji="➕",
+        row=0,
+    )
+    async def add_btn(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
         await interaction.response.send_modal(AddBlacklistModal(self.bot))
 
-    async def mod_callback(self, interaction: discord.Interaction):
+    @discord.ui.button(
+        label="Modificar",
+        style=discord.ButtonStyle.secondary,
+        custom_id="blacklist_modify_btn",
+        emoji="📝",
+        row=0,
+    )
+    async def modify_btn(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
         await interaction.response.send_modal(ModifyBlacklistModal(self.bot))
 
-    async def del_callback(self, interaction: discord.Interaction):
+    @discord.ui.button(
+        label="Eliminar",
+        style=discord.ButtonStyle.danger,
+        custom_id="blacklist_delete_btn",
+        emoji="🗑️",
+        row=0,
+    )
+    async def delete_btn(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
         await interaction.response.send_modal(DeleteBlacklistModal(self.bot))
 
-    async def prev_page_callback(self, interaction: discord.Interaction):
+    @discord.ui.button(
+        label="◀️",
+        style=discord.ButtonStyle.blurple,
+        custom_id="blacklist_prev_btn",
+        row=1,
+    )
+    async def prev_btn(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
         """Página anterior de la Blacklist."""
         new_page = max(0, self.page - 1)
         await self._update_page(interaction, new_page)
 
-    async def next_page_callback(self, interaction: discord.Interaction):
+    @discord.ui.button(
+        label="▶️",
+        style=discord.ButtonStyle.blurple,
+        custom_id="blacklist_next_btn",
+        row=1,
+    )
+    async def next_btn(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
         """Página siguiente de la Blacklist."""
         total_pages = max(1, (len(self.rows) + PAGE_SIZE - 1) // PAGE_SIZE)
         new_page = min(total_pages - 1, self.page + 1)
@@ -532,31 +426,13 @@ class Warfare(commands.Cog):
                             tribe TEXT,
                             map TEXT,
                             notes TEXT,
-                            created_at TEXT,
-                            last_seen TEXT,
-                            total_hours REAL DEFAULT 0
+                            created_at TEXT
                         )
                     """)
                     logger.info("✅ Nueva tabla blacklist creada con schema correcto.")
                     await db.commit()
                 except Exception as e:
                     logger.error(f"❌ Error durante la migración de Blacklist: {e}")
-
-            # Comprobación de columnas nuevas para enriquecimiento
-            try:
-                await db.execute("SELECT last_seen FROM blacklist LIMIT 1")
-            except aiosqlite.OperationalError:
-                logger.info(
-                    "➕ Añadiendo columnas last_seen y total_hours a la blacklist."
-                )
-                try:
-                    await db.execute("ALTER TABLE blacklist ADD COLUMN last_seen TEXT")
-                    await db.execute(
-                        "ALTER TABLE blacklist ADD COLUMN total_hours REAL DEFAULT 0"
-                    )
-                    await db.commit()
-                except Exception as e:
-                    logger.error(f"❌ Error añadiendo columnas a Blacklist: {e}")
 
     # --- Funciones de Autocompletado ---
     async def tribe_autocomplete(
