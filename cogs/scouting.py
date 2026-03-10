@@ -511,6 +511,77 @@ class Scouting(commands.Cog):
             pass
 
     @app_commands.command(
+        name="scout_add_image",
+        description="Añade o reemplaza la imagen de un registro de scout existente.",
+    )
+    @app_commands.describe(
+        id="ID del scout al que añadir la imagen",
+        imagen="Captura de pantalla a adjuntar",
+    )
+    async def scout_add_image(
+        self,
+        interaction: discord.Interaction,
+        id: int,
+        imagen: discord.Attachment,
+    ):
+        await interaction.response.defer(ephemeral=False)
+
+        async with aiosqlite.connect(self.bot.db_name) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute("SELECT tribu_enemiga, mapa FROM scouts WHERE id = ?", (id,))
+            row = await cursor.fetchone()
+
+        if not row:
+            await interaction.followup.send(f"❌ No existe un registro de scout con ID {id}.")
+            return
+
+        tribu = row["tribu_enemiga"]
+        mapa = row["mapa"]
+        url_imagen = "N/A"
+
+        try:
+            async with aiosqlite.connect(self.bot.db_name) as db:
+                c = await db.execute(
+                    "SELECT upload_channel_id FROM guild_config WHERE guild_id = ?",
+                    (interaction.guild_id,),
+                )
+                cfg_row = await c.fetchone()
+                upload_id = cfg_row[0] if cfg_row else None
+
+            thread = None
+            if upload_id:
+                thread = self.bot.get_channel(upload_id) or await self.bot.fetch_channel(upload_id)
+            if thread:
+                f = await imagen.to_file()
+                caption = f"Scout #{id} — {tribu} ({mapa}) [Añadida a posteriori]"
+                upload_msg = await thread.send(caption, file=f)
+                url_imagen = str(upload_msg.id)
+            else:
+                url_imagen = imagen.url
+        except Exception as e:
+            logging.getLogger("ArkTribeBot").error(f"Error redirigiendo imagen (scout_add_image): {e}")
+            url_imagen = imagen.url
+
+        async with aiosqlite.connect(self.bot.db_name) as db:
+            await db.execute(
+                "UPDATE scouts SET url_imagen = ? WHERE id = ?",
+                (url_imagen, id),
+            )
+            await db.commit()
+
+        await interaction.followup.send(
+            f"✅ Imagen adjuntada satisfactoriamente al Scout **#{id}** ({tribu})."
+        )
+        await update_scout_dashboards(self.bot, mapa)
+
+        await asyncio.sleep(5)
+        try:
+            msg = await interaction.original_response()
+            await msg.delete()
+        except Exception:
+            pass
+
+    @app_commands.command(
         name="scout_list",
         description="Menú de Scouting: Sin argumentos = Dashboard PÚBLICO. Con mapa = Vista PRIVADA.",
     )
@@ -540,20 +611,20 @@ class Scouting(commands.Cog):
             # Modo Global público (Dashboard persistente)
             if not rows:
                 embed = discord.Embed(
-                    title=f"\ud83d\udce1 Scouting: {target_map}",
-                    description="No hay registros.\n\ud83d\udca1 Usa `/scout_add` para añadir uno.",
+                    title=f"📡 Scouting: {target_map}",
+                    description="No hay registros.\n💡 Usa `/scout_add` para añadir uno.",
                     color=discord.Color.red(),
                 )
             else:
                 embed = discord.Embed(
-                    title=f"\ud83d\udce1 Scouting: {target_map}",
+                    title=f"📡 Scouting: {target_map}",
                     color=discord.Color.red(),
                 )
                 count = 0
                 for row in rows:
                     if count >= 20:
                         embed.set_footer(
-                            text="...y más registros. | \ud83d\udca1 Usa /scout_add para añadir."
+                            text="...y más registros. | 💡 Usa /scout_add_image [id] [imagen] para añadir foto."
                         )
                         break
                     amenaza_str = "\u2b50" * row["nivel_amenaza"]
@@ -567,7 +638,7 @@ class Scouting(commands.Cog):
                     count += 1
                 if count < 20:
                     embed.set_footer(
-                        text="\ud83d\udca1 Usa /scout_add para añadir una nueva base."
+                        text="💡 Usa /scout_add_image [id] [imagen] para añadir foto a un scout."
                     )
 
             view = ScoutView(self.bot, target_map)
@@ -616,7 +687,7 @@ class Scouting(commands.Cog):
                     inline=False,
                 )
             embed.set_footer(
-                text=f"Página {page + 1}/{total_pages} \u2022 {total} bases registradas"
+                text=f"Página {page + 1}/{total_pages} • {total} bases registradas | 💡 Usa /scout_add_image [id] [imagen] para foto"
             )
 
         view = ScoutPrivateListView(self.bot, rows, target_map, page)
