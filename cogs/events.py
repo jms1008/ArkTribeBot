@@ -47,7 +47,7 @@ class EventPollView(discord.ui.View):
             )
             embed.set_author(name=f"Organizado por {creator_name}")
 
-            total_votes = 0
+            total_votes = sum(len(json.loads(v)) for _, _, v in options)
 
             for opt_id, opt_text, voters_json in options:
                 voters = json.loads(voters_json)
@@ -60,7 +60,9 @@ class EventPollView(discord.ui.View):
                         voter_names.append(f"Usuario {v_id}")
 
                 count = len(voters)
-                total_votes += count
+                pct = (count / total_votes * 100) if total_votes > 0 else 0
+                filled = round(pct / 10)
+                bar = "█" * filled + "░" * (10 - filled)
 
                 # Formatear la lista de votantes
                 if count > 0:
@@ -69,8 +71,8 @@ class EventPollView(discord.ui.View):
                     voters_str = "*Nadie todavía*"
 
                 embed.add_field(
-                    name=f"✅ {opt_text} ({count} votos)",
-                    value=voters_str,
+                    name=f"✅ {opt_text}",
+                    value=f"`{bar}` **{pct:.0f}%** ({count} votos)\n{voters_str}",
                     inline=False,
                 )
 

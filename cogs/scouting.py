@@ -6,6 +6,65 @@ import asyncio
 import logging
 from cogs.server_status import get_guild_servers
 
+logger = logging.getLogger("ArkTribeBot")
+
+SCOUT_PAGE_SIZE = 10  # Entradas por página en vista privada
+
+
+class AddScoutModal(discord.ui.Modal, title="Añadir Scout"):
+    """Modal para añadir un scout desde el botón del dashboard (sin imagen)."""
+
+    tribu = discord.ui.TextInput(label="Tribu Enemiga", placeholder="Ej: Los Raiders")
+    mapa = discord.ui.TextInput(label="Mapa", placeholder="Ej: Fjordur")
+    coords = discord.ui.TextInput(label="Coordenadas", placeholder="Ej: 45.2, 78.3")
+    amenaza = discord.ui.TextInput(
+        label="Nivel de Amenaza (1-5)",
+        placeholder="1 = Baja  |  5 = Extrema",
+        max_length=1,
+    )
+    notas = discord.ui.TextInput(
+        label="Notas",
+        placeholder="Info extra (opcional)",
+        style=discord.TextStyle.paragraph,
+        required=False,
+    )
+
+    def __init__(self, bot):
+        super().__init__()
+        self.bot = bot
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            amenaza_int = int(self.amenaza.value)
+            if not 1 <= amenaza_int <= 5:
+                raise ValueError
+        except ValueError:
+            await interaction.response.send_message(
+                "❌ La amenaza debe ser un número del 1 al 5.", ephemeral=True
+            )
+            return
+
+        tribu = self.tribu.value
+        mapa = self.mapa.value
+        coords = self.coords.value
+        notas = self.notas.value or ""
+
+        async with aiosqlite.connect(self.bot.db_name) as db:
+            cursor = await db.execute(
+                "INSERT INTO scouts (tribu_enemiga, mapa, coordenadas, nivel_amenaza, url_imagen, notas) "
+                "VALUES (?, ?, ?, ?, 'N/A', ?)",
+                (tribu, mapa, coords, amenaza_int, notas),
+            )
+            scout_id = cursor.lastrowid
+            await db.commit()
+
+        await interaction.response.send_message(
+            f"✅ Scout **#{scout_id}** registrado: **{tribu}** en {mapa}.\n"
+            f"Para adjuntar una imagen usa `/scout_add` con el campo *imagen*.",
+            ephemeral=True,
+        )
+        await update_scout_dashboards(self.bot, mapa)
+
 
 class ScoutView(discord.ui.View):
     def __init__(self, bot, map_filter):
@@ -17,15 +76,12 @@ class ScoutView(discord.ui.View):
         label="Añadir Scout",
         style=discord.ButtonStyle.success,
         custom_id="scout_add_btn",
-        emoji="🗡️",
+        emoji="\ud83d\udde1\ufe0f",
     )
     async def add_scout_btn(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
-        await interaction.response.send_message(
-            "Para registrar una nueva base usa el comando `/scout_add` en el chat.",
-            ephemeral=True,
-        )
+        await interaction.response.send_modal(AddScoutModal(self.bot))
 
     @discord.ui.button(
         label="Modificar Scout",
@@ -461,14 +517,9 @@ class Scouting(commands.Cog):
     @app_commands.autocomplete(mapa=mapa_autocomplete)
     @app_commands.describe(mapa="Filtrar por mapa (Opcional)")
     async def scout_list(self, interaction: discord.Interaction, mapa: str = None):
-        # División lógica según presencia de parámetro de mapa
-        # Sin mapa: Modo Global Público (Dashboard persistente)
-        # Con mapa: Modo Privado Temporal (Snapshot efímero)
-
         target_map = mapa if mapa else "Global"
-        ephemeral_mode = True if mapa else False
+        ephemeral_mode = bool(mapa)
 
-        # Recuperación de registros de la Base de Datos
         async with aiosqlite.connect(self.bot.db_name) as db:
             db.row_factory = aiosqlite.Row
             if target_map == "Global":
@@ -482,76 +533,47 @@ class Scouting(commands.Cog):
                 )
             rows = await cursor.fetchall()
 
-        # Creación del Embed principal
-        if not rows:
-            embed = discord.Embed(
-                title=f"📡 Scouting: {target_map}",
-                description="No hay registros.\n💡 Usa `/scout_add` para añadir uno.",
-                color=discord.Color.red(),
-            )
+        if ephemeral_mode:
+            # Vista privada paginada — página 0
+            await self._send_private_scout_page(interaction, rows, target_map, page=0)
         else:
-            embed = discord.Embed(
-                title=f"📡 Scouting: {target_map}", color=discord.Color.red()
-            )
-            count = 0
-            for row in rows:
-                if count >= 20:
-                    embed.set_footer(
-                        text="...y más registros. | 💡 Usa /scout_add para añadir."
-                    )
-                    break
-                amenaza_str = "⭐" * row["nivel_amenaza"]
-                # Inserción de prefijo identificador de mapa (sólo Global)
-                prefix = f"**[{row['mapa']}]** " if target_map == "Global" else ""
-
-                link_img = ""
-                if row["url_imagen"] and row["url_imagen"] != "N/A":
-                    try:
-                        if str(row["url_imagen"]).strip().isdigit():
-                            msg_id = int(str(row["url_imagen"]).strip())
-                            async with aiosqlite.connect(self.bot.db_name) as db:
-                                c = await db.execute(
-                                    "SELECT upload_channel_id FROM guild_config WHERE guild_id = ?",
-                                    (interaction.guild_id,),
-                                )
-                                row = await c.fetchone()
-                                upload_id = row[0] if row else None
-
-                            thread = None
-                            if upload_id:
-                                thread = self.bot.get_channel(
-                                    upload_id
-                                ) or await self.bot.fetch_channel(upload_id)
-                            if thread:
-                                backup_msg = await thread.fetch_message(msg_id)
-                                if backup_msg.attachments:
-                                    link_img = f" [[📷 Ver Imagen]({backup_msg.attachments[0].url})]"
-                        else:
-                            link_img = f" [[📷 Ver Imagen]({row['url_imagen']})]"
-                    except Exception:
-                        pass
-
-                value_text = f"📍 {row['coordenadas']} | ⚠️ {amenaza_str}\n📝 {row['notas']}{link_img}\n🆔 **ID: {row['id']}**"
-                embed.add_field(
-                    name=f"{prefix}{row['tribu_enemiga']}",
-                    value=value_text,
-                    inline=False,
+            # Modo Global público (Dashboard persistente)
+            if not rows:
+                embed = discord.Embed(
+                    title=f"\ud83d\udce1 Scouting: {target_map}",
+                    description="No hay registros.\n\ud83d\udca1 Usa `/scout_add` para añadir uno.",
+                    color=discord.Color.red(),
                 )
-                count += 1
+            else:
+                embed = discord.Embed(
+                    title=f"\ud83d\udce1 Scouting: {target_map}",
+                    color=discord.Color.red(),
+                )
+                count = 0
+                for row in rows:
+                    if count >= 20:
+                        embed.set_footer(
+                            text="...y más registros. | \ud83d\udca1 Usa /scout_add para añadir."
+                        )
+                        break
+                    amenaza_str = "\u2b50" * row["nivel_amenaza"]
+                    prefix = f"**[{row['mapa']}]** " if target_map == "Global" else ""
+                    value_text = f"\ud83d\udccd {row['coordenadas']} | \u26a0\ufe0f {amenaza_str}\n\ud83d\udcdd {row['notas']}\n\ud83c\udd94 **ID: {row['id']}**"
+                    embed.add_field(
+                        name=f"{prefix}{row['tribu_enemiga']}",
+                        value=value_text,
+                        inline=False,
+                    )
+                    count += 1
+                if count < 20:
+                    embed.set_footer(
+                        text="\ud83d\udca1 Usa /scout_add para añadir una nueva base."
+                    )
 
-            if count < 20:
-                embed.set_footer(text="💡 Usa /scout_add para añadir una nueva base.")
-
-        # Vinculación de vista interactiva (View)
-        view = ScoutView(self.bot, target_map)
-
-        # Envío de la respuesta
-        await interaction.response.send_message(
-            embed=embed, view=view, ephemeral=ephemeral_mode
-        )
-
-        # Persistencia en Modo Global para garantizar auto-actualizaciones
-        if not ephemeral_mode:
+            view = ScoutView(self.bot, target_map)
+            await interaction.response.send_message(
+                embed=embed, view=view, ephemeral=False
+            )
             message = await interaction.original_response()
             async with aiosqlite.connect(self.bot.db_name) as db:
                 await db.execute(
@@ -559,6 +581,113 @@ class Scouting(commands.Cog):
                     (interaction.channel_id, message.id, "Global"),
                 )
                 await db.commit()
+
+    async def _send_private_scout_page(
+        self,
+        interaction: discord.Interaction,
+        rows: list,
+        target_map: str,
+        page: int,
+        edit: bool = False,
+    ):
+        """Construye y envía/edita una página de la vista privada de scouts."""
+        total = len(rows)
+        total_pages = max(1, (total + SCOUT_PAGE_SIZE - 1) // SCOUT_PAGE_SIZE)
+        page = max(0, min(page, total_pages - 1))
+        start = page * SCOUT_PAGE_SIZE
+        chunk = rows[start : start + SCOUT_PAGE_SIZE]
+
+        if not rows:
+            embed = discord.Embed(
+                title=f"\ud83d\udce1 Scouting: {target_map}",
+                description="No hay registros en este mapa.",
+                color=discord.Color.red(),
+            )
+        else:
+            embed = discord.Embed(
+                title=f"\ud83d\udce1 Scouting: {target_map}", color=discord.Color.red()
+            )
+            for row in chunk:
+                amenaza_str = "\u2b50" * row["nivel_amenaza"]
+                value_text = f"\ud83d\udccd {row['coordenadas']} | \u26a0\ufe0f {amenaza_str}\n\ud83d\udcdd {row['notas']}\n\ud83c\udd94 **ID: {row['id']}**"
+                embed.add_field(
+                    name=row["tribu_enemiga"],
+                    value=value_text,
+                    inline=False,
+                )
+            embed.set_footer(
+                text=f"Página {page + 1}/{total_pages} \u2022 {total} bases registradas"
+            )
+
+        view = ScoutPrivateListView(self.bot, rows, target_map, page)
+
+        if edit:
+            await interaction.response.edit_message(embed=embed, view=view)
+        else:
+            await interaction.response.send_message(
+                embed=embed, view=view, ephemeral=True
+            )
+
+
+class ScoutPrivateListView(discord.ui.View):
+    """Vista de paginación para la vista privada de /scout_list con mapa."""
+
+    def __init__(self, bot, rows, target_map: str, page: int):
+        super().__init__(timeout=300)
+        self.bot = bot
+        self.rows = rows
+        self.target_map = target_map
+        self.page = page
+        total_pages = max(1, (len(rows) + SCOUT_PAGE_SIZE - 1) // SCOUT_PAGE_SIZE)
+        self.prev_page_btn.disabled = page == 0
+        self.next_page_btn.disabled = page >= total_pages - 1
+
+    @discord.ui.button(
+        label="\u25c4", style=discord.ButtonStyle.blurple, custom_id="scout_priv_prev"
+    )
+    async def prev_page_btn(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        cog = self.bot.cogs.get("Scouting")
+        if cog:
+            async with aiosqlite.connect(self.bot.db_name) as db:
+                db.row_factory = aiosqlite.Row
+                cursor = await db.execute(
+                    "SELECT * FROM scouts WHERE mapa = ? ORDER BY nivel_amenaza DESC",
+                    (self.target_map,),
+                )
+                rows = await cursor.fetchall()
+            await cog._send_private_scout_page(
+                interaction,
+                rows,
+                self.target_map,
+                page=max(0, self.page - 1),
+                edit=True,
+            )
+
+    @discord.ui.button(
+        label="\u25ba", style=discord.ButtonStyle.blurple, custom_id="scout_priv_next"
+    )
+    async def next_page_btn(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        cog = self.bot.cogs.get("Scouting")
+        if cog:
+            async with aiosqlite.connect(self.bot.db_name) as db:
+                db.row_factory = aiosqlite.Row
+                cursor = await db.execute(
+                    "SELECT * FROM scouts WHERE mapa = ? ORDER BY nivel_amenaza DESC",
+                    (self.target_map,),
+                )
+                rows = await cursor.fetchall()
+            total_pages = max(1, (len(rows) + SCOUT_PAGE_SIZE - 1) // SCOUT_PAGE_SIZE)
+            await cog._send_private_scout_page(
+                interaction,
+                rows,
+                self.target_map,
+                page=min(total_pages - 1, self.page + 1),
+                edit=True,
+            )
 
     @app_commands.command(
         name="scout_delete", description="Elimina una entrada de scouting por ID."

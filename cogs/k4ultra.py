@@ -573,6 +573,37 @@ class K4Ultra(commands.Cog):
                         (true_identity, map_m, 5, now.strftime("%Y-%m-%d %H:%M:%S")),
                     )
 
+                # --- Enriquecimiento de Blacklist ---
+                # Si el jugador está en la blacklist, actualizamos su info con datos de K4
+                try:
+                    cursor = await db.execute(
+                        "SELECT id FROM blacklist WHERE player = ?", (true_identity,)
+                    )
+                    bl_match = await cursor.fetchone()
+                    if bl_match:
+                        # Calculamos horas totales de todas las sesiones de K4 para este jugador
+                        cursor = await db.execute(
+                            "SELECT sum(total_minutes) FROM k4ultra_playtime WHERE player_name = ?",
+                            (true_identity,),
+                        )
+                        row_sum = await cursor.fetchone()
+                        total_mins = row_sum[0] if row_sum and row_sum[0] else 0
+                        total_hours = total_mins / 60
+
+                        await db.execute(
+                            "UPDATE blacklist SET map = ?, last_seen = ?, total_hours = ? WHERE player = ?",
+                            (
+                                map_m,
+                                now.strftime("%Y-%m-%d %H:%M:%S"),
+                                total_hours,
+                                true_identity,
+                            ),
+                        )
+                except Exception as e:
+                    logger.error(
+                        f"[K4Ultra] Error enriqueciendo blacklist para {true_identity}: {e}"
+                    )
+
             # Marcado de inactividad de sesiones cerradas
             for sid, s in active_pool_dict.items():
                 if sid not in seen_identities and sid in [
