@@ -6,9 +6,16 @@ import asyncio
 
 
 class TodoView(discord.ui.View):
-    def __init__(self, bot):
+    def __init__(self, bot, page: int = 0, total_rows: int = 0):
         super().__init__(timeout=None)
         self.bot = bot
+        self.page = page
+        self.total_rows = total_rows
+        
+        # Deshabilitar botones de paginación si procede
+        total_pages = max(1, (self.total_rows + 10 - 1) // 10)
+        self.prev_btn.disabled = self.page == 0
+        self.next_btn.disabled = self.page >= total_pages - 1
 
     @discord.ui.button(
         label="Añadir Tarea",
@@ -40,8 +47,62 @@ class TodoView(discord.ui.View):
     ):
         await interaction.response.send_modal(DeleteTaskModal(self.bot))
 
+    @discord.ui.button(
+        label="◀️",
+        style=discord.ButtonStyle.blurple,
+        custom_id="todo_prev_btn",
+    )
+    async def prev_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        new_page = max(0, self.page - 1)
+        await self._update_page(interaction, new_page)
 
-async def update_all_dashboards(bot):
+    @discord.ui.button(
+        label="▶️",
+        style=discord.ButtonStyle.blurple,
+        custom_id="todo_next_btn",
+    )
+    async def next_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        total = self.total_rows or 0
+        total_pages = max(1, (total + 10 - 1) // 10)
+        new_page = min(total_pages - 1, self.page + 1)
+        await self._update_page(interaction, new_page)
+
+    async def _update_page(self, interaction: discord.Interaction, new_page: int):
+        async with aiosqlite.connect(self.bot.db_name) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute("SELECT * FROM todos")
+            rows = await cursor.fetchall()
+        
+        embed, page, view = build_todo_embed_view(self.bot, rows, new_page)
+        await interaction.response.edit_message(embed=embed, view=view)
+
+
+def build_todo_embed_view(bot, rows: list, page: int = 0):
+    page_size = 10
+    total = len(rows)
+    total_pages = max(1, (total + page_size - 1) // page_size)
+    page = max(0, min(page, total_pages - 1))
+    
+    start = page * page_size
+    chunk = rows[start : start + page_size]
+
+    embed = discord.Embed(title="📝 Lista de Tareas", color=discord.Color.orange())
+    if not rows:
+        embed.description = "No hay tareas pendientes. ¡Buen trabajo! 🎉"
+    else:
+        text = ""
+        for row in chunk:
+            asignado = f"<@{row['asignado_a']}>" if row.get("asignado_a") else "Nadie"
+            estado_icon = "⏳" if row["estado"] == "Pendiente" else "🔨"
+            text += f"**#{row['id']}** {estado_icon} - {row['tarea']}\n   Estado: {row['estado']} | Asignado: {asignado}\n\n"
+        embed.description = text.strip()
+        embed.set_footer(text=f"Página {page + 1}/{total_pages} • {total} tareas en total")
+
+    view = TodoView(bot, page=page, total_rows=total)
+    return embed, page, view
+
+
+async def update_all_dashboards(bot, page: int = 0):
     """Actualiza todos los mensajes de lista de tareas registrados."""
     # 1. Generación del nuevo Embed
     async with aiosqlite.connect(bot.db_name) as db:
@@ -49,22 +110,7 @@ async def update_all_dashboards(bot):
         cursor = await db.execute("SELECT * FROM todos")
         rows = await cursor.fetchall()
 
-    embed = discord.Embed(title="📝 Lista de Tareas", color=discord.Color.orange())
-    if not rows:
-        embed.description = "No hay tareas pendientes. ¡Buen trabajo! 🎉"
-    else:
-        text = ""
-        for row in rows:
-            asignado = f"<@{row['asignado_a']}>" if row["asignado_a"] else "Nadie"
-            estado_icon = "⏳" if row["estado"] == "Pendiente" else "🔨"
-            text += f"**#{row['id']}** {estado_icon} - {row['tarea']}\n   Estado: {row['estado']} | Asignado: {asignado}\n\n"
-            if len(text) > 3800:
-                text += "... (lista truncada)"
-                break
-        embed.description = text
-
-    view = TodoView(bot)
-
+    embed, current_page, view = build_todo_embed_view(bot, rows, page)
     # 2. Búsqueda y edición de mensajes registrados
     messages_to_remove = []
     async with aiosqlite.connect(bot.db_name) as db:

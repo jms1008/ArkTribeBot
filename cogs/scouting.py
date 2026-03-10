@@ -67,10 +67,16 @@ class AddScoutModal(discord.ui.Modal, title="Añadir Scout"):
 
 
 class ScoutView(discord.ui.View):
-    def __init__(self, bot, map_filter):
+    def __init__(self, bot, map_filter, page: int = 0, total_rows: int = 0):
         super().__init__(timeout=None)
         self.bot = bot
         self.map_filter = map_filter
+        self.page = page
+        self.total_rows = total_rows
+        
+        total_pages = max(1, (self.total_rows + 10 - 1) // 10)
+        self.prev_btn.disabled = self.page == 0
+        self.next_btn.disabled = self.page >= total_pages - 1
 
     @discord.ui.button(
         label="Añadir Scout",
@@ -104,8 +110,105 @@ class ScoutView(discord.ui.View):
     ):
         await interaction.response.send_modal(DeleteScoutModal(self.bot))
 
+    @discord.ui.button(
+        label="◀️",
+        style=discord.ButtonStyle.blurple,
+        custom_id="scout_prev_btn",
+    )
+    async def prev_btn(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        new_page = max(0, self.page - 1)
+        await self._update_page(interaction, new_page)
 
-async def update_scout_dashboards(bot, target_map=None):
+    @discord.ui.button(
+        label="▶️",
+        style=discord.ButtonStyle.blurple,
+        custom_id="scout_next_btn",
+    )
+    async def next_btn(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        total = self.total_rows or 0
+        total_pages = max(1, (total + 10 - 1) // 10)
+        new_page = min(total_pages - 1, self.page + 1)
+        await self._update_page(interaction, new_page)
+
+    async def _update_page(self, interaction: discord.Interaction, new_page: int):
+        async with aiosqlite.connect(self.bot.db_name) as db:
+            db.row_factory = aiosqlite.Row
+            if self.map_filter == "Global":
+                cursor = await db.execute("SELECT * FROM scouts ORDER BY mapa, nivel_amenaza DESC")
+            else:
+                cursor = await db.execute("SELECT * FROM scouts WHERE mapa = ? ORDER BY nivel_amenaza DESC", (self.map_filter,))
+            rows = await cursor.fetchall()
+        
+        embed, page, view = await build_scout_embed_view(self.bot, rows, self.map_filter, new_page)
+        await interaction.response.edit_message(embed=embed, view=view)
+
+
+async def build_scout_embed_view(bot, rows: list, map_filter: str, page: int = 0):
+    page_size = 10
+    total = len(rows)
+    total_pages = max(1, (total + page_size - 1) // page_size)
+    page = max(0, min(page, total_pages - 1))
+    
+    start = page * page_size
+    chunk = rows[start : start + page_size]
+
+    embed = discord.Embed(
+        title=f"📡 Scouting: {map_filter}", color=discord.Color.red()
+    )
+
+    if not rows:
+        embed.description = "No hay registros.\n💡 Usa `/scout_add` para añadir uno."
+    else:
+        for row in chunk:
+            amenaza_str = "⭐" * row["nivel_amenaza"]
+            prefix = f"**[{row['mapa']}]** " if map_filter == "Global" else ""
+            
+            link_img = ""
+            if row["url_imagen"] and row["url_imagen"] != "N/A":
+                try:
+                    if str(row["url_imagen"]).strip().isdigit():
+                        msg_id = int(str(row["url_imagen"]).strip())
+                        async with aiosqlite.connect(bot.db_name) as _db:
+                            c = await _db.execute(
+                                "SELECT upload_channel_id, guild_id FROM guild_config LIMIT 1"
+                            )
+                            cfg_row = await c.fetchone()
+                            upload_id = cfg_row[0] if cfg_row else None
+
+                        thread = None
+                        if upload_id:
+                            thread = bot.get_channel(upload_id) or await bot.fetch_channel(upload_id)
+                        if thread:
+                            backup_msg = await thread.fetch_message(msg_id)
+                            if backup_msg.attachments:
+                                link_img = f" [[📷 Ver Imagen]({backup_msg.attachments[0].url})]"
+                    else:
+                        link_img = f" [[📷 Ver Imagen]({row['url_imagen']})]"
+                except Exception as e:
+                    logging.getLogger("ArkTribeBot").warning(
+                        f"No se pudo recuperar imagen fresca para scout {row['id']}: {e}"
+                    )
+
+            value_text = f"📍 {row['coordenadas']} | ⚠️ {amenaza_str}\n📝 {row['notas']}{link_img}\n🆔 **ID: {row['id']}**"
+            
+            embed.add_field(
+                name=f"{prefix}{row['tribu_enemiga']}",
+                value=value_text,
+                inline=False,
+            )
+        embed.set_footer(
+            text=f"Página {page + 1}/{total_pages} • {total} bases registradas | 💡 Usa /scout_add_image [id] [imagen] para foto"
+        )
+
+    view = ScoutView(bot, map_filter, page=page, total_rows=total)
+    return embed, page, view
+
+
+async def update_scout_dashboards(bot, target_map=None, page: int = 0):
     """Actualiza los dashboards. target_map es el mapa que ha sufrido cambios (o None si unknown)."""
 
     async with aiosqlite.connect(bot.db_name) as db:
@@ -128,88 +231,17 @@ async def update_scout_dashboards(bot, target_map=None):
     for dash in dashboards:
         map_filter = dash["map_filter"]
 
-        # Construcción de Embed
+        # Omitimos la recarga completa aquí; simplemente usamos build_scout_embed_view
+        # Necesitamos cargar las 'rows' para este dashboard concreto
         async with aiosqlite.connect(bot.db_name) as db:
             db.row_factory = aiosqlite.Row
             if map_filter == "Global":
-                cursor = await db.execute(
-                    "SELECT * FROM scouts ORDER BY mapa, nivel_amenaza DESC"
-                )
+                cursor = await db.execute("SELECT * FROM scouts ORDER BY mapa, nivel_amenaza DESC")
             else:
-                cursor = await db.execute(
-                    "SELECT * FROM scouts WHERE mapa = ? ORDER BY nivel_amenaza DESC",
-                    (map_filter,),
-                )
+                cursor = await db.execute("SELECT * FROM scouts WHERE mapa = ? ORDER BY nivel_amenaza DESC", (map_filter,))
             rows = await cursor.fetchall()
 
-        if not rows:
-            embed = discord.Embed(
-                title=f"📡 Scouting: {map_filter}",
-                description="No hay registros.\n💡 Usa `/scout_add` para añadir uno.",
-                color=discord.Color.red(),
-            )
-        else:
-            embed = discord.Embed(
-                title=f"📡 Scouting: {map_filter}", color=discord.Color.red()
-            )
-            count = 0
-            for row in rows:
-                if count >= 20:
-                    embed.set_footer(
-                        text="...y más registros. | 💡 Usa /scout_add para añadir."
-                    )
-                    break
-
-                amenaza_str = "⭐" * row["nivel_amenaza"]
-                # Adición de prefijo de mapa (Solo vista Global)
-                prefix = f"**[{row['mapa']}]** " if map_filter == "Global" else ""
-
-                link_img = ""
-                # Resolución de imagen activa (A partir de Message ID de backup o URL histórica)
-                if row["url_imagen"] and row["url_imagen"] != "N/A":
-                    try:
-                        # Detección de Message ID numérico (dato de backup)
-                        if str(row["url_imagen"]).strip().isdigit():
-                            msg_id = int(str(row["url_imagen"]).strip())
-                            async with aiosqlite.connect(bot.db_name) as _db:
-                                c = await _db.execute(
-                                    "SELECT upload_channel_id FROM guild_config WHERE guild_id = ?",
-                                    (dash["guild_id"],),
-                                )
-                                cfg_row = await c.fetchone()
-                                upload_id = cfg_row[0] if cfg_row else None
-
-                            thread = None
-                            if upload_id:
-                                thread = bot.get_channel(
-                                    upload_id
-                                ) or await bot.fetch_channel(upload_id)
-                            if thread:
-                                backup_msg = await thread.fetch_message(msg_id)
-                                if backup_msg.attachments:
-                                    # Generación de hipervínculo clickeable
-                                    link_img = f" [[📷 Ver Imagen]({backup_msg.attachments[0].url})]"
-                        else:
-                            # Mantenimiento de retrocompatibilidad con URLs antiguas
-                            link_img = f" [[📷 Ver Imagen]({row['url_imagen']})]"
-                    except Exception as e:
-                        logging.getLogger("ArkTribeBot").warning(
-                            f"No se pudo recuperar imagen fresca para scout {row['id']}: {e}"
-                        )
-                        pass
-
-                value_text = f"📍 {row['coordenadas']} | ⚠️ {amenaza_str}\n📝 {row['notas']}{link_img}\n🆔 **ID: {row['id']}**"
-                embed.add_field(
-                    name=f"{prefix}{row['tribu_enemiga']}",
-                    value=value_text,
-                    inline=False,
-                )
-                count += 1
-
-            if count < 20:
-                embed.set_footer(text="💡 Usa /scout_add para añadir una nueva base.")
-
-        view = ScoutView(bot, map_filter)
+        embed, _, view = await build_scout_embed_view(bot, rows, map_filter, page)
 
         try:
             channel = bot.get_channel(dash["channel_id"]) or await bot.fetch_channel(
@@ -223,9 +255,8 @@ async def update_scout_dashboards(bot, target_map=None):
         except (discord.NotFound, discord.Forbidden):
             messages_to_remove.append(dash["id"])
         except Exception as e:
-            print(f"Error update scout dash {dash['id']}: {e}")
+            logger.error(f"Error actualizando dashboard scout {dash['id']}: {e}")
 
-    # Limpieza de registros inactivos o mensajes borrados
     if messages_to_remove:
         async with aiosqlite.connect(bot.db_name) as db:
             for mid in messages_to_remove:
@@ -609,39 +640,8 @@ class Scouting(commands.Cog):
             await self._send_private_scout_page(interaction, rows, target_map, page=0)
         else:
             # Modo Global público (Dashboard persistente)
-            if not rows:
-                embed = discord.Embed(
-                    title=f"📡 Scouting: {target_map}",
-                    description="No hay registros.\n💡 Usa `/scout_add` para añadir uno.",
-                    color=discord.Color.red(),
-                )
-            else:
-                embed = discord.Embed(
-                    title=f"📡 Scouting: {target_map}",
-                    color=discord.Color.red(),
-                )
-                count = 0
-                for row in rows:
-                    if count >= 20:
-                        embed.set_footer(
-                            text="...y más registros. | 💡 Usa /scout_add_image [id] [imagen] para añadir foto."
-                        )
-                        break
-                    amenaza_str = "\u2b50" * row["nivel_amenaza"]
-                    prefix = f"**[{row['mapa']}]** " if target_map == "Global" else ""
-                    value_text = f"\ud83d\udccd {row['coordenadas']} | \u26a0\ufe0f {amenaza_str}\n\ud83d\udcdd {row['notas']}\n\ud83c\udd94 **ID: {row['id']}**"
-                    embed.add_field(
-                        name=f"{prefix}{row['tribu_enemiga']}",
-                        value=value_text,
-                        inline=False,
-                    )
-                    count += 1
-                if count < 20:
-                    embed.set_footer(
-                        text="💡 Usa /scout_add_image [id] [imagen] para añadir foto a un scout."
-                    )
-
-            view = ScoutView(self.bot, target_map)
+            embed, page, view = await build_scout_embed_view(self.bot, rows, target_map, 0)
+            
             await interaction.response.send_message(
                 embed=embed, view=view, ephemeral=False
             )
