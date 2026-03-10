@@ -574,6 +574,7 @@ class ArkTribeBot(commands.Bot):
             for migration_sql in [
                 "ALTER TABLE blacklist ADD COLUMN last_seen TEXT",
                 "ALTER TABLE blacklist ADD COLUMN total_hours REAL DEFAULT 0",
+                "ALTER TABLE blacklist ADD COLUMN is_enemy INTEGER DEFAULT 1",
             ]:
                 try:
                     await db.execute(migration_sql)

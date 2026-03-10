@@ -31,17 +31,34 @@ def build_blacklist_embed(rows: list, page: int = 0) -> discord.Embed:
         embed.description = "No hay jugadores en la lista negra.\n💡 Usa el botón **Añadir** para registrar uno."
     else:
         lines = []
+        current_section = None
+
         for row in chunk:
+            is_enemy = row.get("is_enemy", 1)
+            
+            # Separador de secciones
+            if is_enemy == 1 and current_section != "Enemigos":
+                lines.append("\n🔴 **ENEMIGOS** 🔴")
+                lines.append("────────────────")
+                current_section = "Enemigos"
+            elif is_enemy == 0 and current_section != "Neutrales":
+                lines.append("\n⚪ **REGISTROS K4ULTRA (NEUTRALES)** ⚪")
+                lines.append("────────────────")
+                current_section = "Neutrales"
+
             nota_corta = (
                 (row["notes"][:30] + "...")
                 if row["notes"] and len(row["notes"]) > 30
                 else (row["notes"] or "")
             )
+            
+            emoji = "🔴" if is_enemy == 1 else "⚪"
             lines.append(
-                f"`#{row['id']}` **{row['player']}** | {row['tribe']} | {row['map']}\n"
+                f"`#{row['id']}` {emoji} **{row['player']}** | {row['tribe']} | {row['map']}\n"
                 f"    📝 {nota_corta}"
             )
-        embed.description = "\n\n".join(lines)
+            
+        embed.description = "\n".join(lines).strip()
         embed.set_footer(
             text=f"Página {page + 1}/{total_pages} • {total} entradas totales"
         )
@@ -63,7 +80,7 @@ async def update_blacklist_dashboards(bot, page: int = 0):
     # Recuperación de registros de la Blacklist
     async with aiosqlite.connect(bot.db_name) as db:
         db.row_factory = aiosqlite.Row
-        cursor = await db.execute("SELECT * FROM blacklist ORDER BY id DESC")
+        cursor = await db.execute("SELECT * FROM blacklist ORDER BY is_enemy DESC, id DESC")
         rows = await cursor.fetchall()
 
     embed, current_page, total_pages = build_blacklist_embed(rows, page)
@@ -215,7 +232,7 @@ class AddBlacklistModal(discord.ui.Modal, title="Añadir a Blacklist"):
     async def on_submit(self, interaction: discord.Interaction):
         async with aiosqlite.connect(self.bot.db_name) as db:
             await db.execute(
-                "INSERT INTO blacklist (player, tribe, map, notes) VALUES (?, ?, ?, ?)",
+                "INSERT INTO blacklist (player, tribe, map, notes, is_enemy) VALUES (?, ?, ?, ?, 1)",
                 (
                     self.player.value,
                     self.tribe.value or "Desconocido",
@@ -508,7 +525,7 @@ class BlacklistView(discord.ui.View):
         """Carga los datos frescos, construye el embed de la página pedida y edita el mensaje."""
         async with aiosqlite.connect(self.bot.db_name) as db:
             db.row_factory = aiosqlite.Row
-            cursor = await db.execute("SELECT * FROM blacklist ORDER BY id DESC")
+            cursor = await db.execute("SELECT * FROM blacklist ORDER BY is_enemy DESC, id DESC")
             rows = await cursor.fetchall()
 
         embed, current_page, _ = build_blacklist_embed(rows, new_page)

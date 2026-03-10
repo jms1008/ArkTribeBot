@@ -638,13 +638,14 @@ class K4Ultra(commands.Cog):
                             ):
                                 try:
                                     await db.execute(
-                                        "INSERT INTO blacklist (player, tribe, map, notes, created_at) VALUES (?, ?, ?, ?, ?)",
+                                        "INSERT INTO blacklist (player, tribe, map, notes, created_at, is_enemy) VALUES (?, ?, ?, ?, ?, ?)",
                                         (
                                             t_name,
                                             "Desconocido",
                                             t_map,
-                                            "Auto-detectado por Radar K4Ultra",
+                                            "Pasaporte registrado (K4Ultra)",
                                             created_at,
+                                            0,
                                         ),
                                     )
                                     blacklisted.add(t_name)
