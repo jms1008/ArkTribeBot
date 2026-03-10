@@ -571,6 +571,14 @@ class ArkTribeBot(commands.Bot):
                     created_at TEXT
                 )
             """)
+            for migration_sql in [
+                "ALTER TABLE blacklist ADD COLUMN last_seen TEXT",
+                "ALTER TABLE blacklist ADD COLUMN total_hours REAL DEFAULT 0",
+            ]:
+                try:
+                    await db.execute(migration_sql)
+                except aiosqlite.OperationalError:
+                    pass
 
             # Tabla Mensajes de Blacklist (Dashboard)
             await db.execute("""

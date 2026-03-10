@@ -309,6 +309,120 @@ class DeleteBlacklistModal(discord.ui.Modal, title="Eliminar de Blacklist"):
         await update_blacklist_dashboards(self.bot)
 
 
+async def build_player_detail_embed(bot, player_name: str, guild_id: int) -> discord.Embed:
+    """Construye un embed detallado para un jugador, cruzando datos de Blacklist y K4Ultra."""
+    embed = discord.Embed(
+        title=f"👤 Detalle de Jugador: {player_name}", color=discord.Color.dark_orange()
+    )
+
+    async with aiosqlite.connect(bot.db_name) as db:
+        db.row_factory = aiosqlite.Row
+
+        # 1. Datos de Blacklist
+        cursor = await db.execute(
+            "SELECT tribe, map, notes, created_at, last_seen, total_hours FROM blacklist WHERE player = ? LIMIT 1",
+            (player_name,)
+        )
+        row = await cursor.fetchone()
+        
+        if not row:
+            embed.description = "Este jugador ya no está en la blacklist."
+            return embed
+
+        notes_str = row["notes"] if row["notes"] else "Ninguna"
+        created_at_fmt = row["created_at"] if row["created_at"] else "Desconocida"
+        last_seen = row["last_seen"] if row["last_seen"] else "Nunca"
+        total_hours = row["total_hours"] if row["total_hours"] else 0.0
+
+        embed.add_field(name="🏠 Tribu", value=row["tribe"] or "Desconocida", inline=True)
+        embed.add_field(name="🗺️ Mapa Inicial", value=row["map"] or "Desconocido", inline=True)
+        embed.add_field(name="📅 Añadido", value=created_at_fmt, inline=True)
+        embed.add_field(
+            name="📝 Notas",
+            value=notes_str,
+            inline=False
+        )
+        embed.add_field(name="👀 Última vez visto", value=last_seen, inline=True)
+        embed.add_field(name="⏱️ Tiempo total", value=f"{total_hours:.1f} horas", inline=True)
+
+        # 2. Mapas de K4Ultra
+        cursor = await db.execute(
+            "SELECT map_name, sum(total_minutes) as m FROM k4ultra_playtime WHERE player_name = ? GROUP BY map_name ORDER BY m DESC",
+            (player_name,)
+        )
+        maps = await cursor.fetchall()
+        
+        map_text = "Sin registros."
+        if maps:
+            map_list = []
+            for m in maps:
+                hours = m["m"] / 60
+                map_list.append(f"• **{m['map_name']}**: {hours:.1f}h")
+            map_text = "\n".join(map_list)
+        
+        embed.add_field(name="🌍 Actividad por Mapa (K4)", value=map_text, inline=False)
+
+        # 3. Aliados de K4Ultra
+        cursor = await db.execute(
+            """
+            SELECT player2 as ally, probability_score 
+            FROM k4ultra_relationships 
+            WHERE player1 = ? 
+            UNION
+            SELECT player1 as ally, probability_score 
+            FROM k4ultra_relationships 
+            WHERE player2 = ? 
+            ORDER BY probability_score DESC LIMIT 3
+            """,
+            (player_name, player_name)
+        )
+        allies = await cursor.fetchall()
+        
+        ally_text = "Sin aliados conocidos."
+        if allies:
+            ally_list = []
+            for a in allies:
+                ally_list.append(f"• **{a['ally']}** ({a['probability_score']}%)")
+            ally_text = "\n".join(ally_list)
+
+        embed.add_field(name="🤝 Aliados en K4Ultra", value=ally_text, inline=False)
+
+    return embed
+
+
+class PlayerDetailSelect(discord.ui.Select):
+    def __init__(self, bot, rows):
+        self.bot = bot
+        options = []
+        for row in rows:
+            name = row["player"]
+            if len(name) > 100:
+                name = name[:97] + "..."
+            tribe_desc = row["tribe"]
+            if len(tribe_desc) > 100:
+                tribe_desc = tribe_desc[:97] + "..."
+            options.append(
+                discord.SelectOption(
+                    label=name, description=f"Tribu: {tribe_desc}", value=row["player"]
+                )
+            )
+        
+        super().__init__(
+            placeholder="Ver detalles de un jugador (K4Ultra)...",
+            min_values=1,
+            max_values=1,
+            options=options,
+            row=1
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        player_name = self.values[0]
+        guild_id = interaction.guild_id or 0
+        embed = await build_player_detail_embed(self.bot, player_name, guild_id)
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+
 class BlacklistView(discord.ui.View):
     def __init__(self, bot, rows=None, page: int = 0):
         super().__init__(timeout=None)
@@ -316,6 +430,13 @@ class BlacklistView(discord.ui.View):
         self.rows = rows or []
         self.page = page
         total_pages = max(1, (len(self.rows) + PAGE_SIZE - 1) // PAGE_SIZE)
+        
+        # Select de Jugadores para esta página
+        start = page * PAGE_SIZE
+        chunk = self.rows[start : start + PAGE_SIZE]
+        if chunk:
+            self.add_item(PlayerDetailSelect(bot, chunk))
+
         # Deshabilitar flechas si no hay páginas
         self.prev_btn.disabled = page == 0
         self.next_btn.disabled = page >= total_pages - 1
@@ -360,7 +481,7 @@ class BlacklistView(discord.ui.View):
         label="◀️",
         style=discord.ButtonStyle.blurple,
         custom_id="blacklist_prev_btn",
-        row=1,
+        row=2,
     )
     async def prev_btn(
         self, interaction: discord.Interaction, button: discord.ui.Button
@@ -373,7 +494,7 @@ class BlacklistView(discord.ui.View):
         label="▶️",
         style=discord.ButtonStyle.blurple,
         custom_id="blacklist_next_btn",
-        row=1,
+        row=2,
     )
     async def next_btn(
         self, interaction: discord.Interaction, button: discord.ui.Button
