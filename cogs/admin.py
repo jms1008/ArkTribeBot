@@ -242,7 +242,7 @@ class Admin(commands.Cog):
 
                 async with aiosqlite.connect(self.bot.db_name) as db:
                     db.row_factory = aiosqlite.Row
-                    cursor = await db.execute("SELECT * FROM todos")
+                    cursor = await db.execute("SELECT * FROM todos WHERE guild_id = ?", (interaction.guild_id,))
                     rows = await cursor.fetchall()
 
                 todo_embed = discord.Embed(title="📝 Lista de Tareas", color=discord.Color.orange())
@@ -279,7 +279,7 @@ class Admin(commands.Cog):
 
                 async with aiosqlite.connect(self.bot.db_name) as db:
                     db.row_factory = aiosqlite.Row
-                    cursor = await db.execute("SELECT * FROM dinos ORDER BY especie ASC")
+                    cursor = await db.execute("SELECT * FROM dinos WHERE guild_id = ? ORDER BY especie ASC", (interaction.guild_id,))
                     rows = await cursor.fetchall()
 
                 crianza_embed = discord.Embed(title="🧬 Líneas de Crianza y Genética Base", color=discord.Color.green())
@@ -319,7 +319,7 @@ class Admin(commands.Cog):
 
                 async with aiosqlite.connect(self.bot.db_name) as db:
                     db.row_factory = aiosqlite.Row
-                    cursor = await db.execute("SELECT * FROM blacklist ORDER BY is_enemy DESC, id DESC")
+                    cursor = await db.execute("SELECT * FROM blacklist WHERE guild_id = ? ORDER BY is_enemy DESC, id DESC", (interaction.guild_id,))
                     rows = await cursor.fetchall()
 
                 bl_embed = discord.Embed(title="☠️ Blacklist de Jugadores", color=discord.Color.dark_red())
@@ -344,7 +344,7 @@ class Admin(commands.Cog):
                     if len(bl_embed.description) > 3800:
                         bl_embed.description = bl_embed.description[:3800] + "...\\n(Lista truncada)"
 
-                view = BlacklistView(self.bot)
+                view = BlacklistView(self.bot, rows=rows, page=0)
                 msg = await canal_blacklist.send(embed=bl_embed, view=view)
 
                 async with aiosqlite.connect(self.bot.db_name) as db:
@@ -364,7 +364,7 @@ class Admin(commands.Cog):
 
                 async with aiosqlite.connect(self.bot.db_name) as db:
                     db.row_factory = aiosqlite.Row
-                    cursor = await db.execute("SELECT * FROM scouts ORDER BY nivel_amenaza DESC LIMIT 5")
+                    cursor = await db.execute("SELECT * FROM scouts WHERE guild_id = ? ORDER BY nivel_amenaza DESC LIMIT 5", (interaction.guild_id,))
                     rows = await cursor.fetchall()
 
                 sc_embed = discord.Embed(title="🛰️ Reconocimiento Global: Bases Enemigas", color=discord.Color.dark_purple())
@@ -382,7 +382,7 @@ class Admin(commands.Cog):
                         )
                     sc_embed.set_footer(text="Mostrando primeros 5. Genera panel filtrado por mapa usando /scout_list mapa:X")
                 
-                view = ScoutView(self.bot, page=0, total_rows=len(rows) if rows else 0, current_map=None)
+                view = ScoutView(self.bot, map_filter=None, page=0, total_rows=len(rows) if rows else 0)
                 msg = await canal_scouting.send(embed=sc_embed, view=view)
 
                 async with aiosqlite.connect(self.bot.db_name) as db:
