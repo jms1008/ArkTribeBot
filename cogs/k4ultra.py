@@ -165,8 +165,8 @@ class PlayerSelectMenu(discord.ui.Select):
         async with aiosqlite.connect(self.bot.db_name) as db:
             db.row_factory = aiosqlite.Row
             cursor = await db.execute(
-                "SELECT map_name, sum(total_minutes) as m FROM k4ultra_playtime WHERE player_name = ? AND guild_id = ? GROUP BY map_name ORDER BY m DESC",
-                (player_name, self.guild_id),
+                "SELECT map_name, sum(total_minutes) as m FROM k4ultra_playtime WHERE player_name = ? GROUP BY map_name ORDER BY m DESC",
+                (player_name,),
             )
             maps = await cursor.fetchall()
 
@@ -180,8 +180,8 @@ class PlayerSelectMenu(discord.ui.Select):
             main_map = maps[0]["map_name"]
 
             cursor = await db.execute(
-                "SELECT start_time FROM k4ultra_sessions WHERE player_name = ? AND guild_id = ?",
-                (player_name, self.guild_id),
+                "SELECT start_time FROM k4ultra_sessions WHERE player_name = ?",
+                (player_name,),
             )
             sessions = await cursor.fetchall()
 
@@ -202,8 +202,8 @@ class PlayerSelectMenu(discord.ui.Select):
             # Adición de alias (si consta en el registro)
             try:
                 cursor = await db.execute(
-                    "SELECT alias FROM k4ultra_aliases WHERE player_name = ? AND guild_id = ?",
-                    (player_name, self.guild_id),
+                    "SELECT alias FROM k4ultra_aliases WHERE player_name = ?",
+                    (player_name,),
                 )
                 alias_row = await cursor.fetchone()
                 if alias_row:
@@ -214,8 +214,8 @@ class PlayerSelectMenu(discord.ui.Select):
             # Búsqueda de Estado Online Actual
             try:
                 cursor = await db.execute(
-                    "SELECT map_name FROM k4ultra_sessions WHERE player_name = ? AND is_active = 1 AND guild_id = ? LIMIT 1",
-                    (player_name, self.guild_id)
+                    "SELECT map_name FROM k4ultra_sessions WHERE player_name = ? AND is_active = 1 LIMIT 1",
+                    (player_name,)
                 )
                 online_row = await cursor.fetchone()
                 if online_row:
@@ -1035,8 +1035,7 @@ class K4Ultra(commands.Cog):
             cursor = await db.execute("""
                 SELECT player_name, map_name, total_minutes
                 FROM k4ultra_playtime
-                WHERE guild_id = ?
-            """, (guild_id,))
+            """)
             all_playtimes = await cursor.fetchall()
 
             from collections import defaultdict
@@ -1054,8 +1053,7 @@ class K4Ultra(commands.Cog):
 
             # Obtención de jugadores conectados en este instante
             cursor = await db.execute(
-                "SELECT player_name FROM k4ultra_sessions WHERE is_active = 1 AND guild_id = ?",
-                (guild_id,)
+                "SELECT player_name FROM k4ultra_sessions WHERE is_active = 1"
             )
             active_sessions = await cursor.fetchall()
             active_players = {s["player_name"] for s in active_sessions}
@@ -1145,8 +1143,7 @@ class K4Ultra(commands.Cog):
 
             # Consulta de Tribus Fijas
             cursor = await db.execute(
-                "SELECT name, members_json FROM k4ultra_fixed_tribes WHERE guild_id = ?",
-                (guild_id,)
+                "SELECT name, members_json FROM k4ultra_fixed_tribes"
             )
             fixed_rows = await cursor.fetchall()
             fixed_players = set()
@@ -1159,8 +1156,7 @@ class K4Ultra(commands.Cog):
 
             # Consulta de Relaciones Dinámicas Calculadas
             cursor = await db.execute(
-                "SELECT player1, player2 FROM k4ultra_relationships WHERE (probability_score >= 10 OR is_manual = 1) AND guild_id = ?",
-                (guild_id,)
+                "SELECT player1, player2 FROM k4ultra_relationships WHERE probability_score >= 10 OR is_manual = 1"
             )
             rels = await cursor.fetchall()
 

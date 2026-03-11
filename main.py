@@ -224,18 +224,22 @@ class ArkTribeBot(commands.Bot):
         embed.set_footer(text="ArkTribeBot v2.0 • By: @K4NEKIs")
 
         try:
-            # Sync silencioso de comandos para que este servidor los tenga disponibles al instante
-            self.tree.copy_global_to(guild=guild)
-            await self.tree.sync(guild=guild)
-            logger.info(f"Comandos sincronizados silenciosamente en {guild.name}")
-        except Exception as e:
-            logger.error(f"Error sincronizando comandos en {guild.name}: {e}")
-
-        try:
             await canal.send(embed=embed)
             logger.info(f"Mensaje de bienvenida enviado en {guild.name} ({guild.id})")
         except Exception as e:
             logger.error(f"Error enviando embed de bienvenida en {guild.name}: {e}")
+
+        async def _sync_guild():
+            try:
+                # Sync silencioso de comandos para que este servidor los tenga disponibles al instante
+                self.tree.copy_global_to(guild=guild)
+                await self.tree.sync(guild=guild)
+                logger.info(f"Comandos sincronizados silenciosamente en {guild.name}")
+            except Exception as e:
+                logger.error(f"Error sincronizando comandos en {guild.name}: {e}")
+        
+        import asyncio
+        asyncio.create_task(_sync_guild())
 
     async def on_message(self, message: discord.Message):
         # Ignorar mensajes del propio bot
