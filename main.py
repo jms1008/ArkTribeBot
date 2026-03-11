@@ -216,7 +216,15 @@ class ArkTribeBot(commands.Bot):
             ),
             inline=False,
         )
-        embed.set_footer(text="ArkTribeBot v2.0 • Sistema Operativo Tribal")
+        embed.set_footer(text="ArkTribeBot v2.0 • By: @K4NEKIs")
+
+        try:
+            # Sync silencioso de comandos para que este servidor los tenga disponibles al instante
+            self.tree.copy_global_to(guild=guild)
+            await self.tree.sync(guild=guild)
+            logger.info(f"Comandos sincronizados silenciosamente en {guild.name}")
+        except Exception as e:
+            logger.error(f"Error sincronizando comandos en {guild.name}: {e}")
 
         try:
             await canal.send(embed=embed)
@@ -442,9 +450,12 @@ class ArkTribeBot(commands.Bot):
 
     async def on_ready(self):
         logger.info(f"Conectado como {self.user} (ID: {self.user.id})")
-        # Uso de Custom Activity para evitar el truncamiento de "Jugando a..." en Discord
+        # Activity con texto optimizado para evitar truncamiento
         await self.change_presence(
-            activity=discord.CustomActivity(name="ARK: Survival Evolved | By @k4nekis")
+            activity=discord.Activity(
+                type=discord.ActivityType.playing, 
+                name="ARK | By @K4NEKIs"
+            )
         )
 
     async def init_db(self):
