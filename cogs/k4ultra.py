@@ -1335,8 +1335,8 @@ class K4Ultra(commands.Cog):
         else:
             # Visualización de estadísticas en vivo y guardado como mensaje persistente
             await interaction.response.defer(ephemeral=False)
-            embed, top_players = await self.generate_k4ultra_embed()
-            view = K4UltraView(self.bot, top_players)
+            embed, top_players = await self.generate_k4ultra_embed(interaction.guild_id)
+            view = K4UltraView(self.bot, interaction.guild_id, top_players)
 
             try:
                 message = await interaction.followup.send(embed=embed, view=view)

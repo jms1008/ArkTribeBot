@@ -65,13 +65,14 @@ class Admin(commands.Cog):
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS k4ultra_messages (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id INTEGER,
                     channel_id INTEGER,
                     message_id INTEGER
                 )
             """)
             await db.execute(
-                "INSERT INTO k4ultra_messages (channel_id, message_id) VALUES (?, ?)",
-                (ch_id_int, msg_id_int),
+                "INSERT INTO k4ultra_messages (guild_id, channel_id, message_id) VALUES (?, ?, ?)",
+                (interaction.guild_id, ch_id_int, msg_id_int),
             )
             await db.commit()
 
@@ -80,7 +81,7 @@ class Admin(commands.Cog):
 
         k_cog = self.bot.get_cog("K4Ultra")
         if k_cog:
-            embed, top_players = await k_cog.generate_k4ultra_embed()
+            embed, top_players = await k_cog.generate_k4ultra_embed(interaction.guild_id)
             view = K4UltraView(self.bot, interaction.guild_id, top_players)
             await message.edit(embed=embed, view=view)
 
