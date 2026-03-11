@@ -197,8 +197,9 @@ class ArkTribeBot(commands.Bot):
         embed.add_field(
             name="⚙️ Arranque y Configuración",
             value=(
-                "`/inicio_ark` — Vincula el bot a este servidor (canales, rol SOS, IPs del clúster).\n"
-                "⚠️ *Este comando es estrictamente necesario para desbloquear el resto del bot.*"
+                "El comando `/inicio_ark` vinculará el bot a este servidor y preparará todos los sub-sistemas automáticamente.\n\n"
+                "💡 **RECOMENDACIÓN:** Antes de ejecutar el comando, crea en tu Discord los canales vacíos que vayas a necesitar (ej. `#todo-list`, `#scouting`, `#crianza`, `#blacklist`, `#eventos`).\n\n"
+                "⚠️ *La ejecución de `/inicio_ark` es estrictamente necesaria para desbloquear el resto del bot.*"
             ),
             inline=False,
         )
