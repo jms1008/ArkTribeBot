@@ -156,10 +156,88 @@ class AlarmSelectView(discord.ui.View):
         )
 
 
+class BreedingDinoSelectMenu(discord.ui.Select):
+    """Menú desplegable persistente para seleccionar un dino del dashboard y ver sus stats en privado."""
+    def __init__(self, bot, current_dinos):
+        self.bot = bot
+        
+        options = []
+        if not current_dinos:
+            options.append(discord.SelectOption(label="Sin dinos", value="none"))
+        else:
+            for dino in current_dinos[:25]:
+                options.append(discord.SelectOption(label=dino, value=dino, emoji="🦖"))
+            
+        super().__init__(
+            custom_id="breeding_dino_select",
+            placeholder="Selecciona un dino para verlo en detalle...",
+            min_values=1,
+            max_values=1,
+            options=options,
+            row=2
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        dino_name = self.values[0]
+        
+        if dino_name == "none":
+            await interaction.followup.send("No hay dinos disponibles.", ephemeral=True)
+            return
+
+        async with aiosqlite.connect(self.bot.db_name) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute(
+                "SELECT * FROM dinos WHERE especie = ?", (dino_name,)
+            )
+            row = await cursor.fetchone()
+
+        if not row:
+            await interaction.followup.send(f"❌ No se encontraron datos para **{dino_name}**.", ephemeral=True)
+            return
+
+        embed = discord.Embed(
+            title=f"🧬 Stats Detalladas: {row['especie']}", color=discord.Color.green()
+        )
+
+        hp = row["hp"] or 0
+        stam = row["stam"] or 0
+        weight = row["weight"] or 0
+        melee = row["melee"] or 0
+        oxy = row["oxy"] or 0
+        food = row["food"] or 0
+        speed = row["speed"] or 0
+
+        if hp > 0: 
+            embed.add_field(name="❤️ Vida (HP)", value=str(hp), inline=True)
+        if stam > 0: 
+            embed.add_field(name="⚡ Estamina", value=str(stam), inline=True)
+        if weight > 0: 
+            embed.add_field(name="⚖️ Peso", value=str(weight), inline=True)
+        if melee > 0: 
+            embed.add_field(name="⚔️ Daño (Melee)", value=str(melee), inline=True)
+        if oxy > 0: 
+            embed.add_field(name="🫧 Oxígeno", value=str(oxy), inline=True)
+        if food > 0: 
+            embed.add_field(name="🍖 Comida", value=str(food), inline=True)
+        if speed > 0: 
+            embed.add_field(name="💨 Velocidad", value=str(speed), inline=True)
+
+        embed.set_footer(text=f"ID Interno: {row['especie']}")
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+
 class BreedingDashboardView(discord.ui.View):
-    def __init__(self, bot):
+    def __init__(self, bot, current_dinos=None):
         super().__init__(timeout=None)
         self.bot = bot
+        
+        # Inyectamos el menú desplegable si hay dinos
+        if current_dinos is not None:
+            self.add_item(BreedingDinoSelectMenu(bot, current_dinos))
+        else:
+            # Requerido para persistencia de la vista base
+            self.add_item(BreedingDinoSelectMenu(bot, []))
 
     @discord.ui.button(
         label="Nueva muta",
@@ -308,7 +386,6 @@ class BreedingDashboardView(discord.ui.View):
         match = re.search(r"Página (\d+)/(\d+)", footer_text)
         if match:
             current_page = int(match.group(1))
-            total_pages = int(match.group(2))
             
             if current_page > 1:
                 new_page = current_page - 1
@@ -380,7 +457,6 @@ async def update_breeding_dashboards(bot, specific_message_id=None, page=1):
         embed.set_footer(
             text="💡 Usa /linea_add para registrar o /linea_mod para actualizar."
         )
-        total_pages = 0
     else:
         import math
         items_per_page = 10
@@ -501,14 +577,19 @@ async def update_breeding_dashboards(bot, specific_message_id=None, page=1):
                                 text=f"Página {current_page}/{total_pages} • {total_rows} dinos total | 💡 Usa /linea_add para añadir nuevo dino."
                             )
                             target_embed = local_embed
+                            
+                            current_dinos = [r["especie"] for r in local_rows]
                         else:
                             target_embed = embed
+                            current_dinos = [r["especie"] for r in rows_to_display]
                     else:
                         target_embed = embed
+                        current_dinos = [r["especie"] for r in rows_to_display]
                 else:
                     target_embed = embed
+                    current_dinos = [r["especie"] for r in rows_to_display] if rows else []
 
-                view = BreedingDashboardView(bot)
+                view = BreedingDashboardView(bot, current_dinos)
                 await message.edit(embed=target_embed, view=view)
             else:
                 messages_to_remove.append(dash["id"])
@@ -799,7 +880,9 @@ class Breeding(commands.Cog):
                 text="💡 Usa /linea_add para añadir nuevo dino | /linea_mod para modificar stats."
             )
 
-        view = BreedingDashboardView(self.bot)
+        # Pasamos las especies para el menú desplegable (máximo las primeras 10 visualizadas)
+        current_dinos = [r["especie"] for r in rows[:10]] if rows else []
+        view = BreedingDashboardView(self.bot, current_dinos)
         await interaction.response.send_message(embed=embed, view=view)
         message = await interaction.original_response()
 
