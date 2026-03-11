@@ -8,11 +8,64 @@ import logging
 logger = logging.getLogger("ArkTribeBot")
 
 
+class OptionButton(discord.ui.Button):
+    def __init__(self, option_id, event_view, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.option_id = option_id
+        self.event_view = event_view
+
+    async def callback(self, inter: discord.Interaction):
+        if not inter.response.is_done():
+            await inter.response.defer()
+        await self.event_view.process_vote(inter, self.option_id)
+
+
+class RemoveVoteButton(discord.ui.Button):
+    def __init__(self, event_view, *args, **kwargs):
+        super().__init__(
+            style=discord.ButtonStyle.danger,
+            label="No puedo asistir / Quitar voto",
+            **kwargs,
+        )
+        self.event_view = event_view
+
+    async def callback(self, inter: discord.Interaction):
+        if not inter.response.is_done():
+            await inter.response.defer()
+        await self.event_view.process_vote(inter, 0, remove_only=True)
+
+
 class EventPollView(discord.ui.View):
     def __init__(self, bot, event_id: int):
         super().__init__(timeout=None)
         self.bot = bot
         self.event_id = event_id
+
+    @classmethod
+    async def build(cls, bot, event_id: int):
+        view = cls(bot, event_id)
+        async with aiosqlite.connect(bot.db_name) as db:
+            c = await db.execute(
+                "SELECT id, option_text FROM event_options WHERE event_id = ?",
+                (event_id,),
+            )
+            opts = await c.fetchall()
+
+        for opt_id, opt_text in opts:
+            btn = OptionButton(
+                option_id=opt_id,
+                event_view=view,
+                label=opt_text,
+                style=discord.ButtonStyle.primary,
+                custom_id=f"event_v_{event_id}_{opt_id}",
+            )
+            view.add_item(btn)
+
+        btn_remove = RemoveVoteButton(
+            event_view=view, custom_id=f"event_rm_{event_id}"
+        )
+        view.add_item(btn_remove)
+        return view
 
     async def update_embed(self, interaction: discord.Interaction):
         """Reconstruye el embed con los votos actuales y lo edita."""
@@ -192,56 +245,14 @@ class Events(commands.Cog):
             await db.commit()
 
             # 3. Crear View y Botones dinámicos
-            view = EventPollView(self.bot, event_id)
+            view = await EventPollView.build(self.bot, event_id)
 
-            # Obtenemos las opciones generadas con sus IDs para los botones
+            # Para el embed necesitamos los nombres de las opciones
             c = await db.execute(
                 "SELECT id, option_text FROM event_options WHERE event_id = ?",
                 (event_id,),
             )
             inserted_opts = await c.fetchall()
-
-            # Custom class para abstraer el botón dinámico
-            class OptionButton(discord.ui.Button):
-                def __init__(self, option_id, event_view, *args, **kwargs):
-                    super().__init__(*args, **kwargs)
-                    self.option_id = option_id
-                    self.event_view = event_view
-
-                async def callback(self, inter: discord.Interaction):
-                    if not inter.response.is_done():
-                        await inter.response.defer()
-                    await self.event_view.process_vote(inter, self.option_id)
-
-            class RemoveVoteButton(discord.ui.Button):
-                def __init__(self, event_view, *args, **kwargs):
-                    super().__init__(
-                        style=discord.ButtonStyle.danger,
-                        label="No puedo asistir / Quitar voto",
-                        **kwargs,
-                    )
-                    self.event_view = event_view
-
-                async def callback(self, inter: discord.Interaction):
-                    if not inter.response.is_done():
-                        await inter.response.defer()
-                    await self.event_view.process_vote(inter, 0, remove_only=True)
-
-            for opt_id, opt_text in inserted_opts:
-                btn = OptionButton(
-                    option_id=opt_id,
-                    event_view=view,
-                    label=opt_text,
-                    style=discord.ButtonStyle.primary,
-                    custom_id=f"event_v_{event_id}_{opt_id}",
-                )
-                view.add_item(btn)
-
-            # Botón de "No asisto" / "Borrar mi voto"
-            btn_remove = RemoveVoteButton(
-                event_view=view, custom_id=f"event_rm_{event_id}"
-            )
-            view.add_item(btn_remove)
 
             # 4. Construir Embed inicial
             embed = discord.Embed(

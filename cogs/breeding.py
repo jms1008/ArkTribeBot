@@ -213,21 +213,78 @@ class BreedingDashboardView(discord.ui.View):
     async def ver_logs_mutas_btn(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
-        async with aiosqlite.connect(self.bot.db_name) as db:
-            cursor = await db.execute(
-                "SELECT log, timestamp FROM breed_logs ORDER BY id DESC LIMIT 15"
-            )
-            rows = await cursor.fetchall()
-        
-        if not rows:
-            await interaction.response.send_message("No hay registros de mutaciones.", ephemeral=True)
+        import os
+
+        # Determinar el directorio de logs de mutaciones de este servidor
+        if not self.bot.log_filename:
+            await interaction.response.send_message("El sistema de logs no está configurado de forma estática.", ephemeral=True)
             return
             
-        embed = discord.Embed(title="📜 Últimas Mutaciones Registradas", color=discord.Color.blue())
-        for r in rows:
-            embed.add_field(name=r["timestamp"], value=r["log"], inline=False)
-            
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        log_dir = os.path.join(os.path.dirname(self.bot.log_filename), str(interaction.guild_id))
+        mutations = []
+
+        if not os.path.exists(log_dir):
+            await interaction.response.send_message(
+                "No hay logs de mutaciones para este servidor.", ephemeral=True
+            )
+            return
+
+        try:
+            # Lectura de ficheros .log del directorio
+            for filename in os.listdir(log_dir):
+                if filename.endswith(".log"):
+                    filepath = os.path.join(log_dir, filename)
+                    with open(filepath, "r", encoding="utf-8") as f:
+                        for line in f:
+                            if "MUTATION:" in line:
+                                parts = line.split("MUTATION:")
+                                if len(parts) < 2:
+                                    continue
+
+                                # yyyy-mm-dd hh:mm:ss
+                                timestamp = line[:19]
+                                content = parts[1].strip()
+
+                                try:
+                                    dino, stat, amount = content.rsplit(maxsplit=2)
+                                    if "DOUBLE" in line:
+                                        mutations.append(
+                                            (
+                                                timestamp,
+                                                f"⏰ `{timestamp}`: **Doble muta** 🧬 **{dino}** en **{stat}**",
+                                            )
+                                        )
+                                    else:
+                                        mutations.append(
+                                            (
+                                                timestamp,
+                                                f"⏰ `{timestamp}`: **Muta** 🧬 **{dino}** en **{stat}**",
+                                            )
+                                        )
+                                except Exception:
+                                    mutations.append(
+                                        (timestamp, f"`{timestamp}`: {content}")
+                                    )
+
+            if not mutations:
+                await interaction.response.send_message(
+                    "No se han registrado mutaciones históricamente.", ephemeral=True
+                )
+            else:
+                mutations.sort(key=lambda x: x[0], reverse=True)
+                recent_mutations = [mut[1] for mut in mutations[:15]]
+                response_text = "\n".join(recent_mutations)
+
+                embed = discord.Embed(
+                    title="📜 Últimas Mutaciones Registradas",
+                    description=response_text,
+                    color=discord.Color.blue(),
+                )
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+        except Exception as e:
+            await interaction.response.send_message(
+                f"Error al leer logs: {e}", ephemeral=True
+            )
 
 
 async def update_breeding_dashboards(bot):
