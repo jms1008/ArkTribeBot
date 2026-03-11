@@ -630,7 +630,7 @@ class Warfare(commands.Cog):
         # Retorno de coincidencias o permite texto libre por defecto (Discord behavior)
         return choices
 
-    async def map_autocomplete(
+    async def warfare_map_autocomplete(
         self, interaction: discord.Interaction, current: str
     ) -> list[app_commands.Choice[str]]:
         """Autocomplete dinámico de mapas basado en los servidores del Guild."""
@@ -686,7 +686,7 @@ class Warfare(commands.Cog):
             app_commands.Choice(name="👀 Scouting Hostil", value="Scouting"),
         ]
     )
-    @app_commands.autocomplete(mapa=map_autocomplete)
+    @app_commands.autocomplete(mapa=warfare_map_autocomplete)
     async def sos(
         self,
         interaction: discord.Interaction,

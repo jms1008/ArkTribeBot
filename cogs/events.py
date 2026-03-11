@@ -53,11 +53,7 @@ class EventPollView(discord.ui.View):
                 voters = json.loads(voters_json)
                 voter_names = []
                 for v_id in voters:
-                    member = interaction.guild.get_member(v_id)
-                    if member:
-                        voter_names.append(member.display_name)
-                    else:
-                        voter_names.append(f"Usuario {v_id}")
+                    voter_names.append(f"<@{v_id}>")
 
                 count = len(voters)
                 pct = (count / total_votes * 100) if total_votes > 0 else 0

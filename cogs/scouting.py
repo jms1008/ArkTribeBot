@@ -443,7 +443,7 @@ class Scouting(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    async def mapa_autocomplete(
+    async def scouting_mapa_autocomplete(
         self, interaction: discord.Interaction, current: str
     ) -> list[app_commands.Choice[str]]:
         """Autocomplete dinámico de mapas basado en los servidores del Guild."""
@@ -457,7 +457,7 @@ class Scouting(commands.Cog):
     @app_commands.command(
         name="scout_add", description="Registra una base enemiga (Con imagen)."
     )
-    @app_commands.autocomplete(mapa=mapa_autocomplete)
+    @app_commands.autocomplete(mapa=scouting_mapa_autocomplete)
     @app_commands.describe(
         tribu="Nombre de la tribu enemiga",
         mapa="Mapa donde se encuentra",
@@ -616,7 +616,7 @@ class Scouting(commands.Cog):
         name="scout_list",
         description="Menú de Scouting: Sin argumentos = Dashboard PÚBLICO. Con mapa = Vista PRIVADA.",
     )
-    @app_commands.autocomplete(mapa=mapa_autocomplete)
+    @app_commands.autocomplete(mapa=scouting_mapa_autocomplete)
     @app_commands.describe(mapa="Filtrar por mapa (Opcional)")
     async def scout_list(self, interaction: discord.Interaction, mapa: str = None):
         target_map = mapa if mapa else "Global"

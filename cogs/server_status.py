@@ -119,7 +119,7 @@ class ServerStatus(commands.Cog):
             embed.set_footer(text="Se reintentará en 5 minutos.")
             return embed
 
-    async def mapa_autocomplete(self, interaction: discord.Interaction, current: str):
+    async def status_mapa_autocomplete(self, interaction: discord.Interaction, current: str):
         """Autocomplete dinámico basado en los servidores configurados en el Guild."""
         servers = await get_guild_servers(self.bot, interaction.guild_id)
         return [
@@ -133,7 +133,7 @@ class ServerStatus(commands.Cog):
         description="Muestra el estado de un servidor de ARK (consulta única).",
     )
     @app_commands.describe(mapa="Selecciona el servidor/mapa a consultar")
-    @app_commands.autocomplete(mapa=mapa_autocomplete)
+    @app_commands.autocomplete(mapa=status_mapa_autocomplete)
     async def status(self, interaction: discord.Interaction, mapa: str):
         await interaction.response.defer(ephemeral=True)
         servers = await get_guild_servers(self.bot, interaction.guild_id)
@@ -151,7 +151,7 @@ class ServerStatus(commands.Cog):
         description="Crea un mensaje que se actualiza cada 2 minutos con el estado.",
     )
     @app_commands.describe(mapa="Selecciona el servidor/mapa para monitorizar")
-    @app_commands.autocomplete(mapa=mapa_autocomplete)
+    @app_commands.autocomplete(mapa=status_mapa_autocomplete)
     async def status_permanente(self, interaction: discord.Interaction, mapa: str):
         if not await interaction.client.is_authorized_admin(interaction):
             await interaction.response.send_message(

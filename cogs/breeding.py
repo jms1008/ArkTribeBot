@@ -63,9 +63,7 @@ class StatSelectView(discord.ui.View):
                 )
 
                 # Registro de mutación en log
-                logging.getLogger("ArkTribeBot").info(
-                    f"MUTATION: {self.dino} {stat_selected} +2"
-                )
+                self.log_mutation(interaction.guild_id, f"MUTATION: {self.dino} {stat_selected} +2")
             else:
                 new_val = 2
                 await db.execute(
@@ -406,7 +404,27 @@ class Breeding(commands.Cog):
             except Exception:
                 pass
 
-    async def upsert_stat(self, dino, stat_col, puntos):
+    def log_mutation(self, guild_id: int, message: str):
+        import os
+        import logging
+
+        logger = logging.getLogger(f"ArkTribeBot.guild.{guild_id}")
+        if not logger.handlers:
+            base_log_dir = os.path.dirname(self.bot.log_filename)
+            timestamp_name = os.path.basename(self.bot.log_filename)
+            guild_dir = os.path.join(base_log_dir, str(guild_id))
+            if not os.path.exists(guild_dir):
+                os.makedirs(guild_dir)
+            
+            handler = logging.FileHandler(os.path.join(guild_dir, timestamp_name), encoding="utf-8")
+            handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S"))
+            logger.addHandler(handler)
+            logger.setLevel(logging.INFO)
+            logger.propagate = True
+
+        logger.info(message)
+
+    async def upsert_stat(self, dino, stat_col, puntos, guild_id):
         """Helper para Insertar o Actualizar una stat de una especie."""
         async with aiosqlite.connect(self.bot.db_name) as db:
             # Verificación de existencia
@@ -426,13 +444,9 @@ class Breeding(commands.Cog):
 
                 # Registro de mutaciones en log
                 if diff == 2:
-                    logging.getLogger("ArkTribeBot").info(
-                        f"MUTATION: {dino} {stat_col} +2"
-                    )
+                    self.log_mutation(guild_id, f"MUTATION: {dino} {stat_col} +2")
                 elif diff == 4:
-                    logging.getLogger("ArkTribeBot").info(
-                        f"DOUBLE MUTATION: {dino} {stat_col} +4"
-                    )
+                    self.log_mutation(guild_id, f"DOUBLE MUTATION: {dino} {stat_col} +4")
 
             else:
                 # Inserción
@@ -462,7 +476,7 @@ class Breeding(commands.Cog):
         estadistica: app_commands.Choice[str],
         puntos: int,
     ):
-        action = await self.upsert_stat(dino, estadistica.value, puntos)
+        action = await self.upsert_stat(dino, estadistica.value, puntos, interaction.guild_id)
 
         await interaction.response.send_message(
             f"✅ 🧬 **{dino}** con **{puntos}** en **{estadistica.name}** {action}.",
@@ -508,7 +522,7 @@ class Breeding(commands.Cog):
         puntos: int,
     ):
         # Flujo idéntico a linea_add utilizando lógica Single Row
-        await self.upsert_stat(dino, estadistica.value, puntos)
+        await self.upsert_stat(dino, estadistica.value, puntos, interaction.guild_id)
 
         await interaction.response.send_message(
             f"✅ Estadística modificada: **{dino}** -> **{estadistica.name}**: {puntos}.",
@@ -650,8 +664,14 @@ class Breeding(commands.Cog):
     async def log_mutas(self, interaction: discord.Interaction):
         import os
 
-        log_dir = os.path.dirname(self.bot.log_filename)
+        log_dir = os.path.join(os.path.dirname(self.bot.log_filename), str(interaction.guild_id))
         mutations = []
+
+        if not os.path.exists(log_dir):
+            await interaction.response.send_message(
+                "No hay logs de mutaciones para este servidor.", ephemeral=True
+            )
+            return
 
         try:
             # Lectura de ficheros .log del directorio
