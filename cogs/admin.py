@@ -80,7 +80,7 @@ class Admin(commands.Cog):
         k_cog = self.bot.get_cog("K4Ultra")
         if k_cog:
             embed, top_players = await k_cog.generate_k4ultra_embed()
-            view = K4UltraView(self.bot, top_players)
+            view = K4UltraView(self.bot, interaction.guild_id, top_players)
             await message.edit(embed=embed, view=view)
 
         await interaction.response.send_message(
@@ -123,7 +123,8 @@ class Admin(commands.Cog):
         canal_crianza="[Opcional] Canal para el Dashboard de Líneas Genéticas.",
         canal_blacklist="[Opcional] Canal para el Panel de Enemigos KOS.",
         canal_scouting="[Opcional] Canal global para Reconocimiento de Bases.",
-        canal_k4ultra="[Opcional] Canal central para Radar de Inteligencia."
+        canal_k4ultra="[Opcional] Canal central para Radar de Inteligencia.",
+        canal_status="[Opcional] Canal de monitorización global del clúster."
     )
     async def inicio_ark(
         self,
@@ -140,6 +141,7 @@ class Admin(commands.Cog):
         canal_blacklist: discord.TextChannel = None,
         canal_scouting: discord.TextChannel = None,
         canal_k4ultra: discord.TextChannel = None,
+        canal_status: discord.TextChannel = None,
     ):
         # Solo el dueño del servidor o verdaderos Admins de Discord pueden configurar el bot inicialmente
         AUTHORIZED_ADMIN_ID = 290904414452056064
@@ -403,17 +405,39 @@ class Admin(commands.Cog):
                 k_cog = self.bot.get_cog("K4Ultra")
                 if k_cog:
                     embed_k, top_players_k = await k_cog.generate_k4ultra_embed()
-                    view_k = __import__("cogs.k4ultra", fromlist=["K4UltraView"]).K4UltraView(self.bot, top_players_k)
+                    view_k = __import__("cogs.k4ultra", fromlist=["K4UltraView"]).K4UltraView(self.bot, interaction.guild_id, top_players_k)
                     msg = await canal_k4ultra.send(embed=embed_k, view=view_k)
                     
                     async with aiosqlite.connect(self.bot.db_name) as db:
                         await db.execute(
-                            "INSERT INTO k4ultra_messages (channel_id, message_id) VALUES (?, ?)",
-                            (canal_k4ultra.id, msg.id),
+                            "INSERT INTO k4ultra_messages (guild_id, channel_id, message_id) VALUES (?, ?, ?)",
+                            (interaction.guild_id, canal_k4ultra.id, msg.id),
                         )
                         await db.commit()
             except Exception as e:
                 logger.error(f"Error auto-configurando K4Ultra: {e}")
+
+        # Configuración Server Status
+        if canal_status:
+            try:
+                info_embed = discord.Embed(description=INFO_TEXTS["status"], color=discord.Color.from_rgb(43, 45, 49))
+                await canal_status.send(embed=info_embed)
+
+                s_cog = self.bot.get_cog("ServerStatus")
+                if s_cog:
+                    from cogs.server_status import get_guild_servers
+                    servers = await get_guild_servers(self.bot, interaction.guild_id)
+                    embed_s = await s_cog.get_global_status_embed(servers)
+                    msg = await canal_status.send(embed=embed_s)
+                    
+                    async with aiosqlite.connect(self.bot.db_name) as db:
+                        await db.execute(
+                            "INSERT INTO status_online_messages (guild_id, channel_id, message_id) VALUES (?, ?, ?)",
+                            (interaction.guild_id, canal_status.id, msg.id),
+                        )
+                        await db.commit()
+            except Exception as e:
+                logger.error(f"Error auto-configurando Server Status: {e}")
 
     @app_commands.command(
         name="wipe_db", description="☢️ BORRA TODOS LOS DATOS (Solo Admin)."

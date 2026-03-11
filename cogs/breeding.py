@@ -50,7 +50,7 @@ class StatSelectView(discord.ui.View):
         async with aiosqlite.connect(self.bot.db_name) as db:
             db.row_factory = aiosqlite.Row
             cursor = await db.execute(
-                "SELECT * FROM dinos WHERE especie = ?", (self.dino,)
+                "SELECT * FROM dinos WHERE especie = ? AND guild_id = ?", (self.dino, interaction.guild_id,)
             )
             row = await cursor.fetchone()
 
@@ -58,8 +58,8 @@ class StatSelectView(discord.ui.View):
                 old_val = row[stat_selected] or 0
                 new_val = old_val + 2
                 await db.execute(
-                    f"UPDATE dinos SET {stat_selected} = ? WHERE especie = ?",
-                    (new_val, self.dino),
+                    f"UPDATE dinos SET {stat_selected} = ? WHERE especie = ? AND guild_id = ?",
+                    (new_val, self.dino, interaction.guild_id,),
                 )
 
                 # Registro de mutación en log
@@ -69,8 +69,8 @@ class StatSelectView(discord.ui.View):
             else:
                 new_val = 2
                 await db.execute(
-                    f"INSERT INTO dinos (especie, {stat_selected}) VALUES (?, ?)",
-                    (self.dino, new_val),
+                    f"INSERT INTO dinos (guild_id, especie, {stat_selected}) VALUES (?, ?, ?)",
+                    (interaction.guild_id, self.dino, new_val),
                 )
 
             await db.commit()
@@ -80,7 +80,7 @@ class StatSelectView(discord.ui.View):
             content=f"✅ Muta registrada: **{self.dino}** (+2 en {stat_selected}). Nuevo valor: {new_val}",
             view=None,
         )
-        await update_breeding_dashboards(self.bot)
+        await update_breeding_dashboards(self.bot, interaction.guild_id)
 
 
 class DinoSelectView(discord.ui.View):
@@ -139,10 +139,11 @@ class AlarmSelectView(discord.ui.View):
         async with aiosqlite.connect(self.bot.db_name) as db:
             await db.execute(
                 """
-                INSERT INTO breeding_alarms (user_id, channel_id, alert_time)
-                VALUES (?, ?, ?)
+                INSERT INTO breeding_alarms (guild_id, user_id, channel_id, alert_time)
+                VALUES (?, ?, ?, ?)
             """,
                 (
+                    interaction.guild_id,
                     interaction.user.id,
                     interaction.channel_id,
                     alert_time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -188,7 +189,7 @@ class BreedingDinoSelectMenu(discord.ui.Select):
         async with aiosqlite.connect(self.bot.db_name) as db:
             db.row_factory = aiosqlite.Row
             cursor = await db.execute(
-                "SELECT * FROM dinos WHERE especie = ?", (dino_name,)
+                "SELECT * FROM dinos WHERE especie = ? AND guild_id = ?", (dino_name, interaction.guild_id,)
             )
             row = await cursor.fetchone()
 
@@ -250,7 +251,7 @@ class BreedingDashboardView(discord.ui.View):
     ):
         async with aiosqlite.connect(self.bot.db_name) as db:
             cursor = await db.execute(
-                "SELECT DISTINCT especie FROM dinos ORDER BY especie ASC"
+                "SELECT DISTINCT especie FROM dinos WHERE guild_id = ? ORDER BY especie ASC", (interaction.guild_id,)
             )
             rows = await cursor.fetchall()
 
@@ -389,7 +390,7 @@ class BreedingDashboardView(discord.ui.View):
             
             if current_page > 1:
                 new_page = current_page - 1
-                await update_breeding_dashboards(self.bot, interaction.message.id, new_page)
+                await update_breeding_dashboards(self.bot, interaction.guild_id, interaction.message.id, new_page)
                 await interaction.response.defer()
             else:
                 await interaction.response.defer()
@@ -420,22 +421,22 @@ class BreedingDashboardView(discord.ui.View):
             
             if current_page < total_pages:
                 new_page = current_page + 1
-                await update_breeding_dashboards(self.bot, interaction.message.id, new_page)
+                await update_breeding_dashboards(self.bot, interaction.guild_id, interaction.message.id, new_page)
                 await interaction.response.defer()
             else:
                 await interaction.response.defer()
 
 
-async def update_breeding_dashboards(bot, specific_message_id=None, page=1):
+async def update_breeding_dashboards(bot, guild_id: int, specific_message_id=None, page=1):
     """Actualiza todos los mensajes de lista de líneas (dashboards)."""
 
     # Extracción de dashboards activos
     async with aiosqlite.connect(bot.db_name) as db:
         db.row_factory = aiosqlite.Row
         if specific_message_id:
-            cursor = await db.execute("SELECT * FROM breeding_messages WHERE message_id = ?", (specific_message_id,))
+            cursor = await db.execute("SELECT * FROM breeding_messages WHERE message_id = ? AND guild_id = ?", (specific_message_id, guild_id,))
         else:
-            cursor = await db.execute("SELECT * FROM breeding_messages")
+            cursor = await db.execute("SELECT * FROM breeding_messages WHERE guild_id = ?", (guild_id,))
         dashboards = await cursor.fetchall()
 
     if not dashboards:
@@ -444,7 +445,7 @@ async def update_breeding_dashboards(bot, specific_message_id=None, page=1):
     # Consulta de especies registradas
     async with aiosqlite.connect(bot.db_name) as db:
         db.row_factory = aiosqlite.Row
-        cursor = await db.execute("SELECT * FROM dinos ORDER BY especie ASC")
+        cursor = await db.execute("SELECT * FROM dinos WHERE guild_id = ? ORDER BY especie ASC", (guild_id,))
         rows = await cursor.fetchall()
 
     # Construcción de Embed
@@ -710,7 +711,7 @@ class Breeding(commands.Cog):
         async with aiosqlite.connect(self.bot.db_name) as db:
             # Verificación de existencia
             db.row_factory = aiosqlite.Row
-            cursor = await db.execute("SELECT * FROM dinos WHERE especie = ?", (dino,))
+            cursor = await db.execute("SELECT * FROM dinos WHERE especie = ? AND guild_id = ?", (dino, guild_id,))
             row = await cursor.fetchone()
 
             if row:
@@ -719,7 +720,7 @@ class Breeding(commands.Cog):
                 diff = puntos - old_val
 
                 await db.execute(
-                    f"UPDATE dinos SET {stat_col} = ? WHERE especie = ?", (puntos, dino)
+                    f"UPDATE dinos SET {stat_col} = ? WHERE especie = ? AND guild_id = ?", (puntos, dino, guild_id,)
                 )
                 action = "stats actualizados"
 
@@ -732,8 +733,8 @@ class Breeding(commands.Cog):
             else:
                 # Inserción
                 await db.execute(
-                    f"INSERT INTO dinos (especie, {stat_col}) VALUES (?, ?)",
-                    (dino, puntos),
+                    f"INSERT INTO dinos (guild_id, especie, {stat_col}) VALUES (?, ?, ?)",
+                    (guild_id, dino, puntos),
                 )
                 action = "registrada (nueva línea)"
 
@@ -763,7 +764,7 @@ class Breeding(commands.Cog):
             f"✅ 🧬 **{dino}** con **{puntos}** en **{estadistica.name}** {action}.",
             ephemeral=False,
         )
-        await update_breeding_dashboards(self.bot)
+        await update_breeding_dashboards(self.bot, interaction.guild_id)
 
         await asyncio.sleep(5)
         try:
@@ -777,8 +778,8 @@ class Breeding(commands.Cog):
     ) -> list[app_commands.Choice[str]]:
         async with aiosqlite.connect(self.bot.db_name) as db:
             cursor = await db.execute(
-                "SELECT DISTINCT especie FROM dinos WHERE especie LIKE ? ORDER BY especie ASC LIMIT 25",
-                (f"%{current}%",),
+                "SELECT DISTINCT especie FROM dinos WHERE especie LIKE ? AND guild_id = ? ORDER BY especie ASC LIMIT 25",
+                (f"%{current}%", interaction.guild_id,),
             )
             rows = await cursor.fetchall()
 
@@ -809,7 +810,7 @@ class Breeding(commands.Cog):
             f"✅ Estadística modificada: **{dino}** -> **{estadistica.name}**: {puntos}.",
             ephemeral=False,
         )
-        await update_breeding_dashboards(self.bot)
+        await update_breeding_dashboards(self.bot, interaction.guild_id)
 
         await asyncio.sleep(5)
         try:
@@ -826,7 +827,7 @@ class Breeding(commands.Cog):
         # Generación de contenido inicial
         async with aiosqlite.connect(self.bot.db_name) as db:
             db.row_factory = aiosqlite.Row
-            cursor = await db.execute("SELECT * FROM dinos ORDER BY especie ASC")
+            cursor = await db.execute("SELECT * FROM dinos WHERE guild_id = ? ORDER BY especie ASC", (interaction.guild_id,))
             rows = await cursor.fetchall()
 
         if not rows:
@@ -889,8 +890,8 @@ class Breeding(commands.Cog):
         # Guardado de Message ID para futuras actualizaciones
         async with aiosqlite.connect(self.bot.db_name) as db:
             await db.execute(
-                "INSERT INTO breeding_messages (channel_id, message_id) VALUES (?, ?)",
-                (interaction.channel_id, message.id),
+                "INSERT INTO breeding_messages (guild_id, channel_id, message_id) VALUES (?, ?, ?)",
+                (interaction.guild_id, interaction.channel_id, message.id),
             )
             await db.commit()
 
@@ -902,7 +903,7 @@ class Breeding(commands.Cog):
     async def linea_ver(self, interaction: discord.Interaction, dino: str):
         async with aiosqlite.connect(self.bot.db_name) as db:
             db.row_factory = aiosqlite.Row
-            cursor = await db.execute("SELECT * FROM dinos WHERE especie = ?", (dino,))
+            cursor = await db.execute("SELECT * FROM dinos WHERE especie = ? AND guild_id = ?", (dino, interaction.guild_id,))
             row = await cursor.fetchone()
 
         if not row:

@@ -135,8 +135,9 @@ class RenameTribeModal(discord.ui.Modal, title="Asignar Nombre a Tribu"):
 
 
 class PlayerSelectMenu(discord.ui.Select):
-    def __init__(self, bot, players):
+    def __init__(self, bot, guild_id: int, players):
         self.bot = bot
+        self.guild_id = guild_id
         options = []
         for i, p in enumerate(players[:25]):
             options.append(
@@ -164,8 +165,8 @@ class PlayerSelectMenu(discord.ui.Select):
         async with aiosqlite.connect(self.bot.db_name) as db:
             db.row_factory = aiosqlite.Row
             cursor = await db.execute(
-                "SELECT map_name, sum(total_minutes) as m FROM k4ultra_playtime WHERE player_name = ? GROUP BY map_name ORDER BY m DESC",
-                (player_name,),
+                "SELECT map_name, sum(total_minutes) as m FROM k4ultra_playtime WHERE player_name = ? AND guild_id = ? GROUP BY map_name ORDER BY m DESC",
+                (player_name, self.guild_id),
             )
             maps = await cursor.fetchall()
 
@@ -179,8 +180,8 @@ class PlayerSelectMenu(discord.ui.Select):
             main_map = maps[0]["map_name"]
 
             cursor = await db.execute(
-                "SELECT start_time FROM k4ultra_sessions WHERE player_name = ?",
-                (player_name,),
+                "SELECT start_time FROM k4ultra_sessions WHERE player_name = ? AND guild_id = ?",
+                (player_name, self.guild_id),
             )
             sessions = await cursor.fetchall()
 
@@ -201,8 +202,8 @@ class PlayerSelectMenu(discord.ui.Select):
             # Adición de alias (si consta en el registro)
             try:
                 cursor = await db.execute(
-                    "SELECT alias FROM k4ultra_aliases WHERE player_name = ?",
-                    (player_name,),
+                    "SELECT alias FROM k4ultra_aliases WHERE player_name = ? AND guild_id = ?",
+                    (player_name, self.guild_id),
                 )
                 alias_row = await cursor.fetchone()
                 if alias_row:
@@ -213,8 +214,8 @@ class PlayerSelectMenu(discord.ui.Select):
             # Búsqueda de Estado Online Actual
             try:
                 cursor = await db.execute(
-                    "SELECT map_name FROM k4ultra_sessions WHERE player_name = ? AND is_active = 1 LIMIT 1",
-                    (player_name,)
+                    "SELECT map_name FROM k4ultra_sessions WHERE player_name = ? AND is_active = 1 AND guild_id = ? LIMIT 1",
+                    (player_name, self.guild_id)
                 )
                 online_row = await cursor.fetchone()
                 if online_row:
@@ -248,8 +249,8 @@ class PlayerSelectMenu(discord.ui.Select):
             # Adición de KDA y Stats PvP
             try:
                 cursor = await db.execute(
-                    "SELECT kills, deaths FROM tribe_kda WHERE player_name = ?",
-                    (player_name,)
+                    "SELECT kills, deaths FROM tribe_kda WHERE player_name = ? AND guild_id = ?",
+                    (player_name, self.guild_id)
                 )
                 kda_row = await cursor.fetchone()
                 if kda_row:
@@ -267,8 +268,8 @@ class PlayerSelectMenu(discord.ui.Select):
             # Adición de Personajes (Alts) conocidos
             try:
                 cursor = await db.execute(
-                    "SELECT character_name FROM tribe_characters WHERE player_name = ?",
-                    (player_name,)
+                    "SELECT character_name FROM tribe_characters WHERE player_name = ? AND guild_id = ?",
+                    (player_name, self.guild_id)
                 )
                 char_rows = await cursor.fetchall()
                 if char_rows:
@@ -284,8 +285,8 @@ class PlayerSelectMenu(discord.ui.Select):
             # Extracción de datos de Blacklist manual
             try:
                 cursor = await db.execute(
-                    "SELECT tribe, notes FROM blacklist WHERE player = ?",
-                    (player_name,),
+                    "SELECT tribe, notes FROM blacklist WHERE player = ? AND guild_id = ?",
+                    (player_name, self.guild_id),
                 )
                 bl_row = await cursor.fetchone()
                 if bl_row:
@@ -325,12 +326,13 @@ class PlayerSelectMenu(discord.ui.Select):
 
 
 class K4UltraView(discord.ui.View):
-    def __init__(self, bot, top_players=None):
+    def __init__(self, bot, guild_id: int, top_players=None):
         super().__init__(timeout=None)
         self.bot = bot
+        self.guild_id = guild_id
         if top_players is None:
             top_players = []
-        self.add_item(PlayerSelectMenu(bot, top_players))
+        self.add_item(PlayerSelectMenu(bot, guild_id, top_players))
 
     @discord.ui.button(
         label="Añadir Relación",
@@ -734,18 +736,20 @@ class K4Ultra(commands.Cog):
             # --- Actualización de Dashboards K4Ultra ---
             db.row_factory = aiosqlite.Row
             cursor = await db.execute(
-                "SELECT id, channel_id, message_id FROM k4ultra_messages"
+                "SELECT id, guild_id, channel_id, message_id FROM k4ultra_messages"
             )
             rows = await cursor.fetchall()
 
             if rows:
-                new_embed, top_players = await self.generate_k4ultra_embed()
                 messages_to_remove = []
 
                 for row in rows:
                     row_id = row["id"]
+                    guild_id = row["guild_id"]
                     channel_id = row["channel_id"]
                     message_id = row["message_id"]
+
+                    new_embed, top_players = await self.generate_k4ultra_embed(guild_id)
 
                     try:
                         channel = self.bot.get_channel(
@@ -991,29 +995,36 @@ class K4Ultra(commands.Cog):
             # Captura de Snapshot semanal (Lunes)
             if now.weekday() == 0:  # Lunes
                 current_week = now.isocalendar()[1]
-                cursor = await db.execute(
-                    "SELECT id FROM k4ultra_snapshots WHERE week_number = ?",
-                    (current_week,),
-                )
-                if not await cursor.fetchone():
-                    # Generación de Embed para guardado en Snapshot
-                    embed, _ = await self.generate_k4ultra_embed()
-                    embed.title = (
-                        f"🌐 Tracker de Jugadores K4Ultra - Semana {current_week}"
+                
+                # Fetch all guilds that have K4Ultra active (by checking playtime)
+                cursor = await db.execute("SELECT DISTINCT guild_id FROM k4ultra_playtime")
+                guilds = await cursor.fetchall()
+                
+                for guild_row in guilds:
+                    g_id = guild_row["guild_id"]
+                    cursor = await db.execute(
+                        "SELECT id FROM k4ultra_snapshots WHERE week_number = ? AND guild_id = ?",
+                        (current_week, g_id),
                     )
-                    embed.description = "Registro inmutable de la semana."
-                    embed.set_footer(
-                        text=f"Guardado automáticamente: {now.strftime('%Y-%m-%d')}"
-                    )
+                    if not await cursor.fetchone():
+                        # Generación de Embed para guardado en Snapshot
+                        embed, _ = await self.generate_k4ultra_embed(g_id)
+                        embed.title = (
+                            f"🌐 Tracker de Jugadores K4Ultra - Semana {current_week}"
+                        )
+                        embed.description = "Registro inmutable de la semana."
+                        embed.set_footer(
+                            text=f"Guardado automáticamente: {now.strftime('%Y-%m-%d')}"
+                        )
 
-                    embed_json = json.dumps(embed.to_dict())
-                    await db.execute(
-                        "INSERT INTO k4ultra_snapshots (week_number, embed_json) VALUES (?, ?)",
-                        (current_week, embed_json),
-                    )
-                    await db.commit()
+                        embed_json = json.dumps(embed.to_dict())
+                        await db.execute(
+                            "INSERT INTO k4ultra_snapshots (week_number, guild_id, embed_json) VALUES (?, ?, ?)",
+                            (current_week, g_id, embed_json),
+                        )
+                        await db.commit()
 
-    async def generate_k4ultra_embed(self) -> tuple[discord.Embed, list]:
+    async def generate_k4ultra_embed(self, guild_id: int) -> tuple[discord.Embed, list]:
         embed = discord.Embed(
             title="🌐 Tracker de Jugadores K4Ultra", color=discord.Color.purple()
         )
@@ -1024,7 +1035,8 @@ class K4Ultra(commands.Cog):
             cursor = await db.execute("""
                 SELECT player_name, map_name, total_minutes
                 FROM k4ultra_playtime
-            """)
+                WHERE guild_id = ?
+            """, (guild_id,))
             all_playtimes = await cursor.fetchall()
 
             from collections import defaultdict
@@ -1037,9 +1049,13 @@ class K4Ultra(commands.Cog):
                     {"map": row["map_name"], "mins": row["total_minutes"]}
                 )
 
+            # Aplicación de Alias y Nombres de Tribu Personalizados
+            # Moved further down the code, logic is fine.
+
             # Obtención de jugadores conectados en este instante
             cursor = await db.execute(
-                "SELECT player_name FROM k4ultra_sessions WHERE is_active = 1"
+                "SELECT player_name FROM k4ultra_sessions WHERE is_active = 1 AND guild_id = ?",
+                (guild_id,)
             )
             active_sessions = await cursor.fetchall()
             active_players = {s["player_name"] for s in active_sessions}
@@ -1129,7 +1145,8 @@ class K4Ultra(commands.Cog):
 
             # Consulta de Tribus Fijas
             cursor = await db.execute(
-                "SELECT name, members_json FROM k4ultra_fixed_tribes"
+                "SELECT name, members_json FROM k4ultra_fixed_tribes WHERE guild_id = ?",
+                (guild_id,)
             )
             fixed_rows = await cursor.fetchall()
             fixed_players = set()
@@ -1142,7 +1159,8 @@ class K4Ultra(commands.Cog):
 
             # Consulta de Relaciones Dinámicas Calculadas
             cursor = await db.execute(
-                "SELECT player1, player2 FROM k4ultra_relationships WHERE probability_score >= 10 OR is_manual = 1"
+                "SELECT player1, player2 FROM k4ultra_relationships WHERE (probability_score >= 10 OR is_manual = 1) AND guild_id = ?",
+                (guild_id,)
             )
             rels = await cursor.fetchall()
 

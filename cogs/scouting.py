@@ -150,9 +150,9 @@ class ScoutView(discord.ui.View):
         async with aiosqlite.connect(self.bot.db_name) as db:
             db.row_factory = aiosqlite.Row
             if self.map_filter == "Global":
-                cursor = await db.execute("SELECT * FROM scouts ORDER BY mapa, nivel_amenaza DESC")
+                cursor = await db.execute("SELECT * FROM scouts WHERE guild_id = ? ORDER BY mapa, nivel_amenaza DESC", (interaction.guild_id,))
             else:
-                cursor = await db.execute("SELECT * FROM scouts WHERE mapa = ? ORDER BY nivel_amenaza DESC", (self.map_filter,))
+                cursor = await db.execute("SELECT * FROM scouts WHERE guild_id = ? AND mapa = ? ORDER BY nivel_amenaza DESC", (interaction.guild_id, self.map_filter,))
             rows = await cursor.fetchall()
         
         embed, page, view = await build_scout_embed_view(self.bot, rows, self.map_filter, new_page)
@@ -220,7 +220,7 @@ async def build_scout_embed_view(bot, rows: list, map_filter: str, page: int = 0
     return embed, page, view
 
 
-async def update_scout_dashboards(bot, target_map=None, page: int = 0):
+async def update_scout_dashboards(bot, guild_id: int, target_map=None, page: int = 0):
     """Actualiza los dashboards. target_map es el mapa que ha sufrido cambios (o None si unknown)."""
 
     async with aiosqlite.connect(bot.db_name) as db:
@@ -228,11 +228,11 @@ async def update_scout_dashboards(bot, target_map=None, page: int = 0):
         # Actualización dual: Dashboards Globales y Dashboards del mapa afectado
         if target_map:
             cursor = await db.execute(
-                "SELECT * FROM scout_messages WHERE map_filter = ? OR map_filter = 'Global'",
-                (target_map,),
+                "SELECT * FROM scout_messages WHERE guild_id = ? AND (map_filter = ? OR map_filter = 'Global')",
+                (guild_id, target_map,),
             )
         else:
-            cursor = await db.execute("SELECT * FROM scout_messages")
+            cursor = await db.execute("SELECT * FROM scout_messages WHERE guild_id = ?", (guild_id,))
         dashboards = await cursor.fetchall()
 
     if not dashboards:
@@ -248,9 +248,9 @@ async def update_scout_dashboards(bot, target_map=None, page: int = 0):
         async with aiosqlite.connect(bot.db_name) as db:
             db.row_factory = aiosqlite.Row
             if map_filter == "Global":
-                cursor = await db.execute("SELECT * FROM scouts ORDER BY mapa, nivel_amenaza DESC")
+                cursor = await db.execute("SELECT * FROM scouts WHERE guild_id = ? ORDER BY mapa, nivel_amenaza DESC", (guild_id,))
             else:
-                cursor = await db.execute("SELECT * FROM scouts WHERE mapa = ? ORDER BY nivel_amenaza DESC", (map_filter,))
+                cursor = await db.execute("SELECT * FROM scouts WHERE guild_id = ? AND mapa = ? ORDER BY nivel_amenaza DESC", (guild_id, map_filter,))
             rows = await cursor.fetchall()
 
         embed, _, view = await build_scout_embed_view(bot, rows, map_filter, page)
@@ -295,7 +295,7 @@ class DeleteScoutModal(discord.ui.Modal, title="Eliminar Scout"):
         async with aiosqlite.connect(self.bot.db_name) as db:
             db.row_factory = aiosqlite.Row
             cursor = await db.execute(
-                "SELECT mapa, url_imagen, guild_id FROM scouts WHERE id = ?", (sid,)
+                "SELECT mapa, url_imagen, guild_id FROM scouts WHERE id = ? AND guild_id = ?", (sid, interaction.guild_id)
             )
             scout = await cursor.fetchone()
             if not scout:
@@ -339,7 +339,7 @@ class DeleteScoutModal(discord.ui.Modal, title="Eliminar Scout"):
         await interaction.response.send_message(
             f"🗑️ Scout **#{sid}** eliminado.", ephemeral=False
         )
-        await update_scout_dashboards(self.bot, target_map)
+        await update_scout_dashboards(self.bot, interaction.guild_id, target_map)
 
         await asyncio.sleep(5)
         try:
@@ -393,7 +393,7 @@ class ModifyScoutModal(discord.ui.Modal, title="Modificar Scout"):
 
         async with aiosqlite.connect(self.bot.db_name) as db:
             cursor = await db.execute(
-                "SELECT mapa, notas, nivel_amenaza FROM scouts WHERE id = ?", (sid,)
+                "SELECT mapa, notas, nivel_amenaza FROM scouts WHERE id = ? AND guild_id = ?", (sid, interaction.guild_id)
             )
             row = await cursor.fetchone()
             if not row:
@@ -441,7 +441,7 @@ class ModifyScoutModal(discord.ui.Modal, title="Modificar Scout"):
         await interaction.response.send_message(
             f"✅ Scout **#{sid}** actualizado.", ephemeral=False
         )
-        await update_scout_dashboards(self.bot, target_map)
+        await update_scout_dashboards(self.bot, interaction.guild_id, target_map)
 
         await asyncio.sleep(5)
         try:
@@ -494,10 +494,10 @@ class Scouting(commands.Cog):
         async with aiosqlite.connect(self.bot.db_name) as db:
             cursor = await db.execute(
                 """
-                INSERT INTO scouts (tribu_enemiga, mapa, coordenadas, nivel_amenaza, url_imagen, notas)
-                VALUES (?, ?, ?, ?, 'N/A', ?)
+                INSERT INTO scouts (guild_id, tribu_enemiga, mapa, coordenadas, nivel_amenaza, url_imagen, notas)
+                VALUES (?, ?, ?, ?, ?, 'N/A', ?)
             """,
-                (tribu, mapa, coords, amenaza, notas),
+                (interaction.guild_id, tribu, mapa, coords, amenaza, notas),
             )
             scout_id = cursor.lastrowid
             await db.commit()
@@ -544,7 +544,7 @@ class Scouting(commands.Cog):
         await interaction.followup.send(
             f"✅ Base de **{tribu}** ({mapa}) registrada. [Scout **#{scout_id}**]"
         )
-        await update_scout_dashboards(self.bot, mapa)
+        await update_scout_dashboards(self.bot, interaction.guild_id, mapa)
 
         await asyncio.sleep(5)
         try:
@@ -571,11 +571,11 @@ class Scouting(commands.Cog):
 
         async with aiosqlite.connect(self.bot.db_name) as db:
             db.row_factory = aiosqlite.Row
-            cursor = await db.execute("SELECT tribu_enemiga, mapa FROM scouts WHERE id = ?", (id,))
+            cursor = await db.execute("SELECT tribu_enemiga, mapa FROM scouts WHERE id = ? AND guild_id = ?", (id, interaction.guild_id,))
             row = await cursor.fetchone()
 
         if not row:
-            await interaction.followup.send(f"❌ No existe un registro de scout con ID {id}.")
+            await interaction.followup.send(f"❌ No existe un registro de scout con ID {id} o no tienes permisos.")
             return
 
         tribu = row["tribu_enemiga"]
@@ -638,12 +638,13 @@ class Scouting(commands.Cog):
             db.row_factory = aiosqlite.Row
             if target_map == "Global":
                 cursor = await db.execute(
-                    "SELECT * FROM scouts ORDER BY mapa, nivel_amenaza DESC"
+                    "SELECT * FROM scouts WHERE guild_id = ? ORDER BY mapa, nivel_amenaza DESC",
+                    (interaction.guild_id,)
                 )
             else:
                 cursor = await db.execute(
-                    "SELECT * FROM scouts WHERE mapa = ? ORDER BY nivel_amenaza DESC",
-                    (target_map,),
+                    "SELECT * FROM scouts WHERE guild_id = ? AND mapa = ? ORDER BY nivel_amenaza DESC",
+                    (interaction.guild_id, target_map,),
                 )
             rows = await cursor.fetchall()
 
@@ -660,8 +661,8 @@ class Scouting(commands.Cog):
             message = await interaction.original_response()
             async with aiosqlite.connect(self.bot.db_name) as db:
                 await db.execute(
-                    "INSERT INTO scout_messages (channel_id, message_id, map_filter) VALUES (?, ?, ?)",
-                    (interaction.channel_id, message.id, "Global"),
+                    "INSERT INTO scout_messages (guild_id, channel_id, message_id, map_filter) VALUES (?, ?, ?, ?)",
+                    (interaction.guild_id, interaction.channel_id, message.id, "Global"),
                 )
                 await db.commit()
 
@@ -736,8 +737,8 @@ class ScoutPrivateListView(discord.ui.View):
             async with aiosqlite.connect(self.bot.db_name) as db:
                 db.row_factory = aiosqlite.Row
                 cursor = await db.execute(
-                    "SELECT * FROM scouts WHERE mapa = ? ORDER BY nivel_amenaza DESC",
-                    (self.target_map,),
+                    "SELECT * FROM scouts WHERE guild_id = ? AND mapa = ? ORDER BY nivel_amenaza DESC",
+                    (interaction.guild_id, self.target_map,),
                 )
                 rows = await cursor.fetchall()
             await cog._send_private_scout_page(
@@ -759,8 +760,8 @@ class ScoutPrivateListView(discord.ui.View):
             async with aiosqlite.connect(self.bot.db_name) as db:
                 db.row_factory = aiosqlite.Row
                 cursor = await db.execute(
-                    "SELECT * FROM scouts WHERE mapa = ? ORDER BY nivel_amenaza DESC",
-                    (self.target_map,),
+                    "SELECT * FROM scouts WHERE guild_id = ? AND mapa = ? ORDER BY nivel_amenaza DESC",
+                    (interaction.guild_id, self.target_map,),
                 )
                 rows = await cursor.fetchall()
             total_pages = max(1, (len(rows) + SCOUT_PAGE_SIZE - 1) // SCOUT_PAGE_SIZE)
@@ -778,7 +779,7 @@ class ScoutPrivateListView(discord.ui.View):
     @app_commands.describe(id="ID del registro a eliminar")
     async def scout_delete(self, interaction: discord.Interaction, id: int):
         async with aiosqlite.connect(self.bot.db_name) as db:
-            cursor = await db.execute("SELECT mapa FROM scouts WHERE id = ?", (id,))
+            cursor = await db.execute("SELECT mapa FROM scouts WHERE id = ? AND guild_id = ?", (id, interaction.guild_id,))
             row = await cursor.fetchone()
 
             if not row:
@@ -795,7 +796,7 @@ class ScoutPrivateListView(discord.ui.View):
         await interaction.response.send_message(
             f"🗑️ Registro #{id} eliminado.", ephemeral=False
         )
-        await update_scout_dashboards(self.bot, map_target)
+        await update_scout_dashboards(self.bot, interaction.guild_id, map_target)
 
         await asyncio.sleep(5)
         try:

@@ -76,7 +76,7 @@ async def test_generate_k4ultra_embed(k4ultra_cog, mock_bot, mocker):
     ]
     mock_db.return_value.execute.return_value = mock_execute
 
-    embed, messages_to_remove = await k4ultra_cog.generate_k4ultra_embed()
+    embed, messages_to_remove = await k4ultra_cog.generate_k4ultra_embed(123456)
 
     assert embed is not None
     assert type(messages_to_remove) is list

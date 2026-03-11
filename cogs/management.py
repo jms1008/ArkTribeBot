@@ -82,7 +82,7 @@ class TodoView(discord.ui.View):
     async def _update_page(self, interaction: discord.Interaction, new_page: int):
         async with aiosqlite.connect(self.bot.db_name) as db:
             db.row_factory = aiosqlite.Row
-            cursor = await db.execute("SELECT * FROM todos")
+            cursor = await db.execute("SELECT * FROM todos WHERE guild_id = ?", (interaction.guild_id,))
             rows = await cursor.fetchall()
         
         embed, page, view = build_todo_embed_view(self.bot, rows, new_page)
@@ -114,12 +114,12 @@ def build_todo_embed_view(bot, rows: list, page: int = 0):
     return embed, page, view
 
 
-async def update_all_dashboards(bot, page: int = 0):
-    """Actualiza todos los mensajes de lista de tareas registrados."""
+async def update_all_dashboards(bot, guild_id: int, page: int = 0):
+    """Actualiza todos los mensajes de lista de tareas registrados en el servidor actual."""
     # 1. Generación del nuevo Embed
     async with aiosqlite.connect(bot.db_name) as db:
         db.row_factory = aiosqlite.Row
-        cursor = await db.execute("SELECT * FROM todos")
+        cursor = await db.execute("SELECT * FROM todos WHERE guild_id = ?", (guild_id,))
         rows = await cursor.fetchall()
 
     embed, current_page, view = build_todo_embed_view(bot, rows, page)
@@ -128,7 +128,7 @@ async def update_all_dashboards(bot, page: int = 0):
     async with aiosqlite.connect(bot.db_name) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
-            "SELECT id, channel_id, message_id FROM todo_messages"
+            "SELECT id, channel_id, message_id FROM todo_messages WHERE guild_id = ?", (guild_id,)
         )
         msg_rows = await cursor.fetchall()
 
@@ -170,13 +170,13 @@ class AddTaskModal(discord.ui.Modal, title="Añadir Nueva Tarea"):
     async def on_submit(self, interaction: discord.Interaction):
         tarea = self.tarea_content.value
         async with aiosqlite.connect(self.bot.db_name) as db:
-            await db.execute("INSERT INTO todos (tarea) VALUES (?)", (tarea,))
+            await db.execute("INSERT INTO todos (guild_id, tarea) VALUES (?, ?)", (interaction.guild_id, tarea,))
             await db.commit()
 
         await interaction.response.send_message(
             f"✅ Tarea añadida: **{tarea}**", ephemeral=False
         )
-        await update_all_dashboards(self.bot)
+        await update_all_dashboards(self.bot, interaction.guild_id)
 
         await asyncio.sleep(5)
         try:
@@ -226,7 +226,7 @@ class ClaimTaskModal(discord.ui.Modal, title="Reclamar Tarea"):
         )
 
         # Actualización de dashboards
-        await update_all_dashboards(self.bot)
+        await update_all_dashboards(self.bot, interaction.guild_id)
 
         # Borrado del mensaje de feedback tras 5 segundos
         await asyncio.sleep(5)
@@ -272,7 +272,7 @@ class DeleteTaskModal(discord.ui.Modal, title="Eliminar Tarea"):
             f"🗑️ Tarea **#{t_id}** eliminada.", ephemeral=False
         )
 
-        await update_all_dashboards(self.bot)
+        await update_all_dashboards(self.bot, interaction.guild_id)
 
         await asyncio.sleep(5)
         try:
@@ -413,7 +413,7 @@ class Management(commands.Cog):
     @app_commands.describe(tarea="Descripción de la tarea")
     async def todo_add(self, interaction: discord.Interaction, tarea: str):
         async with aiosqlite.connect(self.bot.db_name) as db:
-            await db.execute("INSERT INTO todos (tarea) VALUES (?)", (tarea,))
+            await db.execute("INSERT INTO todos (guild_id, tarea) VALUES (?, ?)", (interaction.guild_id, tarea,))
             await db.commit()
 
         # Envío de feedback
@@ -422,7 +422,7 @@ class Management(commands.Cog):
         )
 
         # Actualización de listas (dashboards)
-        await update_all_dashboards(self.bot)
+        await update_all_dashboards(self.bot, interaction.guild_id)
 
         # Borrado del mensaje de feedback
         await asyncio.sleep(5)
@@ -439,7 +439,7 @@ class Management(commands.Cog):
         # Generación del Embed inicial
         async with aiosqlite.connect(self.bot.db_name) as db:
             db.row_factory = aiosqlite.Row
-            cursor = await db.execute("SELECT * FROM todos")
+            cursor = await db.execute("SELECT * FROM todos WHERE guild_id = ?", (interaction.guild_id,))
             rows = await cursor.fetchall()
 
         embed = discord.Embed(title="📝 Lista de Tareas", color=discord.Color.orange())
@@ -463,8 +463,8 @@ class Management(commands.Cog):
         # Registro del mensaje para futuras actualizaciones
         async with aiosqlite.connect(self.bot.db_name) as db:
             await db.execute(
-                "INSERT INTO todo_messages (channel_id, message_id) VALUES (?, ?)",
-                (interaction.channel_id, message.id),
+                "INSERT INTO todo_messages (guild_id, channel_id, message_id) VALUES (?, ?, ?)",
+                (interaction.guild_id, interaction.channel_id, message.id),
             )
             await db.commit()
 

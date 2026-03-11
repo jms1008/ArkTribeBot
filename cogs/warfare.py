@@ -67,12 +67,12 @@ def build_blacklist_embed(rows: list, page: int = 0) -> discord.Embed:
     return embed, page, total_pages
 
 
-async def update_blacklist_dashboards(bot, page: int = 0):
+async def update_blacklist_dashboards(bot, guild_id: int, page: int = 0):
     """Actualiza todos los mensajes de lista negra (dashboards)."""
 
     async with aiosqlite.connect(bot.db_name) as db:
         db.row_factory = aiosqlite.Row
-        cursor = await db.execute("SELECT * FROM blacklist_messages")
+        cursor = await db.execute("SELECT * FROM blacklist_messages WHERE guild_id = ?", (guild_id,))
         dashboards = await cursor.fetchall()
 
     if not dashboards:
@@ -81,7 +81,7 @@ async def update_blacklist_dashboards(bot, page: int = 0):
     # Recuperación de registros de la Blacklist
     async with aiosqlite.connect(bot.db_name) as db:
         db.row_factory = aiosqlite.Row
-        cursor = await db.execute("SELECT * FROM blacklist ORDER BY is_enemy DESC, id DESC")
+        cursor = await db.execute("SELECT * FROM blacklist WHERE guild_id = ? ORDER BY is_enemy DESC, id DESC", (guild_id,))
         rows = await cursor.fetchall()
 
     embed, current_page, total_pages = build_blacklist_embed(rows, page)
@@ -111,16 +111,13 @@ async def update_blacklist_dashboards(bot, page: int = 0):
             await db.commit()
 
 
-async def update_kda_dashboards(bot, guild_id=None):
+async def update_kda_dashboards(bot, guild_id: int):
     """Actualiza todos los mensajes persistentes del Ranking KDA (El Más Manco)."""
     async with aiosqlite.connect(bot.db_name) as db:
         db.row_factory = aiosqlite.Row
-        if guild_id:
-            cursor = await db.execute(
-                "SELECT * FROM kda_messages WHERE guild_id = ?", (guild_id,)
-            )
-        else:
-            cursor = await db.execute("SELECT * FROM kda_messages")
+        cursor = await db.execute(
+            "SELECT * FROM kda_messages WHERE guild_id = ?", (guild_id,)
+        )
         dashboards = await cursor.fetchall()
 
     if not dashboards:
@@ -131,24 +128,16 @@ async def update_kda_dashboards(bot, guild_id=None):
         db.row_factory = aiosqlite.Row
         # Ordenación ascendente por K/D (Peor ratio = "El Más Manco").
         # Prevención de división por cero tratando muertes=0 como 1 lógicamente en la consulta.
-        if guild_id:
-            cursor = await db.execute(
-                """
-                SELECT player_name, kills, deaths,
-                       CAST(kills AS FLOAT) / CASE WHEN deaths = 0 THEN 1 ELSE deaths END as kd_ratio
-                FROM tribe_kda
-                WHERE guild_id = ?
-                ORDER BY kd_ratio ASC, deaths DESC
-            """,
-                (guild_id,),
-            )
-        else:
-            cursor = await db.execute("""
-                SELECT player_name, kills, deaths,
-                       CAST(kills AS FLOAT) / CASE WHEN deaths = 0 THEN 1 ELSE deaths END as kd_ratio
-                FROM tribe_kda
-                ORDER BY kd_ratio ASC, deaths DESC
-            """)
+        cursor = await db.execute(
+            """
+            SELECT player_name, kills, deaths,
+                   CAST(kills AS FLOAT) / CASE WHEN deaths = 0 THEN 1 ELSE deaths END as kd_ratio
+            FROM tribe_kda
+            WHERE guild_id = ?
+            ORDER BY kd_ratio ASC, deaths DESC
+        """,
+            (guild_id,),
+        )
         rows = await cursor.fetchall()
 
     if not rows:
@@ -289,15 +278,15 @@ class ModifyBlacklistModal(discord.ui.Modal, title="Modificar entrada de Blackli
             valor = int(valor)
 
         async with aiosqlite.connect(self.bot.db_name) as db:
-            cursor = await db.execute("SELECT id FROM blacklist WHERE id = ?", (bid,))
+            cursor = await db.execute("SELECT id FROM blacklist WHERE id = ? AND guild_id = ?", (bid, interaction.guild_id,))
             if not await cursor.fetchone():
                 await interaction.response.send_message(
-                    f"❌ No existe la entrada ID {bid}.", ephemeral=True
+                    f"❌ No existe la entrada ID {bid} o no te pertenece.", ephemeral=True
                 )
                 return
             await db.execute(
-                f"UPDATE blacklist SET {campo} = ? WHERE id = ?",
-                (valor, bid),
+                f"UPDATE blacklist SET {campo} = ? WHERE id = ? AND guild_id = ?",
+                (valor, bid, interaction.guild_id),
             )
             await db.commit()
 
@@ -305,7 +294,7 @@ class ModifyBlacklistModal(discord.ui.Modal, title="Modificar entrada de Blackli
             f"✅ ID {bid} actualizado: **{campo}** → {valor}",
             ephemeral=True,
         )
-        await update_blacklist_dashboards(self.bot)
+        await update_blacklist_dashboards(self.bot, interaction.guild_id)
 
 
 class DeleteBlacklistModal(discord.ui.Modal, title="Eliminar de Blacklist"):
@@ -327,13 +316,13 @@ class DeleteBlacklistModal(discord.ui.Modal, title="Eliminar de Blacklist"):
             return
 
         async with aiosqlite.connect(self.bot.db_name) as db:
-            await db.execute("DELETE FROM blacklist WHERE id = ?", (bid,))
+            await db.execute("DELETE FROM blacklist WHERE id = ? AND guild_id = ?", (bid, interaction.guild_id,))
             await db.commit()
 
         await interaction.response.send_message(
             f"🗑️ Entrada ID {bid} eliminada.", ephemeral=True
         )
-        await update_blacklist_dashboards(self.bot)
+        await update_blacklist_dashboards(self.bot, interaction.guild_id)
 
 
 async def build_player_detail_embed(bot, player_name: str, guild_id: int) -> discord.Embed:
@@ -347,8 +336,8 @@ async def build_player_detail_embed(bot, player_name: str, guild_id: int) -> dis
 
         # 1. Datos de Blacklist
         cursor = await db.execute(
-            "SELECT tribe, map, notes, created_at, last_seen, total_hours FROM blacklist WHERE player = ? LIMIT 1",
-            (player_name,)
+            "SELECT tribe, map, notes, created_at, last_seen, total_hours FROM blacklist WHERE player = ? AND guild_id = ? LIMIT 1",
+            (player_name, guild_id,)
         )
         row = await cursor.fetchone()
         
@@ -374,8 +363,8 @@ async def build_player_detail_embed(bot, player_name: str, guild_id: int) -> dis
 
         # 2. Mapas de K4Ultra
         cursor = await db.execute(
-            "SELECT map_name, sum(total_minutes) as m FROM k4ultra_playtime WHERE player_name = ? GROUP BY map_name ORDER BY m DESC",
-            (player_name,)
+            "SELECT map_name, sum(total_minutes) as m FROM k4ultra_playtime WHERE player_name = ? AND guild_id = ? GROUP BY map_name ORDER BY m DESC",
+            (player_name, guild_id,)
         )
         maps = await cursor.fetchall()
         
@@ -391,8 +380,8 @@ async def build_player_detail_embed(bot, player_name: str, guild_id: int) -> dis
         
         # --- NUEVO: Estado Online Actual ---
         cursor = await db.execute(
-            "SELECT map_name, start_time FROM k4ultra_sessions WHERE player_name = ? AND is_active = 1 LIMIT 1",
-            (player_name,)
+            "SELECT map_name, start_time FROM k4ultra_sessions WHERE player_name = ? AND is_active = 1 AND guild_id = ? LIMIT 1",
+            (player_name, guild_id,)
         )
         active_session = await cursor.fetchone()
         
@@ -409,10 +398,10 @@ async def build_player_detail_embed(bot, player_name: str, guild_id: int) -> dis
             """
             SELECT strftime('%H', start_time) as hour, COUNT(*) as c 
             FROM k4ultra_sessions 
-            WHERE player_name = ? AND start_time IS NOT NULL 
+            WHERE player_name = ? AND start_time IS NOT NULL AND guild_id = ?
             GROUP BY hour ORDER BY c DESC LIMIT 3
             """,
-            (player_name,)
+            (player_name, guild_id,)
         )
         hours = await cursor.fetchall()
         
@@ -430,14 +419,14 @@ async def build_player_detail_embed(bot, player_name: str, guild_id: int) -> dis
             """
             SELECT player2 as ally, probability_score 
             FROM k4ultra_relationships 
-            WHERE player1 = ? 
+            WHERE player1 = ? AND guild_id = ?
             UNION
             SELECT player1 as ally, probability_score 
             FROM k4ultra_relationships 
-            WHERE player2 = ? 
+            WHERE player2 = ? AND guild_id = ?
             ORDER BY probability_score DESC LIMIT 3
             """,
-            (player_name, player_name)
+            (player_name, guild_id, player_name, guild_id,)
         )
         allies = await cursor.fetchall()
         
@@ -584,7 +573,7 @@ class BlacklistView(discord.ui.View):
         """Carga los datos frescos, construye el embed de la página pedida y edita el mensaje."""
         async with aiosqlite.connect(self.bot.db_name) as db:
             db.row_factory = aiosqlite.Row
-            cursor = await db.execute("SELECT * FROM blacklist ORDER BY is_enemy DESC, id DESC")
+            cursor = await db.execute("SELECT * FROM blacklist WHERE guild_id = ? ORDER BY is_enemy DESC, id DESC", (interaction.guild_id,))
             rows = await cursor.fetchall()
 
         embed, current_page, _ = build_blacklist_embed(rows, new_page)
@@ -637,8 +626,8 @@ class Warfare(commands.Cog):
     ) -> list[app_commands.Choice[str]]:
         async with aiosqlite.connect(self.bot.db_name) as db:
             cursor = await db.execute(
-                "SELECT DISTINCT tribe FROM blacklist WHERE tribe LIKE ? ORDER BY tribe ASC LIMIT 25",
-                (f"%{current}%",),
+                "SELECT DISTINCT tribe FROM blacklist WHERE tribe LIKE ? AND guild_id = ? ORDER BY tribe ASC LIMIT 25",
+                (f"%{current}%", interaction.guild_id,),
             )
             rows = await cursor.fetchall()
 
@@ -676,12 +665,12 @@ class Warfare(commands.Cog):
 
         async with aiosqlite.connect(self.bot.db_name) as db:
             await db.execute(
-                "INSERT INTO blacklist_messages (channel_id, message_id) VALUES (?, ?)",
-                (interaction.channel_id, message.id),
+                "INSERT INTO blacklist_messages (guild_id, channel_id, message_id) VALUES (?, ?, ?)",
+                (interaction.guild_id, interaction.channel_id, message.id),
             )
             await db.commit()
 
-        await update_blacklist_dashboards(self.bot)
+        await update_blacklist_dashboards(self.bot, interaction.guild_id)
 
     # /blacklist_add y /blacklist_mod eliminados — cubiertos por botones del dashboard
 
@@ -778,12 +767,12 @@ class Warfare(commands.Cog):
 
         async with aiosqlite.connect(self.bot.db_name) as db:
             await db.execute(
-                "INSERT INTO kda_messages (channel_id, message_id) VALUES (?, ?)",
-                (interaction.channel_id, message.id),
+                "INSERT INTO kda_messages (guild_id, channel_id, message_id) VALUES (?, ?, ?)",
+                (interaction.guild_id, interaction.channel_id, message.id),
             )
             await db.commit()
 
-        await update_kda_dashboards(self.bot)
+        await update_kda_dashboards(self.bot, interaction.guild_id)
 
     @app_commands.command(
         name="ranking_char_add",
@@ -799,13 +788,13 @@ class Warfare(commands.Cog):
         async with aiosqlite.connect(self.bot.db_name) as db:
             # Upsert (Insert or Update) del vínculo Personaje-Jugador
             await db.execute(
-                "INSERT INTO tribe_characters (character_name, player_name) VALUES (?, ?) ON CONFLICT(character_name) DO UPDATE SET player_name=excluded.player_name",
-                (personaje, jugador),
+                "INSERT INTO tribe_characters (guild_id, character_name, player_name) VALUES (?, ?, ?) ON CONFLICT(character_name) DO UPDATE SET player_name=excluded.player_name",
+                (interaction.guild_id, personaje, jugador),
             )
             # Inicialización segura del perfil del jugador en el Tracker KDA a 0
             await db.execute(
-                "INSERT OR IGNORE INTO tribe_kda (player_name, kills, deaths) VALUES (?, 0, 0)",
-                (jugador,),
+                "INSERT OR IGNORE INTO tribe_kda (guild_id, player_name, kills, deaths) VALUES (?, ?, 0, 0)",
+                (interaction.guild_id, jugador,),
             )
             await db.commit()
 
@@ -813,7 +802,7 @@ class Warfare(commands.Cog):
             f"✅ Ahora el personaje in-game **{personaje}** registrará muertes y bajas para el jugador **{jugador}**.",
             ephemeral=False,
         )
-        await update_kda_dashboards(self.bot)
+        await update_kda_dashboards(self.bot, interaction.guild_id)
 
     @app_commands.command(
         name="ranking_char_remove",
@@ -825,7 +814,7 @@ class Warfare(commands.Cog):
     ):
         async with aiosqlite.connect(self.bot.db_name) as db:
             await db.execute(
-                "DELETE FROM tribe_characters WHERE character_name = ?", (personaje,)
+                "DELETE FROM tribe_characters WHERE character_name = ? AND guild_id = ?", (personaje, interaction.guild_id,)
             )
             await db.commit()
 
@@ -841,9 +830,9 @@ class Warfare(commands.Cog):
     @app_commands.describe(jugador="Nombre del jugador a purgar")
     async def ranking_remove(self, interaction: discord.Interaction, jugador: str):
         async with aiosqlite.connect(self.bot.db_name) as db:
-            await db.execute("DELETE FROM tribe_kda WHERE player_name = ?", (jugador,))
+            await db.execute("DELETE FROM tribe_kda WHERE player_name = ? AND guild_id = ?", (jugador, interaction.guild_id,))
             await db.execute(
-                "DELETE FROM tribe_characters WHERE player_name = ?", (jugador,)
+                "DELETE FROM tribe_characters WHERE player_name = ? AND guild_id = ?", (jugador, interaction.guild_id,)
             )
             await db.commit()
 
@@ -851,7 +840,7 @@ class Warfare(commands.Cog):
             f"🗑️ El jugador **{jugador}** ha sido borrado del Leaderboard (Kills y Muertes reseteadas).",
             ephemeral=False,
         )
-        await update_kda_dashboards(self.bot)
+        await update_kda_dashboards(self.bot, interaction.guild_id)
 
 
 async def setup(bot):
