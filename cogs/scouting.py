@@ -51,9 +51,9 @@ class AddScoutModal(discord.ui.Modal, title="Añadir Scout"):
 
         async with aiosqlite.connect(self.bot.db_name) as db:
             cursor = await db.execute(
-                "INSERT INTO scouts (tribu_enemiga, mapa, coordenadas, nivel_amenaza, url_imagen, notas) "
-                "VALUES (?, ?, ?, ?, 'N/A', ?)",
-                (tribu, mapa, coords, amenaza_int, notas),
+                "INSERT INTO scouts (guild_id, tribu_enemiga, mapa, coordenadas, nivel_amenaza, url_imagen, notas) "
+                "VALUES (?, ?, ?, ?, ?, 'N/A', ?)",
+                (interaction.guild_id, tribu, mapa, coords, amenaza_int, notas),
             )
             scout_id = cursor.lastrowid
             await db.commit()
@@ -63,7 +63,7 @@ class AddScoutModal(discord.ui.Modal, title="Añadir Scout"):
             f"Para adjuntar una imagen usa `/scout_add` con el campo *imagen*.",
             ephemeral=True,
         )
-        await update_scout_dashboards(self.bot, mapa)
+        await update_scout_dashboards(self.bot, interaction.guild_id, mapa)
 
 
 class ScoutView(discord.ui.View):
@@ -433,8 +433,8 @@ class ModifyScoutModal(discord.ui.Modal, title="Modificar Scout"):
                 )
 
             await db.execute(
-                "UPDATE scouts SET notas = ?, nivel_amenaza = ? WHERE id = ?",
-                (new_notas, new_amenaza, sid),
+                "UPDATE scouts SET notas = ?, nivel_amenaza = ? WHERE id = ? AND guild_id = ?",
+                (new_notas, new_amenaza, sid, interaction.guild_id),
             )
             await db.commit()
 
@@ -615,9 +615,41 @@ class Scouting(commands.Cog):
         await interaction.followup.send(
             f"✅ Imagen adjuntada satisfactoriamente al Scout **#{id}** ({tribu})."
         )
-        await update_scout_dashboards(self.bot, mapa)
+        await update_scout_dashboards(self.bot, interaction.guild_id, mapa)
 
         await asyncio.sleep(5)
+        try:
+            msg = await interaction.original_response()
+            await msg.delete()
+        except Exception:
+            pass
+
+    @app_commands.command(
+        name="scout_delete", description="Elimina una entrada de scouting por ID."
+    )
+    @app_commands.describe(id="ID del registro a eliminar")
+    async def scout_delete(self, interaction: discord.Interaction, id: int):
+        async with aiosqlite.connect(self.bot.db_name) as db:
+            cursor = await db.execute("SELECT mapa FROM scouts WHERE id = ? AND guild_id = ?", (id, interaction.guild_id,))
+            row = await cursor.fetchone()
+
+            if not row:
+                await interaction.response.send_message(
+                    f"❌ ID {id} no encontrado o no tienes permisos.", ephemeral=True
+                )
+                return
+
+            map_target = row[0]
+
+            await db.execute("DELETE FROM scouts WHERE id = ? AND guild_id = ?", (id, interaction.guild_id))
+            await db.commit()
+
+        await interaction.response.send_message(
+            f"🗑️ Registro #{id} eliminado.", ephemeral=False
+        )
+        await update_scout_dashboards(self.bot, interaction.guild_id, map_target)
+
+        await asyncio.sleep(2)
         try:
             msg = await interaction.original_response()
             await msg.delete()
@@ -772,38 +804,6 @@ class ScoutPrivateListView(discord.ui.View):
                 page=min(total_pages - 1, self.page + 1),
                 edit=True,
             )
-
-    @app_commands.command(
-        name="scout_delete", description="Elimina una entrada de scouting por ID."
-    )
-    @app_commands.describe(id="ID del registro a eliminar")
-    async def scout_delete(self, interaction: discord.Interaction, id: int):
-        async with aiosqlite.connect(self.bot.db_name) as db:
-            cursor = await db.execute("SELECT mapa FROM scouts WHERE id = ? AND guild_id = ?", (id, interaction.guild_id,))
-            row = await cursor.fetchone()
-
-            if not row:
-                await interaction.response.send_message(
-                    f"❌ ID {id} no encontrado.", ephemeral=True
-                )
-                return
-
-            map_target = row[0]
-
-            await db.execute("DELETE FROM scouts WHERE id = ?", (id,))
-            await db.commit()
-
-        await interaction.response.send_message(
-            f"🗑️ Registro #{id} eliminado.", ephemeral=False
-        )
-        await update_scout_dashboards(self.bot, interaction.guild_id, map_target)
-
-        await asyncio.sleep(5)
-        try:
-            msg = await interaction.original_response()
-            await msg.delete()
-        except Exception:
-            pass
 
 
 async def setup(bot):
