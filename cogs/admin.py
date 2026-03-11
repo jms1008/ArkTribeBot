@@ -91,23 +91,36 @@ class Admin(commands.Cog):
         )
 
     @commands.command(name="sync")
-    async def sync(self, ctx):
-        """Sincroniza los comandos slash con el servidor actual."""
-        await ctx.send("🔄 Sincronizando comandos...")
-        try:
-            # Sincronización instantánea con el servidor actual
-            self.bot.tree.copy_global_to(guild=ctx.guild)
-            synced = await self.bot.tree.sync(guild=ctx.guild)
-
-            await ctx.send(
-                f"✅ **{len(synced)}** comandos sincronizados en este servidor."
-            )
-            logger.info(
-                f"Comandos sincronizados manualente en {ctx.guild.name} ({ctx.guild.id})"
-            )
-        except Exception as e:
-            await ctx.send(f"❌ Error al sincronizar: {e}")
-            logger.error(f"Error sync: {e}")
+    async def sync(
+        self,
+        ctx: commands.Context,
+        spec: str | None = None,
+    ):
+        """Sincroniza los comandos slash. Uso: !sync [global|guild|clear]"""
+        if spec == "global":
+            await ctx.send("🌐 **Sincronizando comandos globalmente...** (Puede tardar hasta 1 hora en propagarse)")
+            synced = await self.bot.tree.sync()
+            await ctx.send(f"✅ Se han sincronizado **{len(synced)}** comandos globalmente.")
+        elif spec == "clear":
+            await ctx.send("🗑️ **Limpiando comandos en este servidor...**")
+            self.bot.tree.clear_commands(guild=ctx.guild)
+            await self.bot.tree.sync(guild=ctx.guild)
+            await ctx.send("✅ Comandos de servidor eliminados (se usarán los globales).")
+        else:
+            await ctx.send(f"🔄 **Sincronizando comandos en '{ctx.guild.name}'...**")
+            try:
+                self.bot.tree.copy_global_to(guild=ctx.guild)
+                synced = await self.bot.tree.sync(guild=ctx.guild)
+                await ctx.send(f"✅ **{len(synced)}** comandos sincronizados instantáneamente en este servidor.")
+                logger.info(f"Comandos sincronizados manualente en {ctx.guild.name} ({ctx.guild.id})")
+            except discord.HTTPException as e:
+                if e.status == 429:
+                    await ctx.send("⚠️ **Discord nos está limitando (Rate Limit).** El bot esperará automáticamente y completará la sincronización en unos minutos. No vuelvas a ejecutar el comando.")
+                else:
+                    await ctx.send(f"❌ Error HTTP: {e}")
+            except Exception as e:
+                await ctx.send(f"❌ Error al sincronizar: {e}")
+                logger.error(f"Error sync: {e}")
 
     @app_commands.command(
         name="inicio_ark",

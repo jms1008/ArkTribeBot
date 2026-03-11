@@ -129,6 +129,7 @@ class ArkTribeBot(commands.Bot):
         )
         self.db_name = DB_NAME
         self.log_filename = log_filename
+        self.is_syncing = False
 
     async def setup_hook(self):
         """Se ejecuta al iniciar el bot."""
@@ -230,13 +231,28 @@ class ArkTribeBot(commands.Bot):
             logger.error(f"Error enviando embed de bienvenida en {guild.name}: {e}")
 
         async def _sync_guild():
+            # Pequeña pausa para dejar que Discord procese la unión antes del sync
+            await asyncio.sleep(5)
+            
+            if hasattr(self, "is_syncing") and self.is_syncing:
+                logger.warning(f"Sincronización omitida en {guild.name}: Ya hay un sync en curso.")
+                return
+
+            self.is_syncing = True
             try:
                 # Sync silencioso de comandos para que este servidor los tenga disponibles al instante
                 self.tree.copy_global_to(guild=guild)
                 await self.tree.sync(guild=guild)
                 logger.info(f"Comandos sincronizados silenciosamente en {guild.name}")
+            except discord.HTTPException as e:
+                if e.status == 429:
+                    logger.warning(f"Rate limit en sync de {guild.name}. Discord reintentará automáticamente.")
+                else:
+                    logger.error(f"Error HTTP sincronizando comandos en {guild.name}: {e}")
             except Exception as e:
                 logger.error(f"Error sincronizando comandos en {guild.name}: {e}")
+            finally:
+                self.is_syncing = False
         
         import asyncio
         asyncio.create_task(_sync_guild())
