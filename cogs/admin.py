@@ -3,6 +3,7 @@ from discord import app_commands
 from discord.ext import commands
 import logging
 import aiosqlite
+import asyncio
 
 logger = logging.getLogger("ArkTribeBot")
 
@@ -233,6 +234,7 @@ class Admin(commands.Cog):
         )
         try:
             await canal_sos.send(embed=info_sos_embed)
+            await asyncio.sleep(0.5)
         except Exception as e:
             logger.error(f"Error enviando info SOS: {e}")
 
@@ -263,6 +265,7 @@ class Admin(commands.Cog):
 
                 view = TodoView(self.bot)
                 msg = await canal_todo.send(embed=todo_embed, view=view)
+                await asyncio.sleep(0.5)
 
                 async with aiosqlite.connect(self.bot.db_name) as db:
                     await db.execute(
@@ -303,6 +306,7 @@ class Admin(commands.Cog):
                     crianza_view = BreedingDashboardView(self.bot, current_dinos)
 
                 msg = await canal_crianza.send(embed=crianza_embed, view=crianza_view)
+                await asyncio.sleep(0.5)
 
                 async with aiosqlite.connect(self.bot.db_name) as db:
                     await db.execute(
@@ -348,6 +352,7 @@ class Admin(commands.Cog):
 
                 view = BlacklistView(self.bot, rows=rows, page=0)
                 msg = await canal_blacklist.send(embed=bl_embed, view=view)
+                await asyncio.sleep(0.5)
 
                 async with aiosqlite.connect(self.bot.db_name) as db:
                     await db.execute(
@@ -386,6 +391,7 @@ class Admin(commands.Cog):
                 
                 view = ScoutView(self.bot, map_filter=None, page=0, total_rows=len(rows) if rows else 0)
                 msg = await canal_scouting.send(embed=sc_embed, view=view)
+                await asyncio.sleep(0.5)
 
                 async with aiosqlite.connect(self.bot.db_name) as db:
                     await db.execute(
@@ -404,9 +410,10 @@ class Admin(commands.Cog):
 
                 k_cog = self.bot.get_cog("K4Ultra")
                 if k_cog:
-                    embed_k, top_players_k = await k_cog.generate_k4ultra_embed()
+                    embed_k, top_players_k = await k_cog.generate_k4ultra_embed(interaction.guild_id)
                     view_k = __import__("cogs.k4ultra", fromlist=["K4UltraView"]).K4UltraView(self.bot, interaction.guild_id, top_players_k)
                     msg = await canal_k4ultra.send(embed=embed_k, view=view_k)
+                    await asyncio.sleep(0.5)
                     
                     async with aiosqlite.connect(self.bot.db_name) as db:
                         await db.execute(
@@ -429,6 +436,7 @@ class Admin(commands.Cog):
                     servers = await get_guild_servers(self.bot, interaction.guild_id)
                     embed_s = await s_cog.get_global_status_embed(servers)
                     msg = await canal_status.send(embed=embed_s)
+                    await asyncio.sleep(0.5)
                     
                     async with aiosqlite.connect(self.bot.db_name) as db:
                         await db.execute(

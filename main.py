@@ -203,7 +203,7 @@ class ArkTribeBot(commands.Bot):
             name="⚙️ Arranque y Configuración",
             value=(
                 "El comando `/inicio_ark` vinculará el bot a este servidor y preparará todos los sub-sistemas automáticamente.\n\n"
-                "💡 **RECOMENDACIÓN:** Antes de ejecutar el comando, crea en tu Discord los canales vacíos que vayas a necesitar (ej. `#todo-list`, `#scouting`, `#crianza`, `#blacklist`, `#eventos`).\n\n"
+                "💡 **RECOMENDACIÓN:** Antes de ejecutar el comando, crea en tu Discord los canales vacíos que vayas a necesitar (ej. `#todo-list`, `#scouting`, `#crianza`, `#blacklist`, `#k4ultra`, `#status`).\n\n"
                 "⚠️ *La ejecución de `/inicio_ark` es estrictamente necesaria para desbloquear el resto del bot.*"
             ),
             inline=False,
