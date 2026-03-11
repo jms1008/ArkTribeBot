@@ -118,7 +118,13 @@ class ScoutView(discord.ui.View):
     async def prev_btn(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
-        new_page = max(0, self.page - 1)
+        import re
+        current_page = 0
+        if interaction.message.embeds and interaction.message.embeds[0].footer.text:
+            m = re.search(r"Página (\d+)/\d+", interaction.message.embeds[0].footer.text)
+            if m:
+                current_page = int(m.group(1)) - 1
+        new_page = max(0, current_page - 1)
         await self._update_page(interaction, new_page)
 
     @discord.ui.button(
@@ -129,9 +135,15 @@ class ScoutView(discord.ui.View):
     async def next_btn(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
-        total = self.total_rows or 0
-        total_pages = max(1, (total + 10 - 1) // 10)
-        new_page = min(total_pages - 1, self.page + 1)
+        import re
+        current_page = 0
+        total_pages = 1
+        if interaction.message.embeds and interaction.message.embeds[0].footer.text:
+            m = re.search(r"Página (\d+)/(\d+)", interaction.message.embeds[0].footer.text)
+            if m:
+                current_page = int(m.group(1)) - 1
+                total_pages = int(m.group(2))
+        new_page = min(total_pages - 1, current_page + 1)
         await self._update_page(interaction, new_page)
 
     async def _update_page(self, interaction: discord.Interaction, new_page: int):

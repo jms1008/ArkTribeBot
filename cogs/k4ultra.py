@@ -147,6 +147,7 @@ class PlayerSelectMenu(discord.ui.Select):
         if not options:
             options.append(discord.SelectOption(label="Sin datos", value="none"))
         super().__init__(
+            custom_id="k4ultra_player_select",
             placeholder="Selecciona un jugador para ver su perfil detallado...",
             min_values=1,
             max_values=1,
@@ -264,8 +265,9 @@ class K4UltraView(discord.ui.View):
     def __init__(self, bot, top_players=None):
         super().__init__(timeout=None)
         self.bot = bot
-        if top_players:
-            self.add_item(PlayerSelectMenu(bot, top_players))
+        if top_players is None:
+            top_players = []
+        self.add_item(PlayerSelectMenu(bot, top_players))
 
     @discord.ui.button(
         label="Añadir Relación",
