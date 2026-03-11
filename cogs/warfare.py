@@ -378,6 +378,42 @@ async def build_player_detail_embed(bot, player_name: str, guild_id: int) -> dis
             map_text = "\n".join(map_list)
         
         embed.add_field(name="🌍 Actividad por Mapa (K4)", value=map_text, inline=False)
+        
+        # --- NUEVO: Estado Online Actual ---
+        cursor = await db.execute(
+            "SELECT map_name, start_time FROM k4ultra_sessions WHERE player_name = ? AND is_active = 1 LIMIT 1",
+            (player_name,)
+        )
+        active_session = await cursor.fetchone()
+        
+        if active_session:
+            since = active_session["start_time"][11:16] if active_session["start_time"] else "?"
+            online_str = f"🟢 **Sí** (en {active_session['map_name']} desde {since})"
+        else:
+            online_str = "🔴 **No**"
+            
+        embed.add_field(name="🔌 Conectado Ahora", value=online_str, inline=True)
+        
+        # --- NUEVO: Frecuencia Horaria ---
+        cursor = await db.execute(
+            """
+            SELECT strftime('%H', start_time) as hour, COUNT(*) as c 
+            FROM k4ultra_sessions 
+            WHERE player_name = ? AND start_time IS NOT NULL 
+            GROUP BY hour ORDER BY c DESC LIMIT 3
+            """,
+            (player_name,)
+        )
+        hours = await cursor.fetchall()
+        
+        if hours:
+            # Mostramos las 3 horas más comunes de conexión en formato "HH:00"
+            hour_strings = [f"{h['hour']}:00" for h in hours if h["hour"]]
+            freq_str = ", ".join(hour_strings) if hour_strings else "Desconocida"
+        else:
+            freq_str = "Desconocida"
+            
+        embed.add_field(name="🕒 Frecuencia Conexión", value=freq_str, inline=True)
 
         # 3. Aliados de K4Ultra
         cursor = await db.execute(
@@ -403,6 +439,11 @@ async def build_player_detail_embed(bot, player_name: str, guild_id: int) -> dis
             ally_text = "\n".join(ally_list)
 
         embed.add_field(name="🤝 Aliados en K4Ultra", value=ally_text, inline=False)
+        
+        # --- NUEVO: Advertencia Nombre Genérico ---
+        generic_names = ["123", "humano", "human", "survivor", "bob", "player"]
+        if player_name.lower() in generic_names:
+            embed.set_footer(text="⚠️ Nombre genérico. Datos mezclados de distintos jugadores.")
 
     return embed
 
