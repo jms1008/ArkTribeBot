@@ -34,7 +34,8 @@ def build_blacklist_embed(rows: list, page: int = 0) -> discord.Embed:
         current_section = None
 
         for row in chunk:
-            is_enemy = row.get("is_enemy", 1)
+            # Safely check if 'is_enemy' column exists in this row, default to 1 if missing in old schema
+            is_enemy = row["is_enemy"] if "is_enemy" in row.keys() else 1
             
             # Separador de secciones
             if is_enemy == 1 and current_section != "Enemigos":
@@ -452,18 +453,22 @@ class PlayerDetailSelect(discord.ui.Select):
     def __init__(self, bot, rows):
         self.bot = bot
         options = []
-        for row in rows:
-            name = row["player"]
-            if len(name) > 100:
-                name = name[:97] + "..."
-            tribe_desc = row["tribe"]
-            if len(tribe_desc) > 100:
-                tribe_desc = tribe_desc[:97] + "..."
-            options.append(
-                discord.SelectOption(
-                    label=name, description=f"Tribu: {tribe_desc}", value=row["player"]
+        if not rows:
+            # Opcion dummy necesaria para poder registrar la vista persistente al inicio
+            options.append(discord.SelectOption(label="Cargando...", value="none_dummy_value"))
+        else:
+            for row in rows:
+                name = row["player"]
+                if len(name) > 100:
+                    name = name[:97] + "..."
+                tribe_desc = row["tribe"]
+                if len(tribe_desc) > 100:
+                    tribe_desc = tribe_desc[:97] + "..."
+                options.append(
+                    discord.SelectOption(
+                        label=name, description=f"Tribu: {tribe_desc}", value=row["player"]
+                    )
                 )
-            )
         
         super().__init__(
             placeholder="Ver detalles de un jugador (K4Ultra)...",
@@ -475,8 +480,12 @@ class PlayerDetailSelect(discord.ui.Select):
         )
 
     async def callback(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
         player_name = self.values[0]
+        if player_name == "none_dummy_value":
+            await interaction.response.send_message("El menú se está actualizando, cierra este mensaje y reintenta en el dashboard nuevo.", ephemeral=True)
+            return
+            
+        await interaction.response.defer(ephemeral=True)
         guild_id = interaction.guild_id or 0
         embed = await build_player_detail_embed(self.bot, player_name, guild_id)
         await interaction.followup.send(embed=embed, ephemeral=True)
@@ -493,8 +502,7 @@ class BlacklistView(discord.ui.View):
         # Select de Jugadores para esta página
         start = page * PAGE_SIZE
         chunk = self.rows[start : start + PAGE_SIZE]
-        if chunk:
-            self.add_item(PlayerDetailSelect(bot, chunk))
+        self.add_item(PlayerDetailSelect(bot, chunk))
 
         # Deshabilitar flechas si no hay páginas
         self.prev_btn.disabled = page == 0
