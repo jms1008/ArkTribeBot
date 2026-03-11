@@ -206,6 +206,31 @@ class BreedingDashboardView(discord.ui.View):
             ephemeral=True,
         )
 
+    @discord.ui.button(
+        label="Ver Logs Muta",
+        style=discord.ButtonStyle.secondary,
+        custom_id="breeding_log_mutas_btn",
+        emoji="📜",
+    )
+    async def ver_logs_mutas_btn(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        async with aiosqlite.connect(self.bot.db_name) as db:
+            cursor = await db.execute(
+                "SELECT log, timestamp FROM breed_logs ORDER BY id DESC LIMIT 15"
+            )
+            rows = await cursor.fetchall()
+        
+        if not rows:
+            await interaction.response.send_message("No hay registros de mutaciones.", ephemeral=True)
+            return
+            
+        embed = discord.Embed(title="📜 Últimas Mutaciones Registradas", color=discord.Color.blue())
+        for r in rows:
+            embed.add_field(name=r["timestamp"], value=r["log"], inline=False)
+            
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
 
 async def update_breeding_dashboards(bot):
     """Actualiza todos los mensajes de lista de líneas (dashboards)."""

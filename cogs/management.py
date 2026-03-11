@@ -92,7 +92,7 @@ def build_todo_embed_view(bot, rows: list, page: int = 0):
     else:
         text = ""
         for row in chunk:
-            asignado = f"<@{row['asignado_a']}>" if row.get("asignado_a") else "Nadie"
+            asignado = f"<@{row['asignado_a']}>" if row["asignado_a"] else "Nadie"
             estado_icon = "⏳" if row["estado"] == "Pendiente" else "🔨"
             text += f"**#{row['id']}** {estado_icon} - {row['tarea']}\n   Estado: {row['estado']} | Asignado: {asignado}\n\n"
         embed.description = text.strip()
