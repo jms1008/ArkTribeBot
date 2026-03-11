@@ -135,11 +135,11 @@ class ServerStatus(commands.Cog):
     @app_commands.describe(mapa="Selecciona el servidor/mapa a consultar")
     @app_commands.autocomplete(mapa=mapa_autocomplete)
     async def status(self, interaction: discord.Interaction, mapa: str):
-        await interaction.response.defer()
+        await interaction.response.defer(ephemeral=True)
         servers = await get_guild_servers(self.bot, interaction.guild_id)
         embed = await self.get_server_embed(mapa, servers)
         if embed:
-            await interaction.followup.send(embed=embed)
+            await interaction.followup.send(embed=embed, ephemeral=True)
         else:
             await interaction.followup.send(
                 "❌ Servidor no configurado. Usa `/inicio_ark` para añadir tus servidores.",

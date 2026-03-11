@@ -38,5 +38,5 @@ async def test_status_command(status_cog, mock_interaction, mocker):
 
     await status_cog.status.callback(status_cog, mock_interaction, "Gen2")
 
-    mock_interaction.response.defer.assert_called_once()
-    mock_interaction.followup.send.assert_called_once_with(embed=mock_embed)
+    mock_interaction.response.defer.assert_called_once_with(ephemeral=True)
+    mock_interaction.followup.send.assert_called_once_with(embed=mock_embed, ephemeral=True)
