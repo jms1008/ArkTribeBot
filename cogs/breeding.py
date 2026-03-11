@@ -63,7 +63,9 @@ class StatSelectView(discord.ui.View):
                 )
 
                 # Registro de mutación en log
-                self.log_mutation(interaction.guild_id, f"MUTATION: {self.dino} {stat_selected} +2")
+                breeding_cog = self.bot.get_cog("Breeding")
+                if breeding_cog:
+                    breeding_cog.log_mutation(interaction.guild_id, f"MUTATION: {self.dino} {stat_selected} +2")
             else:
                 new_val = 2
                 await db.execute(
