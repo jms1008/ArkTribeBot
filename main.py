@@ -163,7 +163,8 @@ class ArkTribeBot(commands.Bot):
                 c = await db.execute("SELECT id FROM events WHERE status = 'active'")
                 active_events = await c.fetchall()
                 for (evt_id,) in active_events:
-                    self.add_view(EventPollView(self, evt_id))
+                    view = await EventPollView.build(self, evt_id)
+                    self.add_view(view)
         except Exception as e:
             logger.error(f"Error registrando vistas persistentes de Eventos: {e}")
 
