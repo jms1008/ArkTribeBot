@@ -147,7 +147,14 @@ class ArkTribeBot(commands.Bot):
 
         from cogs.k4ultra import K4UltraView
 
-        self.add_view(K4UltraView(self))
+        try:
+            async with aiosqlite.connect(self.db_name) as db:
+                c = await db.execute("SELECT DISTINCT guild_id FROM k4ultra_messages")
+                active_guilds = await c.fetchall()
+                for (g_id,) in active_guilds:
+                    self.add_view(K4UltraView(self, g_id))
+        except Exception as e:
+            logger.error(f"Error registrando vistas K4Ultra: {e}")
 
         from cogs.daily_points import DailyPointsView
 
@@ -173,14 +180,12 @@ class ArkTribeBot(commands.Bot):
         # Buscar el canal de sistema o el primer canal de texto accesible
         canal = guild.system_channel
         if not canal or not canal.permissions_for(guild.me).send_messages:
-            canal = next(
-                (
-                    ch
-                    for ch in guild.text_channels
-                    if ch.permissions_for(guild.me).send_messages
-                ),
-                None,
-            )
+            # Fallback al primer canal donde el bot pueda escribir y leer
+            for ch in guild.text_channels:
+                perms = ch.permissions_for(guild.me)
+                if perms.send_messages and perms.view_channel:
+                    canal = ch
+                    break
 
         if not canal:
             return

@@ -222,8 +222,9 @@ class AddBlacklistModal(discord.ui.Modal, title="Añadir a Blacklist"):
     async def on_submit(self, interaction: discord.Interaction):
         async with aiosqlite.connect(self.bot.db_name) as db:
             await db.execute(
-                "INSERT INTO blacklist (player, tribe, map, notes, is_enemy) VALUES (?, ?, ?, ?, 1)",
+                "INSERT INTO blacklist (guild_id, player, tribe, map, notes, is_enemy) VALUES (?, ?, ?, ?, ?, 1)",
                 (
+                    interaction.guild_id,
                     self.player.value,
                     self.tribe.value or "Desconocido",
                     self.map_name.value or "Desconocido",
@@ -234,7 +235,7 @@ class AddBlacklistModal(discord.ui.Modal, title="Añadir a Blacklist"):
         await interaction.response.send_message(
             f"✅ **{self.player.value}** añadido a la Blacklist.", ephemeral=True
         )
-        await update_blacklist_dashboards(self.bot)
+        await update_blacklist_dashboards(self.bot, interaction.guild_id)
 
 
 class ModifyBlacklistModal(discord.ui.Modal, title="Modificar entrada de Blacklist"):
