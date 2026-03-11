@@ -762,7 +762,7 @@ class K4Ultra(commands.Cog):
                         message = await channel.fetch_message(message_id)
 
                         # Reconexión de la vista interactiva (View) del Embed
-                        view = K4UltraView(self.bot, top_players)
+                        view = K4UltraView(self.bot, guild_id, top_players)
                         await message.edit(embed=new_embed, view=view)
                     except discord.NotFound:
                         messages_to_remove.append(row_id)
