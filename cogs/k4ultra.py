@@ -210,17 +210,78 @@ class PlayerSelectMenu(discord.ui.Select):
             except aiosqlite.OperationalError:
                 pass
 
+            # Búsqueda de Estado Online Actual
+            try:
+                cursor = await db.execute(
+                    "SELECT map_name FROM k4ultra_sessions WHERE player_name = ? AND is_active = 1 LIMIT 1",
+                    (player_name,)
+                )
+                online_row = await cursor.fetchone()
+                if online_row:
+                    embed.description = f"🟢 **Online Ahora** (Jugando en {online_row['map_name']})"
+                else:
+                    embed.description = "🔴 **Offline**"
+            except aiosqlite.OperationalError:
+                embed.description = "🔴 **Offline**"
+
+            # Formateo de tiempos básicos
             hours = total_mins // 60
             mins = total_mins % 60
+            
+            # Búsqueda de "Primera vez visto"
+            first_seen_str = "Desconocido"
+            if sessions:
+                try:
+                    first_date = min([datetime.strptime(s["start_time"], "%Y-%m-%d %H:%M:%S") for s in sessions if s["start_time"]])
+                    first_seen_str = first_date.strftime("%d/%m/%Y")
+                except Exception:
+                    pass
+
             embed.add_field(
                 name="⏱️ Tiempo Total", value=f"{hours}h {mins}m", inline=True
             )
             embed.add_field(name="🗺️ Main Map", value=f"{main_map}", inline=True)
             embed.add_field(
-                name="⏰ Hora Frecuente (Inicio)", value=f"{best_hour}:00", inline=True
+                name="⏰ Hora Frecuente", value=f"{best_hour}:00", inline=True
             )
+            
+            # Adición de KDA y Stats PvP
+            try:
+                cursor = await db.execute(
+                    "SELECT kills, deaths FROM tribe_kda WHERE player_name = ?",
+                    (player_name,)
+                )
+                kda_row = await cursor.fetchone()
+                if kda_row:
+                    kills = kda_row["kills"]
+                    deaths = kda_row["deaths"]
+                    ratio = round(kills / deaths, 2) if deaths > 0 else kills
+                    embed.add_field(
+                        name="⚔️ Historial PvP", 
+                        value=f"**Kills:** {kills} | **Deaths:** {deaths}\n**K/D Ratio:** {ratio}", 
+                        inline=False
+                    )
+            except aiosqlite.OperationalError:
+                pass
+            
+            # Adición de Personajes (Alts) conocidos
+            try:
+                cursor = await db.execute(
+                    "SELECT character_name FROM tribe_characters WHERE player_name = ?",
+                    (player_name,)
+                )
+                char_rows = await cursor.fetchall()
+                if char_rows:
+                    chars = ", ".join([f"`{c['character_name']}`" for c in char_rows])
+                    embed.add_field(
+                        name="🧑‍🤝‍🧑 Personajes Conocidos", 
+                        value=chars, 
+                        inline=False
+                    )
+            except aiosqlite.OperationalError:
+                pass
 
-            # Extracción de datos de Blacklist
+            # Extracción de datos de Blacklist manual
             try:
                 cursor = await db.execute(
                     "SELECT tribe, notes FROM blacklist WHERE player = ?",
@@ -236,10 +297,12 @@ class PlayerSelectMenu(discord.ui.Select):
                     embed.add_field(
                         name="📓 Extra (Notas)",
                         value=bl_row["notes"] or "Ninguna",
-                        inline=False,
+                        inline=True,
                     )
             except aiosqlite.OperationalError:
                 pass
+                
+            embed.set_footer(text=f"Primera vez visto: {first_seen_str}")
 
             map_str = ""
             for m in maps:
