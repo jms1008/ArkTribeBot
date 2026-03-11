@@ -174,7 +174,7 @@ class BreedingDinoSelectMenu(discord.ui.Select):
             min_values=1,
             max_values=1,
             options=options,
-            row=2
+            row=1
         )
 
     async def callback(self, interaction: discord.Interaction):
@@ -370,7 +370,7 @@ class BreedingDashboardView(discord.ui.View):
         style=discord.ButtonStyle.secondary,
         custom_id="breeding_prev_btn",
         emoji="◀️",
-        row=1
+        row=2
     )
     async def prev_btn(
         self, interaction: discord.Interaction, button: discord.ui.Button
@@ -400,7 +400,7 @@ class BreedingDashboardView(discord.ui.View):
         style=discord.ButtonStyle.secondary,
         custom_id="breeding_next_btn",
         emoji="▶️",
-        row=1
+        row=2
     )
     async def next_btn(
         self, interaction: discord.Interaction, button: discord.ui.Button
