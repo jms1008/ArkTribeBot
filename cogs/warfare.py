@@ -252,7 +252,7 @@ class ModifyBlacklistModal(discord.ui.Modal, title="Modificar entrada de Blackli
     entry_id = discord.ui.TextInput(label="ID de la entrada", placeholder="Número ID")
     campo = discord.ui.TextInput(
         label="Campo a modificar",
-        placeholder="player | tribe | map | notes",
+        placeholder="player | tribe | map | notes | is_enemy",
     )
     nuevo_valor = discord.ui.TextInput(
         label="Nuevo valor",
@@ -264,7 +264,7 @@ class ModifyBlacklistModal(discord.ui.Modal, title="Modificar entrada de Blackli
         self.bot = bot
 
     async def on_submit(self, interaction: discord.Interaction):
-        valid_fields = {"player", "tribe", "map", "notes"}
+        valid_fields = {"player", "tribe", "map", "notes", "is_enemy"}
         campo = self.campo.value.strip().lower()
         if campo not in valid_fields:
             await interaction.response.send_message(
@@ -279,6 +279,15 @@ class ModifyBlacklistModal(discord.ui.Modal, title="Modificar entrada de Blackli
             )
             return
 
+        valor = self.nuevo_valor.value
+        if campo == "is_enemy":
+            if valor not in ("0", "1"):
+                await interaction.response.send_message(
+                    "❌ Para is_enemy, el valor debe ser 0 (Neutral) o 1 (Enemigo).", ephemeral=True
+                )
+                return
+            valor = int(valor)
+
         async with aiosqlite.connect(self.bot.db_name) as db:
             cursor = await db.execute("SELECT id FROM blacklist WHERE id = ?", (bid,))
             if not await cursor.fetchone():
@@ -288,12 +297,12 @@ class ModifyBlacklistModal(discord.ui.Modal, title="Modificar entrada de Blackli
                 return
             await db.execute(
                 f"UPDATE blacklist SET {campo} = ? WHERE id = ?",
-                (self.nuevo_valor.value, bid),
+                (valor, bid),
             )
             await db.commit()
 
         await interaction.response.send_message(
-            f"✅ ID {bid} actualizado: **{campo}** → {self.nuevo_valor.value}",
+            f"✅ ID {bid} actualizado: **{campo}** → {valor}",
             ephemeral=True,
         )
         await update_blacklist_dashboards(self.bot)
