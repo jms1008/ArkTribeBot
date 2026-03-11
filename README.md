@@ -4,31 +4,33 @@ Un bot de Discord diseñado a medida y altamente interactivo para gestionar, aut
 
 ## 🚀 Funcionalidades Principales
 
-### 🎯 Organización y Eventos
+### 🚨 Sistemas de Alerta y Respuesta (Warfare)
 
-* **Gestor de Eventos LFG (`/evento`):** Sistema interactivo basado en botones para organizar Bosses y actividades, permitiendo votar horarios y registrar asistencia automáticamente en paneles auto actualizables.
-* **Gestor de Tareas (`/todo_list`, `/todo_add`):** Panel dinámico integrado en Discord para gestionar tareas pendientes, asignarlas (en curso) y darles cierre (terminado).
-* **Alertas de Reclamación Diaria (`/puntos_diarios`):** Sistema de suscripciones y temporizadores precisos por zona horaria para no olvidar los canjes de moneda/Puntos de Tienda (Ark Shop).
+* **Alerta SOS y Reconocimiento Táctico (`/sos`):** Emisión instantánea de reportes estructurados de raid (con tipo, mapa y atacantes) enviando ping al rol de emergencia.
+* **Sistema de Chivatazo Silencioso (@policia):** Detector pasivo en los logs del juego que destapa al instante infiltraciones silenciosas cuando el enemigo mata a animales faro con nombres clave.
+* **Blacklist Inteligente (`/blacklist`):** Dashboard interactivo por botones que unifica Jugadores y Tribus enemigas (KOS, marcados en 🔴) junto a los registros neutrales automáticos detectados por el radar (⚪).
 
-### 🦕 Crianza y Genética
+### 🕵️ Inteligencia, Espionaje y Radar
 
-* **Gestor de Líneas de Crianza (`/lineas`):** Tablones visuales por especie para registrar, centralizar y actualizar estadísticas base (HP, Stamina, Melee, Peso, Oxígeno, Comida, Velocidad).
-* **Tracker Inmersivo de Mutaciones:** Extracción de logs y seguimientos para rastrear en qué ramas ocurre una mutación individual o, para los afortunados, dobles mutaciones genéticas.
+* **K4Ultra Intelligence (`/k4ultra`):** Motor de espionaje que monitoriza pasivamente el clúster entero, mostrando horas de juego globales y perfiles individuales con estado online, alts compartidos, primeros avistamientos y kda pvp real.
+* **Scouting Satelital (`/scout_list`):** Base de datos de bases enemigas paginada. Admite filtrado secreto por mapas e imágenes adjuntas protegidas para evitar *dead links*.
+* **Status y Población (`/status`, `/status_permanente`):** Visualización en vivo y permanente de todos tus servidores, cambiando de color si un servidor se cae o se queda vacío.
 
-### 🕵️ Inteligencia y Monitorización (Radar)
+### 🦕 Genética y Crianza
 
-* **K4Ultra Intelligence:** Escáner pasivo (vía A2S) que vigila la inmensidad de los mapas. Analiza tiempos de conexión, mapeo habitual de los rivales y elabora algoritmos de co-ocurrencia para predecir alianzas y relaciones de tribus enemigas.
-* **Status y Población de Servidores (`/status`):** Visualización en vivo y permanente del ping y número de jugadores online a lo largo de todo el cluster, ignorando slots ocultos o falsos.
-* **Scouting de Bases (`/scout_list`):** Inteligencia militar. Base de datos con coordenadas, niveles de amenaza (1-5), notas e imágenes adjuntas protegidas de los "dead links". Admite filtrado global o privado.
+* **Dashboard de Líneas (Paginado) (`/lineas`):** Tablón interactivo infinito por páginas para registrar las Top Stats (HP, Melee, Stam, etc). Modificable al vuelo desde el propio panel sin recordar comandos.
+* **Detector y Logs de Mutaciones:** Sistema de botones embebidos para sumar mutaciones directas (+2 o dobles) y consultar un historial interactivo extraído directo de los logs de Ark para saber quién y cuándo mutó qué dino.
+* **Temporizadores de Impronta:** Alarmas clickeables que avisan por el canal en tiempo real enviando un ping personal.
 
-### ⚔️ Guerra y Moderación (Warfare)
+### 🎯 Tareas y Coordinación Tribal
 
-* **Blacklist (`/blacklist`):** Registro de jugadores "non gratos" y tribus problemáticas. Integrado codo a codo con K4Ultra para el auto-blacklisting de amenazas detectadas en tiempo real.
-* **Alertas SOS de Emergencia (`/sos`):** Emisión instantánea de reportes estructurados marcables mediante *pings* al instante (Soaking, Raideo Inminente, FOB Enemigo) alertando sobre atacantes/defensores presenciales.
+* **To-Do List Interactiva (`/todo_list`):** Panel dinámico paginado donde los miembros pueden reclamar tareas activas y borrarlas cuando logren el objetivo (Farmear, Tamear, etc).
+* **Gestor de Eventos LFG (`/evento`):** Sistema por botones para proponer y votar fechas de Bosses y Ascensiones registradas en un contador en vivo.
+* **Puntos de Ark (`/config_puntos`):** Suscripciones individuales para recordar cuándo canjear los puntos de votación diarios en el Ark Shop.
 
-### ⚙️ Administración
+### ⚙️ Administración y Base de Datos
 
-* Comandos restringidos para establecer configuraciones principales, consultar logs crudos (`/log`) y realizar limpiezas base de datos para inicio a temporadas (Wipes) (`/wipe_db`).
+* **Motor Integrado (`aiosqlite`) y Refugios (`/wipe_db`):** Toda la inteligencia y configuraciones están apoyadas en una pequeña BD de alto rendimiento asíncrono. Los logs originales pueden consultarse localmente sin salir a la terminal.
 
 ---
 

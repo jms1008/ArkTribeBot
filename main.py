@@ -186,46 +186,36 @@ class ArkTribeBot(commands.Bot):
             return
 
         embed = discord.Embed(
-            title="🦖 ¡ArkTribeBot ha llegado al servidor!",
+            title="🦖 ¡ArkTribeBot ha completado su despliegue!",
             description=(
-                "Gracias por añadirme. Soy un bot especializado en la gestión de clanes de **ARK: Survival Evolved**.\n\n"
-                "Antes de empezar, el dueño del servidor o un administrador debe ejecutar la **configuración inicial**."
+                "El sistema está en línea. Soy tu IA táctica para la gestión de clanes en **ARK: Survival Evolved**.\n\n"
+                "Para iniciar los subsistemas, un administrador debe ejecutar la configuración inicial obligatoria."
             ),
             color=discord.Color.from_rgb(35, 135, 80),
         )
 
         embed.add_field(
-            name="⚙️ Configuración inicial",
+            name="⚙️ Arranque y Configuración",
             value=(
-                "`/inicio_ark` — Vincula el bot a este servidor (canales, rol admin, servidores Ark, propietario del bot).\n"
-                "Este comando **debe ejecutarse primero** para que el resto de funciones estén disponibles."
+                "`/inicio_ark` — Vincula el bot a este servidor (canales, rol SOS, IPs del clúster).\n"
+                "⚠️ *Este comando es estrictamente necesario para desbloquear el resto del bot.*"
             ),
             inline=False,
         )
         embed.add_field(
-            name="📋 Comandos de configuración",
+            name="🤖 Módulos Principales",
             value=(
-                "`/config_puntos` — Activa/desactiva los recordatorios de puntos diarios y configura los enlaces de voto.\n"
-                "`/puntos_diarios` — Cada jugador activa sus propias notificaciones diarias.\n"
-                "`/status_permanente` — Dashboard de estado de servidores (auto-actualizable).\n"
-                "`/status_online` — Vista global de todos los servidores del clúster."
+                "👁️ **K4Ultra Intel:** Radar pasivo que monitoriza sesiones, tiempos y alianzas de todo jugador online.\n"
+                "☠️ **Blacklist:** Panel interactivo con botones para gestionar Enemigos (KOS) y Neutrales (Auto-Registros).\n"
+                "🛰️ **Scouting:** Inventario global de bases enemigas paginado y visual.\n"
+                "🚨 **Alerta SOS:** Sistema de pings estructurados de raid y chivatazo silencioso (`@policia`).\n"
+                "🧬 **Crianza:** Dashboard paginado de líneas estadísticas con botones de registro al vuelo.\n"
+                "📝 **To-Do List:** Panel interactivo de tareas tribales con asignación de responsables.\n"
+                "🟢 **Server Status:** Monitorización 24/7 con Auto-Update de todos tus mapas."
             ),
             inline=False,
         )
-        embed.add_field(
-            name="📖 Funcionalidades principales",
-            value=(
-                "• **Scouting** — Registro de bases enemigas con imágenes y coordenadas.\n"
-                "• **KDA Tracker** — Seguimiento automático de kills y muertes vía logs del juego.\n"
-                "• **K4Ultra** — Seguimiento de sesiones y tiempo de juego por jugador y mapa.\n"
-                "• **Blacklist** — Lista negra de jugadores hostiles.\n"
-                "• **Crianza** — Gestión de líneas de dinos y estadísticas.\n"
-                "• **SOS** — Sistema de alertas de raid en tiempo real.\n"
-                "• **Eventos** — Sistema de votaciones y eventos de tribu."
-            ),
-            inline=False,
-        )
-        embed.set_footer(text="ArkTribeBot v1.2.0 • github.com/jms1008/ArkTribeBot")
+        embed.set_footer(text="ArkTribeBot v2.0 • Sistema Operativo Tribal")
 
         try:
             await canal.send(embed=embed)
