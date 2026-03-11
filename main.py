@@ -450,12 +450,9 @@ class ArkTribeBot(commands.Bot):
 
     async def on_ready(self):
         logger.info(f"Conectado como {self.user} (ID: {self.user.id})")
-        # Activity con texto optimizado para evitar truncamiento
+        # Activity personalizado corto para evitar recortes
         await self.change_presence(
-            activity=discord.Activity(
-                type=discord.ActivityType.playing, 
-                name="ARK | By @K4NEKIs"
-            )
+            activity=discord.CustomActivity(name="ARK | By @K4NEKIs")
         )
 
     async def init_db(self):
