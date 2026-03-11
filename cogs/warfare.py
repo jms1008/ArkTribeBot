@@ -470,7 +470,8 @@ class PlayerDetailSelect(discord.ui.Select):
             min_values=1,
             max_values=1,
             options=options,
-            row=1
+            row=1,
+            custom_id="warfare_player_detail_select"
         )
 
     async def callback(self, interaction: discord.Interaction):
