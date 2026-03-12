@@ -11,6 +11,7 @@ import asyncio
 from dotenv import load_dotenv
 import logging
 from datetime import datetime
+import random
 
 # --- CONFIGURACIÓN DE LOGGING ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -424,10 +425,18 @@ class ArkTribeBot(commands.Bot):
                                 d_row = await cursor.fetchone()
                                 num_muertes = d_row[0] if d_row else 1
                                 
-                                # Respuesta sarcástica
-                                await message.reply(
-                                    f"Estás pendejo... ya te moriste {num_muertes}..."
-                                )
+                                # Respuestas sarcásticas variadas
+                                sarcasmos = [
+                                    f"Estás pendejo... ya te moriste **{num_muertes}** veces...",
+                                    f"¡Felicidades! Has desbloqueado el logro: *Morir por {num_muertes}ª vez*. 🏆",
+                                    f"¿Otra vez? A este ritmo te van a cobrar alquiler en el respawn. (Muertes: **{num_muertes}**)",
+                                    f"Tranquilo, la **{num_muertes}ª** es la vencida... o no. 🤡",
+                                    f"Eres como un dodo, pero con menos instinto de supervivencia. (Total: **{num_muertes}**)",
+                                    f"¡Míralo! Si es que no se le puede dejar solo... Muertes: **{num_muertes}** 🤦‍♂️",
+                                    f"¿Has probado lo de no morir? Dicen que funciona bastante bien. (Contador: **{num_muertes}**)"
+                                ]
+                                
+                                await message.reply(random.choice(sarcasmos))
                                 guild_log.info(
                                     f"[Sarcasmo] Muerte detectada: {victima_player} (#{num_muertes})"
                                 )

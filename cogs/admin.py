@@ -319,34 +319,23 @@ class Admin(commands.Cog):
             )
             await db.commit()
 
-        embed = discord.Embed(
-            title="✅ ArkTribeBot Configurado Correctamente",
-            description="El servidor ha sido vinculado con éxito a la base de datos.",
-            color=discord.Color.green(),
-        )
-        embed.add_field(name="🚨 Canal SOS", value=canal_sos.mention, inline=False)
-        embed.add_field(
-            name="📜 Canal de Logs (Oyente)", value=canal_logs.mention, inline=False
-        )
-        embed.add_field(
-            name="📁 Canal de Archivos", value=canal_archivos.mention, inline=False
-        )
-        embed.add_field(
-            name="⏱️ Intervalo Dashboards",
-            value=f"{intervalo_act} minutos",
-            inline=False,
-        )
-        if rol_admin:
-            embed.add_field(name="🛡️ Rol Admin", value=rol_admin.mention, inline=False)
-        # Mostrar el propietario del bot configurado para este servidor
-        owner_mention = (
-            propietario_bot.mention if propietario_bot else interaction.user.mention
-        )
-        embed.add_field(
-            name="👑 Propietario del Bot", value=owner_mention, inline=False
-        )
+        # Consultar configuración final para el embed (asegurar datos frescos)
+        async with aiosqlite.connect(self.bot.db_name) as db:
+            db.row_factory = aiosqlite.Row
+            c = await db.execute("SELECT * FROM guild_config WHERE guild_id = ?", (guild_id,))
+            config_fresh = await c.fetchone()
+            
+            c2 = await db.execute("SELECT COUNT(*) FROM tribe_characters WHERE guild_id = ?", (guild_id,))
+            count_res = await c2.fetchone()
+            num_miembros = count_res[0] if count_res else 0
 
-        await interaction.followup.send(embed=embed)
+        if config_fresh:
+            embed = build_config_embed(config_fresh, num_miembros, guild_id)
+            embed.title = "✅ ArkTribeBot Configurado Correctamente"
+            embed.description = "El servidor ha sido vinculado con éxito. Aquí tienes el resumen de tu configuración:"
+            await interaction.followup.send(embed=embed)
+        else:
+            await interaction.followup.send("✅ Configuración guardada correctamente.")
 
         # ------------------- AUTO-SETUP DE CANALES OPCIONALES -------------------
         from cogs.management import INFO_TEXTS, TodoView
