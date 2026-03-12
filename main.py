@@ -226,7 +226,7 @@ class ArkTribeBot(commands.Bot):
             name="👨‍👩‍👧‍👦 Gestión de Miembros (VITAL)",
             value=(
                 "Para que el sistema de K/D/A y el detector de muertes funcionen:\n"
-                "1. Usa `/fijar_tribu` para registrar los nombres de tus aliados.\n"
+                "1. Usa `/fijar_tribu` para registrar los nombres de tus clanes aliados.\n"
                 "2. Usa `/ranking_char_add` para vincular los nombres de personajes de tus miembros (ARK) con sus usuarios de Discord."
             ),
             inline=False,
@@ -367,7 +367,7 @@ class ArkTribeBot(commands.Bot):
                         re.IGNORECASE,
                     )
 
-                    # 2. Caso: Muerte genérica (dino salvaje, entorno, etc.)
+                    # 2. Caso: Muerte genérica (dino, comida, etc)
                     # Patrón: Tribemember [Victima] - Lvl [X] ha muerto 🔪
                     generic_death_match = re.search(
                         r"Tribemember (.*?) - Lvl.*?ha muerto 🔪",
@@ -378,7 +378,7 @@ class ArkTribeBot(commands.Bot):
                     if player_death_match or generic_death_match:
                         victima_char = ""
                         asesino_char = None
-
+                        
                         if player_death_match:
                             victima_char = player_death_match.group(1).strip()
                             asesino_char = player_death_match.group(2).strip()
@@ -405,8 +405,6 @@ class ArkTribeBot(commands.Bot):
 
                             # Solo procesamos muertes de miembros registrados
                             if victima_player:
-                                # Si hay asesino externo, es una baja pvp sufrida
-                                # Si es asesino de la tribu (TeamKill), lo ignoramos para el KDA global pero avisamos
                                 if victima_player and asesino_player:
                                     guild_log.info(
                                         f"[KDA] Fuego amigo: {asesino_player} mató a {victima_player}. No suma KDA."
@@ -417,7 +415,7 @@ class ArkTribeBot(commands.Bot):
                                         "INSERT INTO tribe_kda (guild_id, player_name, deaths) VALUES (?, ?, 1) ON CONFLICT(guild_id, player_name) DO UPDATE SET deaths = deaths + 1",
                                         (guild_id, victima_player),
                                     )
-
+                                
                                 # Obtener el total de muertes actualizado para el sarcasmo
                                 cursor = await db.execute(
                                     "SELECT deaths FROM tribe_kda WHERE guild_id = ? AND player_name = ?",
@@ -425,7 +423,7 @@ class ArkTribeBot(commands.Bot):
                                 )
                                 d_row = await cursor.fetchone()
                                 num_muertes = d_row[0] if d_row else 1
-
+                                
                                 # Respuesta sarcástica
                                 await message.reply(
                                     f"Estás pendejo... ya te moriste {num_muertes}..."
