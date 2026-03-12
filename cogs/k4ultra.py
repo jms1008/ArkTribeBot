@@ -399,7 +399,7 @@ class K4Ultra(commands.Cog):
             logger.debug(f"[K4Ultra] Error fetching from {map_name}: {e}")
             return map_name, []
 
-    @tasks.loop(minutes=2)
+    @tasks.loop(minutes=5)
     async def gather_player_data(self):
         """Tarea en segundo plano que recopila datos de los jugadores cada 5 minutos."""
         await self.bot.wait_until_ready()
@@ -617,28 +617,28 @@ class K4Ultra(commands.Cog):
                     }
                     fp["true_identity"] = true_identity
 
-                # Registros de Log
-                await db.execute(
-                    "INSERT INTO k4ultra_players_log (player_name, map_name) VALUES (?, ?)",
-                    (true_identity, map_m),
-                )
+                    # Registros de Log
+                    await db.execute(
+                        "INSERT INTO k4ultra_players_log (player_name, map_name) VALUES (?, ?)",
+                        (true_identity, map_m),
+                    )
 
-                # Análisis de Playtime
-                cursor = await db.execute(
-                    "SELECT id FROM k4ultra_playtime WHERE player_name = ? AND map_name = ?",
-                    (true_identity, map_m),
-                )
-                pt_row = await cursor.fetchone()
-                if pt_row:
-                    await db.execute(
-                        "UPDATE k4ultra_playtime SET total_minutes = total_minutes + 5, last_seen = ? WHERE id = ?",
-                        (now.strftime("%Y-%m-%d %H:%M:%S"), pt_row["id"]),
+                    # Análisis de Playtime (Se aplica a TODOS los de all_fetched)
+                    cursor = await db.execute(
+                        "SELECT id FROM k4ultra_playtime WHERE player_name = ? AND map_name = ?",
+                        (true_identity, map_m),
                     )
-                else:
-                    await db.execute(
-                        "INSERT INTO k4ultra_playtime (player_name, map_name, total_minutes, last_seen) VALUES (?, ?, ?, ?)",
-                        (true_identity, map_m, 5, now.strftime("%Y-%m-%d %H:%M:%S")),
-                    )
+                    pt_row = await cursor.fetchone()
+                    if pt_row:
+                        await db.execute(
+                            "UPDATE k4ultra_playtime SET total_minutes = total_minutes + 5, last_seen = ? WHERE id = ?",
+                            (now.strftime("%Y-%m-%d %H:%M:%S"), pt_row["id"]),
+                        )
+                    else:
+                        await db.execute(
+                            "INSERT INTO k4ultra_playtime (player_name, map_name, total_minutes, last_seen) VALUES (?, ?, ?, ?)",
+                            (true_identity, map_m, 5, now.strftime("%Y-%m-%d %H:%M:%S")),
+                        )
 
                 # --- Auto-Enriquecimiento de Blacklist ---
                 try:
