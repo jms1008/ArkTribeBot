@@ -212,13 +212,22 @@ class ArkTribeBot(commands.Bot):
         embed.add_field(
             name="🤖 Módulos Principales",
             value=(
-                "👁️ **K4Ultra Intel:** Radar pasivo que monitoriza sesiones, tiempos y alianzas de todo jugador online.\n"
-                "☠️ **Blacklist:** Panel interactivo con botones para gestionar Enemigos (KOS) y Neutrales (Auto-Registros).\n"
-                "🛰️ **Scouting:** Inventario global de bases enemigas paginado y visual.\n"
-                "🚨 **Alerta SOS:** Sistema de pings estructurados de raid y chivatazo silencioso (`@policia`).\n"
-                "🧬 **Crianza:** Dashboard paginado de líneas estadísticas con botones de registro al vuelo.\n"
-                "📝 **To-Do List:** Panel interactivo de tareas tribales con asignación de responsables.\n"
-                "🟢 **Server Status:** Monitorización 24/7 con Auto-Update de todos tus mapas."
+                "👁️ **K4Ultra Intel:** Radar pasivo que monitoriza sesiones, tiempos y alianzas.\n"
+                "☠️ **Blacklist:** Panel interactivo para gestionar Enemigos (KOS) y Neutrales.\n"
+                "🛰️ **Scouting:** Inventario global de bases enemigas paginado.\n"
+                "🚨 **Alerta SOS:** Pings estructurados y detector silencioso (`@policia`).\n"
+                "🧬 **Crianza:** Dashboard de líneas estadísticas y alarmas.\n"
+                "📝 **To-Do List:** Panel interactivo de tareas tribales.\n"
+                "🟢 **Server Status:** Monitorización 24/7 de tus mapas."
+            ),
+            inline=False,
+        )
+        embed.add_field(
+            name="👨‍👩‍👧‍👦 Gestión de Miembros (VITAL)",
+            value=(
+                "Para que el sistema de K/D/A y el detector de muertes funcionen:\n"
+                "1. Usa `/fijar_tribu` para registrar los nombres de tus clanes aliados.\n"
+                "2. Usa `/ranking_char_add` para vincular los nombres de personajes de tus miembros (ARK) con sus usuarios de Discord."
             ),
             inline=False,
         )
@@ -303,10 +312,10 @@ class ArkTribeBot(commands.Bot):
             # Detección de mención al rol @policia y emoji 🔪
             contains_policia = "@policia" in content_lower or "<@&" in content_lower
             contains_knife = (
-                "was :knife: by" in content_lower
-                or "fue :knife: por" in content_lower
-                or "was 🔪 by" in content_lower
-                or "fue 🔪 por" in content_lower
+                "was :knife:" in content_lower
+                or "fue :knife:" in content_lower
+                or "was 🔪" in content_lower
+                or "fue 🔪" in content_lower
             )
 
             if contains_knife:
@@ -338,23 +347,40 @@ class ArkTribeBot(commands.Bot):
                     except Exception as e:
                         guild_log.error(f"Error enviando SOS de policia: {e}")
 
-                # Procesamiento de K/D/A Tracker
+                # Procesamiento de K/D/A Tracker y Sarcasmos
                 try:
                     # Normalización de texto para regex
                     t_clean = texto_original.replace(":knife:", "🔪").replace(
                         "was 🔪 by", "fue 🔪 por"
+                    ).replace(
+                        "was 🔪", "ha muerto 🔪" # Fallback para muertes sin asesino
                     )
 
-                    # Buscamos: Tribemember [Victima] - Lvl [X] fue 🔪 por [Asesino] - Lvl [Y]
-                    match = re.search(
+                    # 1. Caso: Muerte confirmada con asesino
+                    # Patrón: Tribemember [Victima] - Lvl [X] fue 🔪 por [Asesino] - Lvl [Y]
+                    player_death_match = re.search(
                         r"Tribemember (.*?) - Lvl.*?fue 🔪 por (.*?) - Lvl",
                         t_clean,
                         re.IGNORECASE,
                     )
+                    
+                    # 2. Caso: Muerte genérica (dino salvaje, entorno, etc.)
+                    # Patrón: Tribemember [Victima] - Lvl [X] ha muerto 🔪
+                    generic_death_match = re.search(
+                        r"Tribemember (.*?) - Lvl.*?ha muerto 🔪",
+                        t_clean,
+                        re.IGNORECASE,
+                    )
 
-                    if match:
-                        victima_char = match.group(1).strip()
-                        asesino_char = match.group(2).strip()
+                    if player_death_match or generic_death_match:
+                        victima_char = ""
+                        asesino_char = None
+                        
+                        if player_death_match:
+                            victima_char = player_death_match.group(1).strip()
+                            asesino_char = player_death_match.group(2).strip()
+                        else:
+                            victima_char = generic_death_match.group(1).strip()
 
                         async with aiosqlite.connect(self.db_name) as db:
                             # Mapeo de personajes in-game a jugadores reales
@@ -365,51 +391,49 @@ class ArkTribeBot(commands.Bot):
                             victima_res = await c1.fetchone()
                             victima_player = victima_res[0] if victima_res else None
 
-                            c2 = await db.execute(
-                                "SELECT player_name FROM tribe_characters WHERE character_name = ? AND guild_id = ?",
-                                (asesino_char, guild_id),
-                            )
-                            asesino_res = await c2.fetchone()
-                            asesino_player = asesino_res[0] if asesino_res else None
-
-                            made_changes = False
-
-                            # Ignorar TeamKills (fuego amigo)
-                            if victima_player and asesino_player:
-                                guild_log.info(
-                                    f"[KDA] Fuego amigo detectado: {asesino_player} mató a {victima_player}. Ignorado."
+                            asesino_player = None
+                            if asesino_char:
+                                c2 = await db.execute(
+                                    "SELECT player_name FROM tribe_characters WHERE character_name = ? AND guild_id = ?",
+                                    (asesino_char, guild_id),
                                 )
-                            else:
-                                # Registro de bajas sufridas
-                                if victima_player:
+                                asesino_res = await c2.fetchone()
+                                asesino_player = asesino_res[0] if asesino_res else None
+
+                            # Solo procesamos muertes de miembros registrados
+                            if victima_player:
+                                # Si hay asesino externo, es una baja pvp sufrida
+                                # Si es asesino de la tribu (TeamKill), lo ignoramos para el KDA global pero avisamos
+                                if victima_player and asesino_player:
+                                    guild_log.info(f"[KDA] Fuego amigo: {asesino_player} mató a {victima_player}. No suma KDA.")
+                                else:
+                                    # Incrementar muertes en KDA
                                     await db.execute(
                                         "INSERT INTO tribe_kda (guild_id, player_name, deaths) VALUES (?, ?, 1) ON CONFLICT(guild_id, player_name) DO UPDATE SET deaths = deaths + 1",
-                                        (
-                                            guild_id,
-                                            victima_player,
-                                        ),
+                                        (guild_id, victima_player),
                                     )
-                                    guild_log.info(
-                                        f"[KDA] +1 Muerte a {victima_player} (Asesinado por {asesino_char})"
-                                    )
-                                    made_changes = True
-
-                                # Registro de bajas causadas
-                                if asesino_player:
-                                    await db.execute(
-                                        "INSERT INTO tribe_kda (guild_id, player_name, kills) VALUES (?, ?, 1) ON CONFLICT(guild_id, player_name) DO UPDATE SET kills = kills + 1",
-                                        (
-                                            guild_id,
-                                            asesino_player,
-                                        ),
-                                    )
-                                    guild_log.info(
-                                        f"[KDA] +1 Kill a {asesino_player} (Mató a {victima_char})"
-                                    )
-                                    made_changes = True
-
-                            if made_changes:
+                                
+                                # Obtener el total de muertes actualizado para el sarcasmo
+                                cursor = await db.execute(
+                                    "SELECT deaths FROM tribe_kda WHERE guild_id = ? AND player_name = ?",
+                                    (guild_id, victima_player)
+                                )
+                                d_row = await cursor.fetchone()
+                                num_muertes = d_row[0] if d_row else 1
+                                
+                                # Respuesta sarcástica
+                                await message.reply(f"Estás pendejo... ya te moriste {num_muertes}...")
+                                guild_log.info(f"[Sarcasmo] Muerte detectada: {victima_player} (#{num_muertes})")
                                 await db.commit()
+
+                            # Si hay asesino registrado y no es fuego amigo, sumar Kill
+                            if asesino_player and not victima_player:
+                                await db.execute(
+                                    "INSERT INTO tribe_kda (guild_id, player_name, kills) VALUES (?, ?, 1) ON CONFLICT(guild_id, player_name) DO UPDATE SET kills = kills + 1",
+                                    (guild_id, asesino_player),
+                                )
+                                await db.commit()
+                                guild_log.info(f"[KDA] +1 Kill para {asesino_player}")
                                 # Actualización de dashboards K/D/A
                                 try:
                                     warfare_cog = self.get_cog("Warfare")
