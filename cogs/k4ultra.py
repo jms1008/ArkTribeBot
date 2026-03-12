@@ -465,13 +465,13 @@ class K4Ultra(commands.Cog):
                     if sid not in seen_identities and s["map_name"] == map_m:
                         if extract_base(s["player_name"]) == raw_name:
                             true_identity = s["player_name"]
+                            fp["true_identity"] = true_identity
                             seen_identities.add(sid)
                             await db.execute(
                                 "UPDATE k4ultra_sessions SET end_time = ? WHERE id = ?",
                                 (now.strftime("%Y-%m-%d %H:%M:%S"), sid),
                             )
                             fp["matched"] = True
-                            fp["true_identity"] = true_identity
                             break
 
             # Pasada 2: Resolución de reconexiones, transferencias o nuevas sesiones
@@ -617,44 +617,46 @@ class K4Ultra(commands.Cog):
                     }
                     fp["true_identity"] = true_identity
 
-                    # Registros de Log
+            # --- Actualización Global de Tiempo (Playtime y Blacklist) ---
+            # Se aplica a TODOS los jugadores detectados en este ciclo
+            for fp in all_fetched:
+                t_identity = fp.get("true_identity")
+                t_map = fp.get("map")
+                if not t_identity:
+                    continue
+
+                # 1. k4ultra_playtime (Estadísticas por mapa)
+                cursor = await db.execute(
+                    "SELECT id FROM k4ultra_playtime WHERE player_name = ? AND map_name = ?",
+                    (t_identity, t_map),
+                )
+                pt_row = await cursor.fetchone()
+                if pt_row:
                     await db.execute(
-                        "INSERT INTO k4ultra_players_log (player_name, map_name) VALUES (?, ?)",
-                        (true_identity, map_m),
+                        "UPDATE k4ultra_playtime SET total_minutes = total_minutes + 5, last_seen = ? WHERE id = ?",
+                        (now.strftime("%Y-%m-%d %H:%M:%S"), pt_row["id"]),
+                    )
+                else:
+                    await db.execute(
+                        "INSERT INTO k4ultra_playtime (player_name, map_name, total_minutes, last_seen) VALUES (?, ?, ?, ?)",
+                        (t_identity, t_map, 5, now.strftime("%Y-%m-%d %H:%M:%S")),
                     )
 
-                    # Análisis de Playtime (Se aplica a TODOS los de all_fetched)
-                    cursor = await db.execute(
-                        "SELECT id FROM k4ultra_playtime WHERE player_name = ? AND map_name = ?",
-                        (true_identity, map_m),
-                    )
-                    pt_row = await cursor.fetchone()
-                    if pt_row:
-                        await db.execute(
-                            "UPDATE k4ultra_playtime SET total_minutes = total_minutes + 5, last_seen = ? WHERE id = ?",
-                            (now.strftime("%Y-%m-%d %H:%M:%S"), pt_row["id"]),
-                        )
-                    else:
-                        await db.execute(
-                            "INSERT INTO k4ultra_playtime (player_name, map_name, total_minutes, last_seen) VALUES (?, ?, ?, ?)",
-                            (true_identity, map_m, 5, now.strftime("%Y-%m-%d %H:%M:%S")),
-                        )
-
-                # --- Auto-Enriquecimiento de Blacklist ---
+                # 2. blacklist (Estadísticas globales de horas)
                 try:
                     cursor = await db.execute(
                         "SELECT id, total_hours FROM blacklist WHERE player = ?",
-                        (true_identity,),
+                        (t_identity,),
                     )
                     bl_row = await cursor.fetchone()
                     if bl_row:
                         new_total = (bl_row["total_hours"] or 0.0) + (5 / 60.0)
                         await db.execute(
                             "UPDATE blacklist SET last_seen = ?, map = ?, total_hours = ? WHERE id = ?",
-                            (now.strftime("%Y-%m-%d %H:%M:%S"), map_m, new_total, bl_row["id"]),
+                            (now.strftime("%Y-%m-%d %H:%M:%S"), t_map, new_total, bl_row["id"]),
                         )
                 except Exception as e:
-                    logger.error(f"[K4Ultra] Error enriqueciendo blacklist para {true_identity}: {e}")
+                    logger.error(f"[K4Ultra] Error enriqueciendo blacklist para {t_identity}: {e}")
 
 
             # Marcado de inactividad de sesiones cerradas
