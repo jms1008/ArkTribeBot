@@ -235,9 +235,9 @@ class ArkTribeBot(commands.Bot):
 
         try:
             await canal.send(embed=embed)
-            logger.info(f"Mensaje de bienvenida enviado en {guild.name} ({guild.id})")
+            logger.info(f"[Bot] Bienvenida enviada: {guild.name} ({guild.id})")
         except Exception as e:
-            logger.error(f"Error enviando embed de bienvenida en {guild.name}: {e}")
+            logger.error(f"[Bot] Error enviando bienvenida en {guild.name}: {e}")
 
         async def _sync_guild():
             # Pequeña pausa para dejar que Discord procese la unión antes del sync
@@ -245,7 +245,7 @@ class ArkTribeBot(commands.Bot):
 
             if hasattr(self, "is_syncing") and self.is_syncing:
                 logger.warning(
-                    f"Sincronización omitida en {guild.name}: Ya hay un sync en curso."
+                    f"[Bot] Sincronización omitida en {guild.name}: Ya hay un sync en curso."
                 )
                 return
 
@@ -345,7 +345,7 @@ class ArkTribeBot(commands.Bot):
                                 view=view,
                             )
                     except Exception as e:
-                        guild_log.error(f"Error enviando SOS de policia: {e}")
+                        guild_log.error(f"[SOS] Error enviando alerta de policia: {e}")
 
                 # Procesamiento de K/D/A Tracker y Sarcasmos
                 try:
@@ -801,6 +801,13 @@ class ArkTribeBot(commands.Bot):
                     PRIMARY KEY (guild_id, character_name)
                 )
             """)
+            # Migración: Asegurar UNIQUE en tribe_kda para ON CONFLICT
+            try:
+                await db.execute(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS idx_tribe_kda_guild_player ON tribe_kda(guild_id, player_name)"
+                )
+            except aiosqlite.OperationalError:
+                pass
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS kda_messages (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,

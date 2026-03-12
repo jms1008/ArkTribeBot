@@ -4,8 +4,7 @@ from discord.ext import commands
 import logging
 import aiosqlite
 import asyncio
-
-logger = logging.getLogger("ArkTribeBot")
+import typing
 
 logger = logging.getLogger("ArkTribeBot")
 
@@ -184,71 +183,18 @@ class Admin(commands.Cog):
             num_miembros = count_res[0] if count_res else 0
 
         if not config:
-            await (interaction.followup.send if not updates else interaction.edit_original_response)(
-                content="❌ Este servidor no está configurado. Usa `/inicio_ark` primero."
-            )
+            target = interaction.followup.send if not updates else interaction.edit_original_response
+            await target(content="❌ Este servidor no está configurado. Usa `/inicio_ark` primero.")
             return
 
-        embed = discord.Embed(
-            title="⚙️ Configuración Actual de ArkTribeBot",
-            color=discord.Color.blue(),
-            timestamp=discord.utils.utcnow(),
-        )
-        embed.set_footer(text=f"ID Servidor: {guild_id}")
-
-        embed.add_field(
-            name="📡 Canales Principales",
-            value=(
-                f"🚨 **SOS:** <#{config['sos_channel_id']}>\n"
-                f"📜 **Logs:** <#{config['log_channel_id']}>\n"
-                f"📁 **Archivos:** <#{config['upload_channel_id']}>"
-            ),
-            inline=False,
-        )
-
-        embed.add_field(
-            name="🛡️ Seguridad y Permisos",
-            value=(
-                f"👤 **Dueño:** <@{config['bot_owner_id']}>\n"
-                f"🛡️ **Rol Admin:** <@&{config['admin_role_id']}>" if config['admin_role_id'] else "🛡️ **Rol Admin:** No configurado"
-            ),
-            inline=True,
-        )
-
-        embed.add_field(
-            name="📊 Preferencias",
-            value=(
-                f"⏱️ **Sync Interval:** {config['update_interval']} min\n"
-                f"🪙 **Puntos Diarios:** {'✅ ON' if config['daily_points_enabled'] else '❌ OFF'}"
-            ),
-            inline=True,
-        )
-
-        embed.add_field(
-            name="👨‍👩‍👧‍👦 Tribu",
-            value=f"👥 **Miembros Registrados:** {num_miembros}",
-            inline=True,
-        )
-
-        bm_urls = config['battlemetrics_urls'] or "Ninguno"
-        if len(bm_urls) > 1024:
-            bm_urls = bm_urls[:1021] + "..."
-        embed.add_field(
-            name="🎮 Cluster (BattleMetrics)",
-            value=f"```\n{bm_urls}\n```",
-            inline=False,
-        )
-
-        if updates:
-            await interaction.followup.send(embed=embed)
-        else:
-            await interaction.followup.send(embed=embed)
+        embed = build_config_embed(config, num_miembros, guild_id)
+        await interaction.followup.send(embed=embed)
 
     @commands.command(name="sync")
     async def sync(
         self,
         ctx: commands.Context,
-        spec: str | None = None,
+        spec: typing.Optional[str] = None,
     ):
         """Sincroniza los comandos slash. Uso: !sync [global|guild|clear]"""
         if spec == "global":
@@ -275,7 +221,7 @@ class Admin(commands.Cog):
                     f"✅ **{len(synced)}** comandos sincronizados instantáneamente en este servidor."
                 )
                 logger.info(
-                    f"Comandos sincronizados manualente en {ctx.guild.name} ({ctx.guild.id})"
+                    f"Comandos sincronizados manualmente en {ctx.guild.name} ({ctx.guild.id})"
                 )
             except discord.HTTPException as e:
                 if e.status == 429:
@@ -849,6 +795,61 @@ class Admin(commands.Cog):
             await interaction.response.send_message(
                 f"Error leyendo logs: {e}", ephemeral=True
             )
+
+
+def build_config_embed(config: aiosqlite.Row, num_miembros: int, guild_id: int) -> discord.Embed:
+    """Construye un embed premium con la configuración del servidor."""
+    embed = discord.Embed(
+        title="⚙️ Configuración de ArkTribeBot",
+        description="Estado actual de la vinculación y parámetros del bot.",
+        color=discord.Color.from_rgb(35, 135, 80),  # Verde oscuro premium
+        timestamp=discord.utils.utcnow(),
+    )
+    embed.set_footer(text=f"ID Servidor: {guild_id}")
+
+    embed.add_field(
+        name="📡 Canales del Sistema",
+        value=(
+            f"🚨 **Alertas SOS:** <#{config['sos_channel_id']}>\n"
+            f"📜 **Lector Logs:** <#{config['log_channel_id']}>\n"
+            f"📁 **Repositorio:** <#{config['upload_channel_id']}>"
+        ),
+        inline=False,
+    )
+
+    embed.add_field(
+        name="🛡️ Autorización",
+        value=(
+            f"👤 **Owner:** <@{config['bot_owner_id']}>\n"
+            f"🛡️ **Admin Role:** <@&{config['admin_role_id']}>" if config['admin_role_id'] else "🛡️ **Admin Role:** No configurado"
+        ),
+        inline=True,
+    )
+
+    embed.add_field(
+        name="📊 Módulos",
+        value=(
+            f"⏱️ **Actualización:** {config['update_interval']} min\n"
+            f"🪙 **Puntos Diarios:** {'✅ ON' if config['daily_points_enabled'] else '❌ OFF'}"
+        ),
+        inline=True,
+    )
+
+    embed.add_field(
+        name="👨‍👩‍👧‍👦 Tribu",
+        value=f"👥 **Miembros:** {num_miembros}",
+        inline=True,
+    )
+
+    bm_urls = config['battlemetrics_urls'] or "Sin servidores vinculados"
+    if len(bm_urls) > 1024:
+        bm_urls = bm_urls[:1021] + "..."
+    embed.add_field(
+        name="🎮 Cluster (BattleMetrics)",
+        value=f"```\n{bm_urls}\n```",
+        inline=False,
+    )
+    return embed
 
 
 async def setup(bot):
