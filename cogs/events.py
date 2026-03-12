@@ -85,8 +85,8 @@ class EventPollView(discord.ui.View):
 
             # Obtener opciones y votos
             c = await db.execute(
-                "SELECT id, option_text, voter_ids FROM event_options WHERE event_id = ?",
-                (self.event_id,),
+                "SELECT option_text, voter_ids FROM event_options WHERE event_id = ? AND guild_id = ? ORDER BY id",
+                (self.event_id, interaction.guild_id),
             )
             options = await c.fetchall()
 
@@ -100,9 +100,9 @@ class EventPollView(discord.ui.View):
             )
             embed.set_author(name=f"Organizado por {creator_name}")
 
-            total_votes = sum(len(json.loads(v)) for _, _, v in options)
+            total_votes = sum(len(json.loads(voters_json)) for _, voters_json in options)
 
-            for opt_id, opt_text, voters_json in options:
+            for opt_text, voters_json in options:
                 voters = json.loads(voters_json)
                 voter_names = []
                 for v_id in voters:
@@ -148,8 +148,8 @@ class EventPollView(discord.ui.View):
             # Primero, eliminar el voto del usuario de TODAS las opciones de este evento
             # (Para que solo pueda votar por una opción a la vez)
             c = await db.execute(
-                "SELECT id, voter_ids FROM event_options WHERE event_id = ?",
-                (self.event_id,),
+                "SELECT id, voter_ids FROM event_options WHERE event_id = ? AND guild_id = ?",
+                (self.event_id, interaction.guild_id),
             )
             all_opts = await c.fetchall()
 
@@ -158,22 +158,22 @@ class EventPollView(discord.ui.View):
                 if user_id in voters_list:
                     voters_list.remove(user_id)
                     await db.execute(
-                        "UPDATE event_options SET voter_ids = ? WHERE id = ?",
-                        (json.dumps(voters_list), o_id),
+                        "UPDATE event_options SET voter_ids = ? WHERE id = ? AND guild_id = ?",
+                        (json.dumps(voters_list), o_id, interaction.guild_id),
                     )
 
             # Si no es "remove_only" (No puedo asistir), añadimos el voto a la nueva opción
             if not remove_only:
                 c = await db.execute(
-                    "SELECT voter_ids FROM event_options WHERE id = ?", (option_id,)
+                    "SELECT voter_ids FROM event_options WHERE id = ? AND guild_id = ?", (option_id, interaction.guild_id)
                 )
                 row = await c.fetchone()
                 if row:
                     voters_list = json.loads(row[0])
                     voters_list.append(user_id)
                     await db.execute(
-                        "UPDATE event_options SET voter_ids = ? WHERE id = ?",
-                        (json.dumps(voters_list), option_id),
+                        "UPDATE event_options SET voter_ids = ? WHERE id = ? AND guild_id = ?",
+                        (json.dumps(voters_list), option_id, interaction.guild_id),
                     )
 
             await db.commit()
@@ -208,7 +208,7 @@ class Events(commands.Cog):
         opcion_3: str = None,
         opcion_4: str = None,
     ):
-        user_id = interaction.user.id
+
 
         # Validar opciones
         opciones_validas = [
@@ -230,16 +230,22 @@ class Events(commands.Cog):
         async with aiosqlite.connect(self.bot.db_name) as db:
             # 1. Crear Evento
             cursor = await db.execute(
-                "INSERT INTO events (title, description, creator_id) VALUES (?, ?, ?)",
-                (titulo, descripcion, user_id),
+                "INSERT INTO events (guild_id, title, description, creator_id, channel_id, status) VALUES (?, ?, ?, ?, ?, 'active')",
+                (
+                    interaction.guild_id,
+                    titulo,
+                    descripcion,
+                    interaction.user.id,
+                    interaction.channel_id,
+                ),
             )
             event_id = cursor.lastrowid
 
             # 2. Crear Opciones
             for opt in opciones_validas:
                 await db.execute(
-                    "INSERT INTO event_options (event_id, option_text, voter_ids) VALUES (?, ?, ?)",
-                    (event_id, opt, "[]"),
+                    "INSERT INTO event_options (event_id, option_text, voter_ids, guild_id) VALUES (?, ?, ?, ?)",
+                    (event_id, opt, "[]", interaction.guild_id),
                 )
 
             await db.commit()
@@ -249,8 +255,8 @@ class Events(commands.Cog):
 
             # Para el embed necesitamos los nombres de las opciones
             c = await db.execute(
-                "SELECT id, option_text FROM event_options WHERE event_id = ?",
-                (event_id,),
+                "SELECT id, option_text FROM event_options WHERE event_id = ? AND guild_id = ?",
+                (event_id, interaction.guild_id),
             )
             inserted_opts = await c.fetchall()
 

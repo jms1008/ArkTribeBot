@@ -789,7 +789,11 @@ class Warfare(commands.Cog):
         async with aiosqlite.connect(self.bot.db_name) as db:
             # Upsert (Insert or Update) del vínculo Personaje-Jugador
             await db.execute(
-                "INSERT INTO tribe_characters (guild_id, character_name, player_name) VALUES (?, ?, ?) ON CONFLICT(character_name) DO UPDATE SET player_name=excluded.player_name",
+                """
+                INSERT INTO tribe_characters (guild_id, character_name, player_name)
+                VALUES (?, ?, ?)
+                ON CONFLICT(guild_id, character_name) DO UPDATE SET player_name = excluded.player_name
+                """,
                 (interaction.guild_id, personaje, jugador),
             )
             # Inicialización segura del perfil del jugador en el Tracker KDA a 0

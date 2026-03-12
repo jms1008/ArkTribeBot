@@ -206,17 +206,21 @@ class ClaimTaskModal(discord.ui.Modal, title="Reclamar Tarea"):
             return
 
         async with aiosqlite.connect(self.bot.db_name) as db:
-            cursor = await db.execute("SELECT id FROM todos WHERE id = ?", (tid_int,))
-            row = await cursor.fetchone()
-            if not row:
+            # Verificar si la tarea existe y pertenece al servidor
+            cursor = await db.execute(
+                "SELECT id FROM todos WHERE id = ? AND guild_id = ?",
+                (tid_int, interaction.guild_id),
+            )
+            if not await cursor.fetchone():
                 await interaction.response.send_message(
-                    "❌ Tarea no encontrada.", ephemeral=True
+                    f"❌ La tarea **#{tid_int}** no existe en este servidor.",
+                    ephemeral=True,
                 )
                 return
 
             await db.execute(
-                "UPDATE todos SET asignado_a = ?, estado = 'En Progreso' WHERE id = ?",
-                (interaction.user.id, tid_int),
+                "UPDATE todos SET asignado_a = ?, estado = 'En Progreso' WHERE id = ? AND guild_id = ?",
+                (interaction.user.name, tid_int, interaction.guild_id),
             )
             await db.commit()
 
@@ -257,15 +261,19 @@ class DeleteTaskModal(discord.ui.Modal, title="Eliminar Tarea"):
             return
 
         async with aiosqlite.connect(self.bot.db_name) as db:
-            cursor = await db.execute("SELECT id FROM todos WHERE id = ?", (tid_int,))
-            row = await cursor.fetchone()
-            if not row:
+            # Verificar si la tarea existe y pertenece al servidor
+            cursor = await db.execute(
+                "SELECT id FROM todos WHERE id = ? AND guild_id = ?",
+                (tid_int, interaction.guild_id),
+            )
+            if not await cursor.fetchone():
                 await interaction.response.send_message(
-                    "❌ Tarea no encontrada.", ephemeral=True
+                    f"❌ La tarea **#{tid_int}** no existe en este servidor.",
+                    ephemeral=True,
                 )
                 return
 
-            await db.execute("DELETE FROM todos WHERE id = ?", (tid_int,))
+            await db.execute("DELETE FROM todos WHERE id = ? AND guild_id = ?", (tid_int, interaction.guild_id,))
             await db.commit()
 
         await interaction.response.send_message(

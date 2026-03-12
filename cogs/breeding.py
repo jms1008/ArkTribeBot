@@ -652,8 +652,10 @@ class Breeding(commands.Cog):
                         )
 
                     # Eliminación de alarma ejecutada
+                    # Borrado de defensa en profundidad (guild_id)
                     await db.execute(
-                        "DELETE FROM breeding_alarms WHERE id = ?", (alarm["id"],)
+                        "DELETE FROM breeding_alarms WHERE id = ? AND guild_id = ?",
+                        (alarm["id"], alarm["guild_id"]),
                     )
                 await db.commit()
         except Exception as e:
@@ -908,7 +910,7 @@ class Breeding(commands.Cog):
 
         if not row:
             await interaction.response.send_message(
-                f"No se encontró información para **{dino}**.", ephemeral=True
+                f"❌ No se encontró la especie **{dino}**.", ephemeral=True
             )
             return
 
@@ -940,6 +942,7 @@ class Breeding(commands.Cog):
 
         embed = discord.Embed(title=f"🧬 Stats: {dino}", color=discord.Color.purple())
         embed.description = stats_text
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @app_commands.command(
         name="log_mutas",

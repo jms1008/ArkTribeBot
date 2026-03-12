@@ -60,7 +60,7 @@ class AddScoutModal(discord.ui.Modal, title="Añadir Scout"):
 
         await interaction.response.send_message(
             f"✅ Scout **#{scout_id}** registrado: **{tribu}** en {mapa}.\n"
-            f"Para adjuntar una imagen usa `/scout_add` con el campo *imagen*.",
+            f"Para adjuntar una imagen usa `/scout_add_image` con el ID **{scout_id}**.",
             ephemeral=True,
         )
         await update_scout_dashboards(self.bot, interaction.guild_id, mapa)
@@ -186,7 +186,8 @@ async def build_scout_embed_view(bot, rows: list, map_filter: str, page: int = 0
                         msg_id = int(str(row["url_imagen"]).strip())
                         async with aiosqlite.connect(bot.db_name) as _db:
                             c = await _db.execute(
-                                "SELECT upload_channel_id, guild_id FROM guild_config LIMIT 1"
+                                "SELECT upload_channel_id FROM guild_config WHERE guild_id = ?",
+                                (row["guild_id"],)
                             )
                             cfg_row = await c.fetchone()
                             upload_id = cfg_row[0] if cfg_row else None
@@ -571,11 +572,17 @@ class Scouting(commands.Cog):
 
         async with aiosqlite.connect(self.bot.db_name) as db:
             db.row_factory = aiosqlite.Row
-            cursor = await db.execute("SELECT tribu_enemiga, mapa FROM scouts WHERE id = ? AND guild_id = ?", (id, interaction.guild_id,))
+            # Buscamos primero el scout sin filtrar por guild para diagnosticar si existe en otro lado
+            cursor = await db.execute("SELECT tribu_enemiga, mapa, guild_id FROM scouts WHERE id = ?", (id,))
             row = await cursor.fetchone()
 
         if not row:
-            await interaction.followup.send(f"❌ No existe un registro de scout con ID {id} o no tienes permisos.")
+            await interaction.followup.send(f"❌ No existe ningún registro de scout con ID **{id}**.")
+            return
+            
+        if row["guild_id"] != interaction.guild_id:
+            logger.warning(f"Intento de acceso a Scout #{id} desde Guild {interaction.guild_id}. Dueño real: {row['guild_id']}")
+            await interaction.followup.send(f"❌ No tienes permisos para modificar el Scout **#{id}** (pertenece a otro servidor).")
             return
 
         tribu = row["tribu_enemiga"]

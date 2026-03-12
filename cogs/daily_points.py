@@ -119,13 +119,13 @@ class DailyPoints(commands.Cog):
                 try:
                     await db.execute(
                         """
-                        INSERT INTO daily_points_users (user_id, alert_hour, timezone, last_sent_date) 
-                        VALUES (?, ?, ?, NULL)
-                        ON CONFLICT(user_id) DO UPDATE SET 
+                        INSERT INTO daily_points_users (guild_id, user_id, alert_hour, timezone, last_sent_date)
+                        VALUES (?, ?, ?, ?, NULL)
+                        ON CONFLICT(guild_id, user_id) DO UPDATE SET
                             alert_hour=excluded.alert_hour,
                             timezone=excluded.timezone
-                    """,
-                        (user_id, hora, zona_val),
+                        """,
+                        (interaction.guild_id, user_id, hora, zona_val),
                     )
                     await db.commit()
 
@@ -141,7 +141,8 @@ class DailyPoints(commands.Cog):
             else:
                 try:
                     await db.execute(
-                        "DELETE FROM daily_points_users WHERE user_id = ?", (user_id,)
+                        "DELETE FROM daily_points_users WHERE user_id = ? AND guild_id = ?",
+                        (user_id, interaction.guild_id),
                     )
                     await db.commit()
                     await interaction.response.send_message(
