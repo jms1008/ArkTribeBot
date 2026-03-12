@@ -370,7 +370,7 @@ class ArkTribeBot(commands.Bot):
                     # 2. Caso: Muerte genérica (dino, comida, etc)
                     # Patrón: Tribemember [Victima] - Lvl [X] ha muerto 🔪
                     generic_death_match = re.search(
-                        r"Tribemember (.*?) - Lvl.*?ha muerto 🔪",
+                        r"Tribemember (.*?) - Lvl.*?(?:ha muerto 🔪|was 🔪)",
                         t_clean,
                         re.IGNORECASE,
                     )
@@ -386,9 +386,9 @@ class ArkTribeBot(commands.Bot):
                             victima_char = generic_death_match.group(1).strip()
 
                         async with aiosqlite.connect(self.db_name) as db:
-                            # Mapeo de personajes in-game a jugadores reales
+                            # Mapeo de personajes in-game a jugadores reales (Insensible a mayúsculas)
                             c1 = await db.execute(
-                                "SELECT player_name FROM tribe_characters WHERE character_name = ? AND guild_id = ?",
+                                "SELECT player_name FROM tribe_characters WHERE LOWER(character_name) = LOWER(?) AND guild_id = ?",
                                 (victima_char, guild_id),
                             )
                             victima_res = await c1.fetchone()
@@ -397,7 +397,7 @@ class ArkTribeBot(commands.Bot):
                             asesino_player = None
                             if asesino_char:
                                 c2 = await db.execute(
-                                    "SELECT player_name FROM tribe_characters WHERE character_name = ? AND guild_id = ?",
+                                    "SELECT player_name FROM tribe_characters WHERE LOWER(character_name) = LOWER(?) AND guild_id = ?",
                                     (asesino_char, guild_id),
                                 )
                                 asesino_res = await c2.fetchone()

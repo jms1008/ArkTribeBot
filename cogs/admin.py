@@ -92,6 +92,158 @@ class Admin(commands.Cog):
             ephemeral=True,
         )
 
+    @app_commands.command(
+        name="config",
+        description="[Admin] Visualiza o modifica la configuración del bot para este servidor.",
+    )
+    @app_commands.describe(
+        canal_sos="Canal de retransmisión de alertas (SOS).",
+        canal_logs="Canal puente donde el bot lee eventos del juego.",
+        canal_archivos="Canal para almacenamiento redundante de imágenes.",
+        intervalo_act="Frecuencia (minutos) para actualizar dashboards.",
+        rol_admin="Rol de Discord autorizado para usar comandos protegidos.",
+        propietario_bot="Usuario de Discord propietario del bot en este servidor.",
+        battlemetrics="Servidores del clúster (Ej: Fjordur|1.2.3.4:21004).",
+        puntos_diarios="Habilitar/Deshabilitar sistema de puntos (True/False).",
+    )
+    async def config(
+        self,
+        interaction: discord.Interaction,
+        canal_sos: discord.TextChannel = None,
+        canal_logs: discord.TextChannel = None,
+        canal_archivos: discord.TextChannel = None,
+        intervalo_act: int = None,
+        rol_admin: discord.Role = None,
+        propietario_bot: discord.Member = None,
+        battlemetrics: str = None,
+        puntos_diarios: bool = None,
+    ):
+        if not await interaction.client.is_authorized_admin(interaction):
+            await interaction.response.send_message(
+                "❌ **Acceso denegado.** Necesitas permisos de Administrador o el Rol configurado.",
+                ephemeral=True,
+            )
+            return
+
+        guild_id = interaction.guild_id
+        db_name = self.bot.db_name
+
+        # Si hay parámetros, actualizar primero
+        updates = []
+        params = []
+        if canal_sos:
+            updates.append("sos_channel_id = ?")
+            params.append(canal_sos.id)
+        if canal_logs:
+            updates.append("log_channel_id = ?")
+            params.append(canal_logs.id)
+        if canal_archivos:
+            updates.append("upload_channel_id = ?")
+            params.append(canal_archivos.id)
+        if intervalo_act is not None:
+            updates.append("update_interval = ?")
+            params.append(intervalo_act)
+        if rol_admin:
+            updates.append("admin_role_id = ?")
+            params.append(rol_admin.id)
+        if propietario_bot:
+            updates.append("bot_owner_id = ?")
+            params.append(propietario_bot.id)
+        if battlemetrics:
+            updates.append("battlemetrics_urls = ?")
+            params.append(battlemetrics)
+        if puntos_diarios is not None:
+            updates.append("daily_points_enabled = ?")
+            params.append(1 if puntos_diarios else 0)
+
+        if updates:
+            sql = f"UPDATE guild_config SET {', '.join(updates)} WHERE guild_id = ?"
+            params.append(guild_id)
+            async with aiosqlite.connect(db_name) as db:
+                await db.execute(sql, tuple(params))
+                await db.commit()
+            await interaction.response.send_message(
+                "✅ **Configuración actualizada correctamente.**", ephemeral=True
+            )
+        else:
+            await interaction.response.defer(ephemeral=False)
+
+        # Consultar configuración actual para el embed
+        async with aiosqlite.connect(db_name) as db:
+            db.row_factory = aiosqlite.Row
+            c = await db.execute(
+                "SELECT * FROM guild_config WHERE guild_id = ?", (guild_id,)
+            )
+            config = await c.fetchone()
+
+            # Miembros registrados
+            c2 = await db.execute(
+                "SELECT COUNT(*) FROM tribe_characters WHERE guild_id = ?", (guild_id,)
+            )
+            count_res = await c2.fetchone()
+            num_miembros = count_res[0] if count_res else 0
+
+        if not config:
+            await (interaction.followup.send if not updates else interaction.edit_original_response)(
+                content="❌ Este servidor no está configurado. Usa `/inicio_ark` primero."
+            )
+            return
+
+        embed = discord.Embed(
+            title="⚙️ Configuración Actual de ArkTribeBot",
+            color=discord.Color.blue(),
+            timestamp=discord.utils.utcnow(),
+        )
+        embed.set_footer(text=f"ID Servidor: {guild_id}")
+
+        embed.add_field(
+            name="📡 Canales Principales",
+            value=(
+                f"🚨 **SOS:** <#{config['sos_channel_id']}>\n"
+                f"📜 **Logs:** <#{config['log_channel_id']}>\n"
+                f"📁 **Archivos:** <#{config['upload_channel_id']}>"
+            ),
+            inline=False,
+        )
+
+        embed.add_field(
+            name="🛡️ Seguridad y Permisos",
+            value=(
+                f"👤 **Dueño:** <@{config['bot_owner_id']}>\n"
+                f"🛡️ **Rol Admin:** <@&{config['admin_role_id']}>" if config['admin_role_id'] else "🛡️ **Rol Admin:** No configurado"
+            ),
+            inline=True,
+        )
+
+        embed.add_field(
+            name="📊 Preferencias",
+            value=(
+                f"⏱️ **Sync Interval:** {config['update_interval']} min\n"
+                f"🪙 **Puntos Diarios:** {'✅ ON' if config['daily_points_enabled'] else '❌ OFF'}"
+            ),
+            inline=True,
+        )
+
+        embed.add_field(
+            name="👨‍👩‍👧‍👦 Tribu",
+            value=f"👥 **Miembros Registrados:** {num_miembros}",
+            inline=True,
+        )
+
+        bm_urls = config['battlemetrics_urls'] or "Ninguno"
+        if len(bm_urls) > 1024:
+            bm_urls = bm_urls[:1021] + "..."
+        embed.add_field(
+            name="🎮 Cluster (BattleMetrics)",
+            value=f"```\n{bm_urls}\n```",
+            inline=False,
+        )
+
+        if updates:
+            await interaction.followup.send(embed=embed)
+        else:
+            await interaction.followup.send(embed=embed)
+
     @commands.command(name="sync")
     async def sync(
         self,
