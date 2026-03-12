@@ -1,172 +1,101 @@
-# 🦖 Ark Tribe Bot v2.0 - "Tribe Master"
+# Ark Tribe Bot v2.0 - "Tribe Master"
 
-![ArkTribeBot Banner](https://img.shields.io/badge/ARK-Tribe%20Bot-green?style=for-the-badge&logo=discord)
-![Version](https://img.shields.io/badge/version-2.0.0-blue?style=for-the-badge)
-![License](https://img.shields.io/badge/license-Private-red?style=for-the-badge)
+[![ARK Tribe Bot](https://img.shields.io/badge/ARK-Tribe%20Bot-358750?style=for-the-badge&logo=discord)](https://github.com/jms1008/ArkTribeBot)
+[![Version](https://img.shields.io/badge/version-2.0.0-blue?style=for-the-badge)](https://github.com/jms1008/ArkTribeBot/releases)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-red.svg?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
 
-**ArkTribeBot** es una IA táctica integral diseñada para la dominación absoluta en **ARK: Survival Evolved**. No es solo un bot de registro; es un centro de mando asíncrono que coordina guerra, crianza, espionaje y administración tribal en una interfaz premium y paginada.
-
----
-
-## 📖 Índice de Guía Maestra
-
-1. [Primeros Pasos](#primeros-pasos)
-2. [Warfare y Combate](#warfare-y-combate)
-3. [K4Ultra Intelligence](#k4ultra-intelligence)
-4. [Crianza y Genética](#crianza-y-genética)
-5. [Logística Tribal](#logística-tribal)
-6. [Guía Técnica e Instalación](#guía-técnica-e-instalación)
-7. [Administración](#administración)
+**ArkTribeBot** es un sistema de gestión integral para **ARK: Survival Evolved**. Actúa como un centro de mando asíncrono que coordina las operaciones de guerra, crianza, espionaje y administración tribal a través de una interfaz interactiva en Discord.
 
 ---
 
-## Primeros Pasos
+## 📖 Índice
 
-Si eres un administrador nuevo, sigue este flujo para activar el bot:
-
-1. **Activación de Comandos:** Escribe `!sync guild` en cualquier canal para que Discord reconozca los nuevos comandos slash (`/`).
-2. **Despliegue Maestro:** Ejecuta **`/inicio_ark`**. Este asistente te pedirá los canales clave:
-    * **SOS:** Donde llegarán las alertas de raid.
-    * **Logs:** El canal "puente" donde tu servidor de Ark vuelca los logs (Tribemember Killed, etc).
-    * **Opcionales:** Puedes crear hilos o canales para Breeding, Scouting o Blacklist y el bot los configurará automáticamente.
-3. **Ajuste Fino:** Usa **`/config`** para editar parámetros en cualquier momento sin tener que volver a empezar.
-
----
-
-## Warfare y Combate
-
-### Alertas SOS y @policia
-
-El bot monitoriza el canal de logs 24/7.
-
-* **SOS Manual (/sos):** Envía un informe instantáneo con mapa, tipo de ataque y atacantes. Pinguea al rol configurado.
-* **Rastreador @policia:** Si nombras a tus animales centinela con la palabra clave "@policia", el bot emitirá una alerta SOS automática y silenciosa nada más mueran, destapando infiltraciones.
-
-### Tracking de KDA y Sarcasmos
-
-* **Auto-Registro:** Cada vez que el log muestra una muerte, el bot identifica si es un miembro de la tribu.
-* **Humor Tribal:** El bot responderá con sarcasmos aleatorios y llevará la cuenta de muertes totales del jugador.
-* **Registro de Miembros:** Para que esto funcione, los miembros deben registrar sus personajes con `/ranking_char_add`.
-
-### Blacklist Paginada (/blacklist)
-
-Gestiona la lista de enemigos de forma interactiva.
-
-* **Enemigos (Rojo):** Jugadores marcados manualmente como KOS.
-* **Neutrales (Blanco):** Registros automáticos del radar K4Ultra que aún no han sido clasificados.
+1. [🚀 Configuración Inicial](#-configuración-inicial) - Instrucciones de despliegue y puesta a punto.
+2. [⚔️ Gestión de Guerra (Warfare)](#️-gestión-de-guerra-warfare) - Alertas SOS, radar y seguimiento de bajas.
+3. [🕵️ Sistema de Inteligencia](#️-sistema-de-inteligencia) - Consultas de perfiles con K4Ultra y Scouting de bases.
+4. [🦕 Gestión de Crianza](#-gestión-de-crianza) - Registro de líneas de sangre y control de mutaciones.
+5. [📈 Logística Tribal](#-logística-tribal) - Organización de tareas y planificación de eventos.
+6. [🛠️ Guía Técnica](#️-guía-técnica) - Requisitos e instrucciones de instalación.
+7. [🛡️ Seguridad y Administración](#️-seguridad-y-administración) - Control de acceso y gestión de datos del servidor.
 
 ---
 
-## K4Ultra Intelligence
+## 🚀 Configuración Inicial
 
-El motor de espionaje más potente para ARK.
+El proceso de configuración está diseñado para ser directo y funcional.
 
-* **Perfil Global (/k4ultra):** Busca a cualquier jugador por nombre para ver:
-  * Estado Online/Offline.
-  * Frecuencia de horas de juego (¿Cuándo suelen estar desconectados?).
-  * Alts y personajes compartidos.
-  * KDA PvP real basado en registros de combate.
-* **Scouting Satelital (/scout_list):** Catálogo de bases enemigas organizado por mapa. Puedes adjuntar fotos con `/scout_add_image`.
+* **Sincronización de Comandos (`!sync guild`):** Registra los comandos slash en el servidor de Discord. Es el primer paso necesario tras invitar al bot.
+* **Asistente `/inicio_ark`:** Guía al administrador en la vinculación de canales clave (SOS, Logs, Scouting, etc.) y la creación automática de hilos de trabajo.
+* **Panel `/config`:** Permite visualizar la configuración actual y editar canales o roles administrativos de forma interactiva.
 
 ---
 
-## Crianza y Genética
+## ⚔️ Gestión de Guerra (Warfare)
 
-### Dashboard de Líneas (/lineas)
+Proporciona herramientas para la monitorización de eventos en el servidor de juego.
 
-Olvida los excels. Usa el panel paginado para:
-
-* Ver las Top Stats actuales de cada especie.
-* Editar mutaciones y estadísticas mediante botones y selectores.
-* **Selector Rápido:** Usa el menú desplegable en el panel para consultar un dino específico sin navegar por páginas.
-
-### Log de Mutaciones
-
-El bot lee los logs de crianza. Cuando nace una mutación, aparece un botón en el log. Al pulsarlo:
-
-1. Se registra quién la reclamó.
-2. Se actualiza el contador de mutaciones de la línea automáticamente.
+* **Alertas SOS Automáticas:** El sistema analiza los logs del servidor y genera alertas con información detallada del mapa, tipo de ataque y agresores.
+* **Detector @policia:** Al etiquetar animales clave con el nombre `@policia`, el bot generará una alerta automática inmediata tras su muerte, facilitando la detección de incursiones silenciosas.
+* **Tracking de Bajas (KDA):** Registra las muertes de los miembros de la tribu, proporcionando estadísticas acumuladas y respuestas aleatorias automatizadas en cada evento.
 
 ---
 
-## Logística Tribal
+## 🕵️ Sistema de Inteligencia
 
-* **To-Do List (/todo_list):** Añade tareas como "Llenar torretas" o "Farmear metal". Los miembros pueden "reclamarlas". Paginado y con botones de borrado.
-* **Eventos LFG (/evento):** Propón fechas para Bosses. Los miembros votan mediante botones y el bot muestra el conteo en tiempo real.
-* **Puntos de Ark:** Configura recordatorios para que nadie olvide canjear sus puntos de votación del cluster.
+Herramientas para la recopilación de datos sobre otros jugadores y ubicaciones.
+
+* **K4Ultra Intelligence:** Consulta perfiles de jugadores para obtener su estado de conexión, horarios de actividad recurrente, cuentas vinculadas y estadísticas de combate.
+* **Scouting Geográfico (`/scout_list`):** Directorio de bases enemigas organizado por mapas. Permite adjuntar imágenes mediante `/scout_add_image` para facilitar el reconocimiento previo.
 
 ---
 
-## Guía Técnica e Instalación
+## 🦕 Gestión de Crianza
 
-### 1. Clonación y Requisitos
+Módulos dedicados a la optimización de las líneas de sangre.
 
-Asegúrate de tener instalado **Python 3.10** o superior (recomendado **3.12**).
+* **Dashboard `/lineas`:** Panel interactivo para monitorizar las mejores estadísticas (Top Stats) de cada especie. Permite actualizaciones directas de datos sin comandos adicionales.
+* **Selector de Especies:** Menú desplegable para filtrar y consultar rápidamente la información de un dinosaurio específico dentro de las líneas registradas.
+* **Registro de Mutaciones:** Monitorización de logs de nacimiento con botones interactivos para registrar mutaciones nuevas y documentar quién realizó la reclamación.
+
+---
+
+## 📈 Logística Tribal
+
+Herramientas para la coordinación diaria de los miembros.
+
+* **Lista de Tareas (To-Do):** Panel para asignar y reclamar objetivos (farma, mantenimiento, etc.), permitiendo un seguimiento visual del progreso.
+* **Gestor de Eventos (`/evento`):** Sistema de votación para planificar actividades grupales como jefes (bosses) o ascensiones.
+* **Puntos de Ark Shop:** Recordatorios configurables para el canje de puntos de votación diarios del cluster.
+
+---
+
+## 🛠️ Guía Técnica
+
+Información necesaria para el autohospedaje y mantenimiento.
+
+* **Requisitos:** Python 3.12+ y motor de base de datos `aiosqlite`.
+* **Instalación:**
 
 ```bash
-git clone <url-del-repositorio>
+git clone https://github.com/jms1008/ArkTribeBot
 cd ArkTribeBot
-```
-
-### 2. Entorno Virtual e Instalación
-
-Es altamente recomendable usar un entorno virtual:
-
-```bash
 python -m venv venv
 # En Windows: .\venv\Scripts\activate
 # En Linux/Mac: source venv/bin/activate
-
 pip install -r requirements.txt
 ```
 
-### 3. Configuración de Variables (.env)
-
-Crea un archivo local llamado `.env` en la raíz del proyecto para definir tus claves privadas:
-
-```env
-DISCORD_TOKEN=tu_token_del_bot_aqui
-APPLICATION_ID=id_de_tu_aplicacion_aqui
-```
-
-### 4. Permisos de Discord
-
-Al invitar el bot, asegúrate de marcar los siguientes permisos. El valor de permisos recomendado es `519168`.
-
-| Permiso | Uso Específico |
-| --- | --- |
-| **Ver Canales** | Leer logs de Ark y canales de comandos. |
-| **Enviar Mensajes** | Alertas, dashboards y respuestas interactivas. |
-| **Gestionar Mensajes** | Limpieza de mensajes residuales en la UI. |
-| **Insertar Enlaces** | Renderizado de embeds y dashboards premium. |
-| **Adjuntar Archivos** | Subida de imágenes de scouting y evidencias. |
-| **Mencionar @everyone** | Alertas SOS críticas en canales de emergencia. |
-| **Leer Historial** | Edición y actualización de dashboards persistentes. |
-| **Emojis Externos** | Uso de iconos personalizados en botones y embeds. |
+* **Permisos Requeridos:** Se recomienda invitar al bot con el permiso integral `519168` para asegurar el correcto funcionamiento de los componentes interactivos.
 
 ---
 
-## Administración
+## 🛡️ Seguridad y Administración
 
-### Comandos de Seguridad
+Protocolos para garantizar la integridad y privacidad del servicio.
 
-* **`/config`:** El "corazón" del bot. Solo accesible por el Dueño o usuarios con el Rol Admin configurado.
-* **`!sync`:** Comando de texto de emergencia para sincronizar la API de Discord.
-* **`/wipe_db`:** Borrado selectivo de tablas en caso de cambio de temporada o servidor.
-
-### Ejecución y Tests
-
-Para arrancar el bot:
-
-```bash
-python main.py
-```
-
-Para verificar la integridad del sistema (Suite de Pruebas):
-
-```bash
-pytest tests/ -v
-```
+* **Aislamiento de Datos:** Arquitectura diseñada para separar estrictamente la información por `guild_id`, evitando cualquier fuga de datos entre servidores.
+* **Roles Administrativos:** Acceso restringido a comandos críticos (`/config`, `/wipe_db`) limitado al propietario o usuarios con el rol designado.
+* **Gestión de Datos:** Herramientas para la limpieza selectiva de tablas (`/wipe_db`) durante cambios de temporada o mantenimiento.
 
 ---
-> ArkTribeBot v2.0 • Domina el mapa, lidera tu tribu.
+> *ArkTribeBot v2.0 • Sistema integral de gestión para el Cluster.*
