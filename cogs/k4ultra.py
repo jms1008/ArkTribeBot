@@ -826,22 +826,6 @@ class K4Ultra(commands.Cog):
         async with aiosqlite.connect(self.bot.db_name) as db:
             db.row_factory = aiosqlite.Row
 
-            # Prevención de doble ejecución tras reinicios bruscos
-            await db.execute(
-                "CREATE TABLE IF NOT EXISTS k4ultra_config (key TEXT PRIMARY KEY, value TEXT)"
-            )
-            cursor = await db.execute(
-                "SELECT value FROM k4ultra_config WHERE key = 'last_calc_date'"
-            )
-            row = await cursor.fetchone()
-            today_str = now.strftime("%Y-%m-%d")
-            if row and row["value"] == today_str:
-                return  # Cálculo previo del día finalizado con éxito
-            await db.execute(
-                "INSERT OR REPLACE INTO k4ultra_config (key, value) VALUES ('last_calc_date', ?)",
-                (today_str,),
-            )
-
             # Preparación de la columna extra de minutos compartidos (Migración DB)
             try:
                 await db.execute(
@@ -857,6 +841,19 @@ class K4Ultra(commands.Cog):
             for g_row in guild_rows:
                 guild_id = g_row["guild_id"]
                 
+                # Prevención de doble ejecución tras reinicios bruscos (Aislado por gremio)
+                await db.execute(
+                    "CREATE TABLE IF NOT EXISTS k4ultra_config (guild_id INTEGER, key TEXT, value TEXT, PRIMARY KEY (guild_id, key))"
+                )
+                cursor = await db.execute(
+                    "SELECT value FROM k4ultra_config WHERE key = 'last_calc_date' AND guild_id = ?",
+                    (guild_id,)
+                )
+                row = await cursor.fetchone()
+                today_str = now.strftime("%Y-%m-%d")
+                if row and row["value"] == today_str:
+                    continue  # Cálculo previo del día finalizado con éxito para este gremio
+
                 # Extracción de sesiones con actividad en la víspera ("Ayer") para este gremio
                 cursor = await db.execute(
                     "SELECT player_name, map_name, start_time, end_time FROM k4ultra_sessions WHERE start_time >= ? AND start_time < ? AND guild_id = ?",
@@ -866,150 +863,155 @@ class K4Ultra(commands.Cog):
                 if not sessions:
                     continue
 
-            points_to_add = {}
-            shared_mins_to_add = {}
+                points_to_add = {}
+                shared_mins_to_add = {}
 
-            def add_points(a, b, pts):
-                if a > b:
-                    a, b = b, a
-                points_to_add[(a, b)] = points_to_add.get((a, b), 0) + pts
+                def add_points(a, b, pts):
+                    if a > b:
+                        a, b = b, a
+                    points_to_add[(a, b)] = points_to_add.get((a, b), 0) + pts
 
-            def add_mins(a, b, m):
-                if a > b:
-                    a, b = b, a
-                shared_mins_to_add[(a, b)] = shared_mins_to_add.get((a, b), 0) + m
+                def add_mins(a, b, m):
+                    if a > b:
+                        a, b = b, a
+                    shared_mins_to_add[(a, b)] = shared_mins_to_add.get((a, b), 0) + m
 
-            parsed_sessions = []
-            for s in sessions:
-                st = datetime.strptime(s["start_time"], "%Y-%m-%d %H:%M:%S")
-                # Restricción (cap) del end_time al día correspondiente si excede
-                end_str = s["end_time"]
-                if end_str > ye_str:
-                    end_str = ye_str
-                et = datetime.strptime(end_str, "%Y-%m-%d %H:%M:%S")
-                parsed_sessions.append(
-                    {"p": s["player_name"], "m": s["map_name"], "st": st, "et": et}
-                )
-
-            from collections import defaultdict
-
-            player_sessions = defaultdict(list)
-            for s in parsed_sessions:
-                player_sessions[s["p"]].append(s)
-
-            for p in player_sessions:
-                player_sessions[p].sort(key=lambda x: x["st"])
-
-            players = list(player_sessions.keys())
-
-            for i in range(len(players)):
-                for j in range(i + 1, len(players)):
-                    p1 = players[i]
-                    p2 = players[j]
-
-                    s1_list = player_sessions[p1]
-                    s2_list = player_sessions[p2]
-
-                    # Regla A: Acumulación de minutos superpuestos (mismo mapa)
-                    for s1 in s1_list:
-                        for s2 in s2_list:
-                            if s1["m"] == s2["m"]:
-                                overlap_start = max(s1["st"], s2["st"])
-                                overlap_end = min(s1["et"], s2["et"])
-                                if overlap_end > overlap_start:
-                                    mins = int(
-                                        (overlap_end - overlap_start).total_seconds()
-                                        / 60
-                                    )
-                                    add_mins(p1, p2, mins)
-
-                    # Regla C: Sincronía en Login/Logout (margen <= 10 mins)
-                    if (
-                        abs((s1_list[0]["st"] - s2_list[0]["st"]).total_seconds())
-                        <= 600
-                    ):
-                        add_points(p1, p2, 2)
-                    if (
-                        abs((s1_list[-1]["et"] - s2_list[-1]["et"]).total_seconds())
-                        <= 600
-                    ):
-                        add_points(p1, p2, 2)
-
-                    # Regla B: Transferencias simultáneas (margen <= 5 mins)
-                    for k1 in range(len(s1_list) - 1):
-                        t1_end = s1_list[k1]["et"]
-                        t1_map1 = s1_list[k1]["m"]
-                        t1_start2 = s1_list[k1 + 1]["st"]
-                        t1_map2 = s1_list[k1 + 1]["m"]
-
-                        if (
-                            t1_map1 != t1_map2
-                        ):  # Confirmación de transferencia de mapa aislada
-                            for k2 in range(len(s2_list) - 1):
-                                t2_end = s2_list[k2]["et"]
-                                t2_map1 = s2_list[k2]["m"]
-                                t2_start2 = s2_list[k2 + 1]["st"]
-                                t2_map2 = s2_list[k2 + 1]["m"]
-
-                                if t2_map1 == t1_map1 and t2_map2 == t1_map2:
-                                    if (
-                                        abs((t1_end - t2_end).total_seconds()) <= 300
-                                        and abs((t1_start2 - t2_start2).total_seconds())
-                                        <= 300
-                                    ):
-                                        add_points(p1, p2, 5)
-
-                # Volcado de puntuación de relaciones a SQL (Aislado por gremio)
-                for (p1, p2), mins in shared_mins_to_add.items():
-                    cursor = await db.execute(
-                        "SELECT probability_score, shared_minutes, is_manual FROM k4ultra_relationships WHERE player1 = ? AND player2 = ? AND guild_id = ?",
-                        (p1, p2, guild_id),
+                parsed_sessions = []
+                for s in sessions:
+                    st = datetime.strptime(s["start_time"], "%Y-%m-%d %H:%M:%S")
+                    # Restricción (cap) del end_time al día correspondiente si excede
+                    end_str = s["end_time"]
+                    if end_str > ye_str:
+                        end_str = ye_str
+                    et = datetime.strptime(end_str, "%Y-%m-%d %H:%M:%S")
+                    parsed_sessions.append(
+                        {"p": s["player_name"], "m": s["map_name"], "st": st, "et": et}
                     )
-                    row = await cursor.fetchone()
-                    pts_to_add = points_to_add.get((p1, p2), 0)
 
-                    if row:
-                        old_mins = (
-                            row["shared_minutes"] if "shared_minutes" in row.keys() else 0
-                        )
-                        new_mins = old_mins + mins
-                        # Cálculo de puntos adicionales derivados de Regla A
-                        pts_to_add += (new_mins // 180) - (old_mins // 180)
+                from collections import defaultdict
 
-                        if row["is_manual"] == 0:
-                            await db.execute(
-                                "UPDATE k4ultra_relationships SET probability_score = probability_score + ?, shared_minutes = ? WHERE player1 = ? AND player2 = ? AND guild_id = ?",
-                                (pts_to_add, new_mins, p1, p2, guild_id),
-                            )
-                    else:
-                        pts_to_add += mins // 180
-                        if pts_to_add > 0:
-                            await db.execute(
-                                "INSERT INTO k4ultra_relationships (guild_id, player1, player2, probability_score, shared_minutes, is_manual) VALUES (?, ?, ?, ?, ?, 0)",
-                                (guild_id, p1, p2, pts_to_add, mins),
-                            )
+                player_sessions = defaultdict(list)
+                for s in parsed_sessions:
+                    player_sessions[s["p"]].append(s)
 
-                # Aplicación de puntos exclusivos de Reglas B y C (sin Regla A combinada)
-                for (p1, p2), pts in points_to_add.items():
-                    if (p1, p2) not in shared_mins_to_add:
+                for p in player_sessions:
+                    player_sessions[p].sort(key=lambda x: x["st"])
+
+                players = list(player_sessions.keys())
+
+                for i in range(len(players)):
+                    for j in range(i + 1, len(players)):
+                        p1 = players[i]
+                        p2 = players[j]
+
+                        s1_list = player_sessions[p1]
+                        s2_list = player_sessions[p2]
+
+                        # Regla A: Acumulación de minutos superpuestos (mismo mapa)
+                        for s1 in s1_list:
+                            for s2 in s2_list:
+                                if s1["m"] == s2["m"]:
+                                    overlap_start = max(s1["st"], s2["st"])
+                                    overlap_end = min(s1["et"], s2["et"])
+                                    if overlap_end > overlap_start:
+                                        mins = int(
+                                            (overlap_end - overlap_start).total_seconds()
+                                            / 60
+                                        )
+                                        add_mins(p1, p2, mins)
+
+                        # Regla C: Sincronía en Login/Logout (margen <= 10 mins)
+                        if (
+                            abs((s1_list[0]["st"] - s2_list[0]["st"]).total_seconds())
+                            <= 600
+                        ):
+                            add_points(p1, p2, 2)
+                        if (
+                            abs((s1_list[-1]["et"] - s2_list[-1]["et"]).total_seconds())
+                            <= 600
+                        ):
+                            add_points(p1, p2, 2)
+
+                        # Regla B: Transferencias simultáneas (margen <= 5 mins)
+                        for k1 in range(len(s1_list) - 1):
+                            t1_end = s1_list[k1]["et"]
+                            t1_map1 = s1_list[k1]["m"]
+                            t1_start2 = s1_list[k1 + 1]["st"]
+                            t1_map2 = s1_list[k1 + 1]["m"]
+
+                            if (
+                                t1_map1 != t1_map2
+                            ):  # Confirmación de transferencia de mapa aislada
+                                for k2 in range(len(s2_list) - 1):
+                                    t2_end = s2_list[k2]["et"]
+                                    t2_map1 = s2_list[k2]["m"]
+                                    t2_start2 = s2_list[k2 + 1]["st"]
+                                    t2_map2 = s2_list[k2 + 1]["m"]
+
+                                    if t2_map1 == t1_map1 and t2_map2 == t1_map2:
+                                        if (
+                                            abs((t1_end - t2_end).total_seconds()) <= 300
+                                            and abs((t1_start2 - t2_start2).total_seconds())
+                                            <= 300
+                                        ):
+                                            add_points(p1, p2, 5)
+
+                    # Volcado de puntuación de relaciones a SQL (Aislado por gremio)
+                    for (p1, p2), mins in shared_mins_to_add.items():
                         cursor = await db.execute(
-                            "SELECT probability_score, is_manual FROM k4ultra_relationships WHERE player1 = ? AND player2 = ? AND guild_id = ?",
+                            "SELECT probability_score, shared_minutes, is_manual FROM k4ultra_relationships WHERE player1 = ? AND player2 = ? AND guild_id = ?",
                             (p1, p2, guild_id),
                         )
                         row = await cursor.fetchone()
+                        pts_to_add = points_to_add.get((p1, p2), 0)
+
                         if row:
+                            old_mins = (
+                                row["shared_minutes"] if "shared_minutes" in row.keys() else 0
+                            )
+                            new_mins = old_mins + mins
+                            # Cálculo de puntos adicionales derivados de Regla A
+                            pts_to_add += (new_mins // 180) - (old_mins // 180)
+
                             if row["is_manual"] == 0:
                                 await db.execute(
-                                    "UPDATE k4ultra_relationships SET probability_score = probability_score + ? WHERE player1 = ? AND player2 = ? AND guild_id = ?",
-                                    (pts, p1, p2, guild_id),
+                                    "UPDATE k4ultra_relationships SET probability_score = probability_score + ?, shared_minutes = ? WHERE player1 = ? AND player2 = ? AND guild_id = ?",
+                                    (pts_to_add, new_mins, p1, p2, guild_id),
                                 )
                         else:
-                            if pts > 0:
+                            pts_to_add += mins // 180
+                            if pts_to_add > 0:
                                 await db.execute(
-                                    "INSERT INTO k4ultra_relationships (guild_id, player1, player2, probability_score, shared_minutes, is_manual) VALUES (?, ?, ?, ?, 0, 0)",
-                                    (guild_id, p1, p2, pts),
+                                    "INSERT INTO k4ultra_relationships (guild_id, player1, player2, probability_score, shared_minutes, is_manual) VALUES (?, ?, ?, ?, ?, 0)",
+                                    (guild_id, p1, p2, pts_to_add, mins),
                                 )
 
+                    # Aplicación de puntos exclusivos de Reglas B y C (sin Regla A combinada)
+                    for (p1, p2), pts in points_to_add.items():
+                        if (p1, p2) not in shared_mins_to_add:
+                            cursor = await db.execute(
+                                "SELECT probability_score, is_manual FROM k4ultra_relationships WHERE player1 = ? AND player2 = ? AND guild_id = ?",
+                                (p1, p2, guild_id),
+                            )
+                            row = await cursor.fetchone()
+                            if row:
+                                if row["is_manual"] == 0:
+                                    await db.execute(
+                                        "UPDATE k4ultra_relationships SET probability_score = probability_score + ? WHERE player1 = ? AND player2 = ? AND guild_id = ?",
+                                        (pts, p1, p2, guild_id),
+                                    )
+                            else:
+                                if pts > 0:
+                                    await db.execute(
+                                        "INSERT INTO k4ultra_relationships (guild_id, player1, player2, probability_score, shared_minutes, is_manual) VALUES (?, ?, ?, ?, 0, 0)",
+                                        (guild_id, p1, p2, pts),
+                                    )
+
+                # Marcar cálculo del día como finalizado para este gremio
+                await db.execute(
+                    "INSERT OR REPLACE INTO k4ultra_config (guild_id, key, value) VALUES (?, 'last_calc_date', ?)",
+                    (guild_id, today_str),
+                )
             # Limpieza mensual de registros crudos (Logs) para preservación de DB
             await db.execute(
                 "DELETE FROM k4ultra_players_log WHERE timestamp < datetime('now', '-30 days')"

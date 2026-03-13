@@ -695,6 +695,13 @@ class ArkTribeBot(commands.Bot):
             # Migración para Puntos Diarios Configurable
             try:
                 await db.execute(
+                    "ALTER TABLE daily_points_users ADD COLUMN guild_id INTEGER NOT NULL DEFAULT 0"
+                )
+            except aiosqlite.OperationalError:
+                pass  # La columna ya existe
+
+            try:
+                await db.execute(
                     "ALTER TABLE daily_points_users ADD COLUMN alert_hour INTEGER DEFAULT 8"
                 )
                 await db.execute(
