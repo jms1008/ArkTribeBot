@@ -131,6 +131,7 @@ class ArkTribeBot(commands.Bot):
         self.db_name = DB_NAME
         self.log_filename = log_filename
         self.is_syncing = False
+        logger.info(f"Base de datos configurada en: {os.path.abspath(self.db_name)}")
 
     async def setup_hook(self):
         """Se ejecuta al iniciar el bot."""
@@ -844,6 +845,25 @@ class ArkTribeBot(commands.Bot):
                 )
             """)
 
+            # Tablas para el sistema de Alarmas de Intrusos
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS map_alarms (
+                    guild_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    map_name TEXT NOT NULL,
+                    channel_id INTEGER,
+                    PRIMARY KEY(guild_id, user_id, map_name)
+                )
+            """)
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS map_last_players (
+                    guild_id INTEGER NOT NULL,
+                    map_name TEXT NOT NULL,
+                    players_json TEXT,
+                    PRIMARY KEY(guild_id, map_name)
+                )
+            """)
+
             # Tablas para Gestor de Eventos / LFG
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS events (
@@ -858,6 +878,7 @@ class ArkTribeBot(commands.Bot):
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+            await db.commit()
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS event_options (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -868,6 +889,18 @@ class ArkTribeBot(commands.Bot):
                     FOREIGN KEY(event_id) REFERENCES events(id) ON DELETE CASCADE
                 )
             """)
+
+            # Lógica de Auto-migración para guild_id si falta
+            tables_to_migrate = [
+                "daily_points_users", "k4ultra_config", "k4ultra_relationships",
+                "k4ultra_tribe_names", "tribe_kda", "tribe_characters", "k4ultra_aliases"
+            ]
+            for table in tables_to_migrate:
+                try:
+                    await db.execute(f"ALTER TABLE {table} ADD COLUMN guild_id INTEGER")
+                    logger.info(f"Columna guild_id añadida a {table}")
+                except aiosqlite.OperationalError:
+                    pass # Ya existe o la tabla no existe
 
             await db.commit()
             logger.info("Base de datos inicializada correctamente.")

@@ -87,51 +87,56 @@ class Alarma(commands.Cog):
     @app_commands.describe(mapa="Nombre del mapa a vigilar (ej: Fjordur)")
     @app_commands.autocomplete(mapa=mapa_autocomplete)
     async def alarma(self, interaction: discord.Interaction, mapa: str):
+        await interaction.response.defer(ephemeral=True)
         user_id = interaction.user.id
         guild_id = interaction.guild_id
         channel_id = interaction.channel_id
 
-        # Verificar si el servidor tiene battlemetrics configurado
-        servers = await get_guild_servers(self.bot, guild_id)
-        if not servers:
-            await interaction.response.send_message(
-                "❌ No hay servidores configurados. Usa `/inicio_ark` primero.", ephemeral=True
-            )
-            return
+        try:
+            # Verificar si el servidor tiene battlemetrics configurado
+            servers = await get_guild_servers(self.bot, guild_id)
+            if not servers:
+                await interaction.followup.send(
+                    "❌ No hay servidores configurados. Usa `/inicio_ark` primero.", ephemeral=True
+                )
+                return
 
-        if mapa not in servers:
-            await interaction.response.send_message(
-                f"❌ El mapa `{mapa}` no existe en la configuración actual.", ephemeral=True
-            )
-            return
+            if mapa not in servers:
+                await interaction.followup.send(
+                    f"❌ El mapa `{mapa}` no existe en la configuración actual.", ephemeral=True
+                )
+                return
 
-        async with aiosqlite.connect(self.bot.db_name) as db:
-            # Togle de alarma: si existe, borrar. Si no, insertar.
-            cursor = await db.execute(
-                "SELECT 1 FROM map_alarms WHERE guild_id = ? AND user_id = ? AND map_name = ?",
-                (guild_id, user_id, mapa),
-            )
-            exists = await cursor.fetchone()
-
-            if exists:
-                await db.execute(
-                    "DELETE FROM map_alarms WHERE guild_id = ? AND user_id = ? AND map_name = ?",
+            async with aiosqlite.connect(self.bot.db_name) as db:
+                # Togle de alarma: si existe, borrar. Si no, insertar.
+                cursor = await db.execute(
+                    "SELECT 1 FROM map_alarms WHERE guild_id = ? AND user_id = ? AND map_name = ?",
                     (guild_id, user_id, mapa),
                 )
-                await db.commit()
-                await interaction.response.send_message(
-                    f"🔕 Alarma para **{mapa}** desactivada.", ephemeral=True
-                )
-            else:
-                await db.execute(
-                    "INSERT INTO map_alarms (guild_id, user_id, map_name, channel_id) VALUES (?, ?, ?, ?)",
-                    (guild_id, user_id, mapa, channel_id),
-                )
-                await db.commit()
-                await interaction.response.send_message(
-                    f"🚨 El chupapingas de **{interaction.user.display_name}** tiene miedo en **{mapa}**, le mantendremos avisado. 🔔",
-                    ephemeral=True,
-                )
+                exists = await cursor.fetchone()
+
+                if exists:
+                    await db.execute(
+                        "DELETE FROM map_alarms WHERE guild_id = ? AND user_id = ? AND map_name = ?",
+                        (guild_id, user_id, mapa),
+                    )
+                    await db.commit()
+                    await interaction.followup.send(
+                        f"🔕 Alarma para **{mapa}** desactivada.", ephemeral=True
+                    )
+                else:
+                    await db.execute(
+                        "INSERT INTO map_alarms (guild_id, user_id, map_name, channel_id) VALUES (?, ?, ?, ?)",
+                        (guild_id, user_id, mapa, channel_id),
+                    )
+                    await db.commit()
+                    await interaction.followup.send(
+                        f"🚨 El chupapingas de **{interaction.user.display_name}** tiene miedo en **{mapa}**, le mantendremos avisado. 🔔",
+                        ephemeral=True,
+                    )
+        except Exception as e:
+            logger.error(f"Error en comando /alarma: {e}")
+            await interaction.followup.send(f"❌ Ocurrió un error al procesar la alarma: {e}", ephemeral=True)
 
     @tasks.loop(minutes=1)
     async def check_alarms_loop(self):
@@ -221,4 +226,25 @@ class Alarma(commands.Cog):
                     pass
 
 async def setup(bot):
+    # Asegurar que las tablas existan antes de cargar el Cog (doble seguridad)
+    async with aiosqlite.connect(bot.db_name) as db:
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS map_alarms (
+                guild_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL,
+                map_name TEXT NOT NULL,
+                channel_id INTEGER,
+                PRIMARY KEY(guild_id, user_id, map_name)
+            )
+        """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS map_last_players (
+                guild_id INTEGER NOT NULL,
+                map_name TEXT NOT NULL,
+                players_json TEXT,
+                PRIMARY KEY(guild_id, map_name)
+            )
+        """)
+        await db.commit()
+    
     await bot.add_cog(Alarma(bot))
