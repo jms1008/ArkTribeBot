@@ -9,7 +9,6 @@ import json
 
 logger = logging.getLogger("ArkTribeBot")
 
-# Reutilización de lógica de parseo de IPs (copiada de server_status para independencia)
 def parse_battlemetrics(bm_string: str) -> dict:
     servers = {}
     if not bm_string:
@@ -47,7 +46,7 @@ async def get_guild_servers(bot, guild_id: int) -> dict:
 
 class AlarmDismissView(discord.ui.View):
     """Vista con botón para eliminar el mensaje de alerta.
-    Usa el custom_id registrado en main.py (DismissAlarmView) para persistencia.
+    Usa el custom_id registrado en main.py para persistencia si se registra globalmente.
     """
     def __init__(self):
         super().__init__(timeout=None)
@@ -56,13 +55,16 @@ class AlarmDismissView(discord.ui.View):
         label="Silenciar",
         style=discord.ButtonStyle.success,
         emoji="✅",
-        custom_id="dismiss_alarm_btn", # Coincide con main.py:DismissAlarmView
+        custom_id="dismiss_alarm_btn",
     )
     async def dismiss_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Esta función solo se usa si la vista no es persistente, 
-        # pero como main.py ya tiene un listener para este custom_id, 
-        # el bot ejecutará el código de main.py.
-        pass
+        try:
+            await interaction.message.delete()
+            # Respondemos para evitar "Interaction Failed"
+            if not interaction.response.is_done():
+                await interaction.response.send_message("Alarma silenciada.", ephemeral=True)
+        except Exception:
+            pass
 
 class Alarma(commands.Cog):
     def __init__(self, bot):
@@ -84,16 +86,22 @@ class Alarma(commands.Cog):
         name="alarma",
         description="Establece una alarma que te avisará si entra un intruso en un mapa seleccionado.",
     )
-    @app_commands.describe(mapa="Nombre del mapa a vigilar (ej: Fjordur)")
+    @app_commands.describe(
+        mapa="Nombre del mapa a vigilar (ej: Fjordur)",
+        estado="Activar (on) o desactivar (off) la alarma"
+    )
+    @app_commands.choices(estado=[
+        app_commands.Choice(name="Encendido", value="on"),
+        app_commands.Choice(name="Apagado", value="off"),
+    ])
     @app_commands.autocomplete(mapa=mapa_autocomplete)
-    async def alarma(self, interaction: discord.Interaction, mapa: str):
+    async def alarma(self, interaction: discord.Interaction, mapa: str, estado: str):
         await interaction.response.defer(ephemeral=True)
         user_id = interaction.user.id
         guild_id = interaction.guild_id
         channel_id = interaction.channel_id
 
         try:
-            # Verificar si el servidor tiene battlemetrics configurado
             servers = await get_guild_servers(self.bot, guild_id)
             if not servers:
                 await interaction.followup.send(
@@ -108,14 +116,7 @@ class Alarma(commands.Cog):
                 return
 
             async with aiosqlite.connect(self.bot.db_name) as db:
-                # Togle de alarma: si existe, borrar. Si no, insertar.
-                cursor = await db.execute(
-                    "SELECT 1 FROM map_alarms WHERE guild_id = ? AND user_id = ? AND map_name = ?",
-                    (guild_id, user_id, mapa),
-                )
-                exists = await cursor.fetchone()
-
-                if exists:
+                if estado == "off":
                     await db.execute(
                         "DELETE FROM map_alarms WHERE guild_id = ? AND user_id = ? AND map_name = ?",
                         (guild_id, user_id, mapa),
@@ -125,8 +126,9 @@ class Alarma(commands.Cog):
                         f"🔕 Alarma para **{mapa}** desactivada.", ephemeral=True
                     )
                 else:
+                    # Inserción segura (ON CONFLICT no necesario aquí por el check o INSERT OR REPLACE)
                     await db.execute(
-                        "INSERT INTO map_alarms (guild_id, user_id, map_name, channel_id) VALUES (?, ?, ?, ?)",
+                        "INSERT OR REPLACE INTO map_alarms (guild_id, user_id, map_name, channel_id) VALUES (?, ?, ?, ?)",
                         (guild_id, user_id, mapa, channel_id),
                     )
                     await db.commit()
@@ -144,8 +146,6 @@ class Alarma(commands.Cog):
         
         async with aiosqlite.connect(self.bot.db_name) as db:
             db.row_factory = aiosqlite.Row
-            
-            # Obtener todos los mapas que tienen al menos una alarma activa
             cursor = await db.execute("SELECT DISTINCT guild_id, map_name FROM map_alarms")
             rows = await cursor.fetchall()
             
@@ -153,7 +153,6 @@ class Alarma(commands.Cog):
                 guild_id = row["guild_id"]
                 map_name = row["map_name"]
                 
-                # Obtener dirección del servidor
                 servers = await get_guild_servers(self.bot, guild_id)
                 if map_name not in servers:
                     continue
@@ -162,13 +161,11 @@ class Alarma(commands.Cog):
                 address = (ip, port)
                 
                 try:
-                    # Consulta A2S para obtener jugadores
                     players_data = await asyncio.wait_for(
                         asyncio.to_thread(a2s.players, address), timeout=5.0
                     )
                     current_names = {p.name for p in players_data if p.name}
                     
-                    # Recuperar lista previa para detectar cambios
                     c_prev = await db.execute(
                         "SELECT players_json FROM map_last_players WHERE guild_id = ? AND map_name = ?",
                         (guild_id, map_name),
@@ -176,22 +173,21 @@ class Alarma(commands.Cog):
                     prev_row = await c_prev.fetchone()
                     prev_names = set(json.loads(prev_row["players_json"])) if prev_row else set()
                     
-                    # Detectar quienes han entrado
                     new_entries = current_names - prev_names
                     
                     if new_entries:
                         intruders = []
                         for name in new_entries:
-                            # Verificar si es miembro de la tribu (ignora mayúsculas)
+                            # Comprobamos si el nombre existe como Character Name O como Player Name
                             c_check = await db.execute(
-                                "SELECT 1 FROM tribe_characters WHERE LOWER(character_name) = LOWER(?) AND guild_id = ?",
-                                (name, guild_id),
+                                """SELECT 1 FROM tribe_characters 
+                                   WHERE guild_id = ? AND (LOWER(character_name) = LOWER(?) OR LOWER(player_name) = LOWER(?))""",
+                                (guild_id, name, name),
                             )
                             if not await c_check.fetchone():
                                 intruders.append(name)
                         
                         if intruders:
-                            # Notificar a los usuarios específicos para ese mapa
                             c_users = await db.execute(
                                 "SELECT user_id, channel_id FROM map_alarms WHERE guild_id = ? AND map_name = ?",
                                 (guild_id, map_name),
@@ -202,7 +198,6 @@ class Alarma(commands.Cog):
                                 try:
                                     u_id = target["user_id"]
                                     ch_id = target["channel_id"]
-                                    
                                     channel = self.bot.get_channel(ch_id) or await self.bot.fetch_channel(ch_id)
                                     if channel:
                                         intruders_fmt = ", ".join([f"**{i}**" for i in intruders])
@@ -214,19 +209,15 @@ class Alarma(commands.Cog):
                                 except Exception as e:
                                     logger.error(f"Error enviando alerta a {target['user_id']}: {e}")
                     
-                    # Actualizar caché de jugadores
                     await db.execute(
                         "INSERT OR REPLACE INTO map_last_players (guild_id, map_name, players_json) VALUES (?, ?, ?)",
                         (guild_id, map_name, json.dumps(list(current_names))),
                     )
                     await db.commit()
-                    
                 except Exception:
-                    # Silenciar errores de conexión A2S individuales para no romper el bucle
                     pass
 
 async def setup(bot):
-    # Asegurar que las tablas existan antes de cargar el Cog (doble seguridad)
     async with aiosqlite.connect(bot.db_name) as db:
         await db.execute("""
             CREATE TABLE IF NOT EXISTS map_alarms (
@@ -246,5 +237,4 @@ async def setup(bot):
             )
         """)
         await db.commit()
-    
     await bot.add_cog(Alarma(bot))
