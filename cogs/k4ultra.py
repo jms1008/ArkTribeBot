@@ -113,18 +113,18 @@ class RenameTribeModal(discord.ui.Modal, title="Asignar Nombre a Tribu"):
             # Método de asignación de nombre personalizado
 
             cursor = await db.execute(
-                "SELECT id FROM k4ultra_tribe_names WHERE tribe_signature = ?",
-                (miembro,),
+                "SELECT id FROM k4ultra_tribe_names WHERE tribe_signature = ? AND guild_id = ?",
+                (miembro, interaction.guild_id),
             )
             if await cursor.fetchone():
                 await db.execute(
-                    "UPDATE k4ultra_tribe_names SET custom_name = ? WHERE tribe_signature = ?",
-                    (nuevo_nombre, miembro),
+                    "UPDATE k4ultra_tribe_names SET custom_name = ? WHERE tribe_signature = ? AND guild_id = ?",
+                    (nuevo_nombre, miembro, interaction.guild_id),
                 )
             else:
                 await db.execute(
-                    "INSERT INTO k4ultra_tribe_names (tribe_signature, custom_name) VALUES (?, ?)",
-                    (miembro, nuevo_nombre),
+                    "INSERT INTO k4ultra_tribe_names (guild_id, tribe_signature, custom_name) VALUES (?, ?, ?)",
+                    (interaction.guild_id, miembro, nuevo_nombre),
                 )
             await db.commit()
 
@@ -202,8 +202,8 @@ class PlayerSelectMenu(discord.ui.Select):
             # Adición de alias (si consta en el registro)
             try:
                 cursor = await db.execute(
-                    "SELECT alias FROM k4ultra_aliases WHERE player_name = ?",
-                    (player_name,),
+                    "SELECT alias FROM k4ultra_aliases WHERE player_name = ? AND guild_id = ?",
+                    (player_name, interaction.guild_id),
                 )
                 alias_row = await cursor.fetchone()
                 if alias_row:
@@ -214,8 +214,8 @@ class PlayerSelectMenu(discord.ui.Select):
             # Búsqueda de Estado Online Actual
             try:
                 cursor = await db.execute(
-                    "SELECT map_name FROM k4ultra_sessions WHERE player_name = ? AND is_active = 1 LIMIT 1",
-                    (player_name,)
+                    "SELECT map_name FROM k4ultra_sessions WHERE player_name = ? AND guild_id = ? AND is_active = 1 LIMIT 1",
+                    (player_name, interaction.guild_id)
                 )
                 online_row = await cursor.fetchone()
                 if online_row:
