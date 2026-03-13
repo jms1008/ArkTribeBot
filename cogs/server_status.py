@@ -307,13 +307,13 @@ class ServerStatus(commands.Cog):
         total_max = 0
 
         for res in results:
-            if res["error"]:
+            if res.get("error"):
                 offline_servers.append(res["name"])
             else:
-                total_players += res["players"]
-                total_max += res["max_players"]
+                total_players += res.get("players", 0)
+                total_max += res.get("max_players", 0)
 
-                if res["players"] > 0:
+                if res.get("players", 0) > 0:
                     populated_servers.append(res)
                 else:
                     empty_servers.append(res)

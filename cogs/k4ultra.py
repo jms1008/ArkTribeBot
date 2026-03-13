@@ -726,8 +726,11 @@ class K4Ultra(commands.Cog):
                         await db.commit()
                         try:
                             from cogs.warfare import update_blacklist_dashboards
-
-                            await update_blacklist_dashboards(self.bot)
+                            # Actualizamos los dashboards de todos los gremios afectados
+                            cursor = await db.execute("SELECT DISTINCT guild_id FROM guild_config")
+                            guild_rows = await cursor.fetchall()
+                            for g_row in guild_rows:
+                                await update_blacklist_dashboards(self.bot, g_row["guild_id"])
                         except Exception as e:
                             logger.error(
                                 f"[K4Ultra] Error updating blacklist dashboards: {e}"
