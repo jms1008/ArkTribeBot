@@ -381,7 +381,7 @@ class K4Ultra(commands.Cog):
         self.gather_player_data.cancel()
         self.calculate_relationships.cancel()
 
-    async def fetch_server_players(self, map_name, ip, port):
+    async def fetch_server_players(self, guild_id, map_name, ip, port):
         """Obtiene jugadores mediante A2S, devolviendo nombres válidos y duraciones de sesión."""
         address = (ip, port)
         valid_players = []
@@ -394,10 +394,10 @@ class K4Ultra(commands.Cog):
                 if not p.name:
                     continue
                 valid_players.append({"name": p.name.strip(), "duration": p.duration})
-            return map_name, valid_players
+            return guild_id, map_name, valid_players
         except Exception as e:
-            logger.debug(f"[K4Ultra] Error fetching from {map_name}: {e}")
-            return map_name, []
+            logger.debug(f"[K4Ultra] Error fetching from {map_name} (Guild {guild_id}): {e}")
+            return guild_id, map_name, []
 
     @tasks.loop(minutes=5)
     async def gather_player_data(self):
@@ -411,37 +411,36 @@ class K4Ultra(commands.Cog):
             cfg_cursor = await _cfg_db.execute("SELECT guild_id FROM guild_config")
             guild_rows = await cfg_cursor.fetchall()
 
-        all_guild_servers = {}
+        all_guild_servers = []
         for (guild_id,) in guild_rows:
             g_servers = await get_guild_servers(self.bot, guild_id)
-            all_guild_servers.update(
-                g_servers
-            )  # Merge (nombre de mapa único en el clúster)
+            for name, (ip, port) in g_servers.items():
+                all_guild_servers.append((guild_id, name, ip, port))
 
         tasks_list = [
-            self.fetch_server_players(name, ip, port)
-            for name, (ip, port) in all_guild_servers.items()
+            self.fetch_server_players(gid, name, ip, port)
+            for gid, name, ip, port in all_guild_servers
         ]
         results = await asyncio.gather(*tasks_list)
 
         now = datetime.now()
 
         all_fetched = []
-        for map_name, players in results:
+        for guild_id, map_name, players in results:
             for p in players:
-                all_fetched.append({"map": map_name, "raw_name": p["name"]})
+                all_fetched.append({"guild_id": guild_id, "map": map_name, "raw_name": p["name"]})
 
         async with aiosqlite.connect(self.bot.db_name) as db:
             db.row_factory = aiosqlite.Row
 
             cursor = await db.execute(
-                "SELECT id, player_name, map_name, start_time, end_time FROM k4ultra_sessions WHERE is_active = 1"
+                "SELECT id, player_name, map_name, guild_id, start_time, end_time FROM k4ultra_sessions WHERE is_active = 1"
             )
             active_pool = [dict(s) for s in await cursor.fetchall()]
 
             ten_mins_ago = (now - timedelta(minutes=10)).strftime("%Y-%m-%d %H:%M:%S")
             cursor = await db.execute(
-                "SELECT id, player_name, map_name, start_time, end_time FROM k4ultra_sessions WHERE is_active = 0 AND end_time >= ? ORDER BY end_time DESC",
+                "SELECT id, player_name, map_name, guild_id, start_time, end_time FROM k4ultra_sessions WHERE is_active = 0 AND end_time >= ? ORDER BY end_time DESC",
                 (ten_mins_ago,),
             )
             recent_closed_pool = [dict(s) for s in await cursor.fetchall()]
@@ -462,7 +461,7 @@ class K4Ultra(commands.Cog):
                 # Pasada 1: Búsqueda de sesiones activas coincidentes en el mismo mapa
                 true_identity = None
                 for sid, s in active_pool_dict.items():
-                    if sid not in seen_identities and s["map_name"] == map_m:
+                    if sid not in seen_identities and s["map_name"] == map_m and s["guild_id"] == fp["guild_id"]:
                         if extract_base(s["player_name"]) == raw_name:
                             true_identity = s["player_name"]
                             fp["true_identity"] = true_identity
@@ -500,13 +499,13 @@ class K4Ultra(commands.Cog):
                 if is_generic:
                     # Recuperación de sesiones inactivas bajo el mismo nombre base
                     cursor = await db.execute(
-                        "SELECT id, player_name, map_name, start_time, end_time FROM k4ultra_sessions WHERE is_active = 0 AND player_name LIKE ? ORDER BY end_time DESC",
-                        (f"{raw_name}_%",),
+                        "SELECT id, player_name, map_name, guild_id, start_time, end_time FROM k4ultra_sessions WHERE is_active = 0 AND player_name LIKE ? AND guild_id = ? ORDER BY end_time DESC",
+                        (f"{raw_name}_%", fp["guild_id"]),
                     )
                     # Inclusión del propio nombre base si constaba inactivo
                     cursor2 = await db.execute(
-                        "SELECT id, player_name, map_name, start_time, end_time FROM k4ultra_sessions WHERE is_active = 0 AND player_name = ? ORDER BY end_time DESC",
-                        (raw_name,),
+                        "SELECT id, player_name, map_name, guild_id, start_time, end_time FROM k4ultra_sessions WHERE is_active = 0 AND player_name = ? AND guild_id = ? ORDER BY end_time DESC",
+                        (raw_name, fp["guild_id"]),
                     )
 
                     generic_inactive = [dict(s) for s in await cursor.fetchall()]
@@ -517,12 +516,14 @@ class K4Ultra(commands.Cog):
                         if (
                             sid not in seen_identities
                             and extract_base(sinfo["player_name"]) == raw_name
+                            and sinfo["guild_id"] == fp["guild_id"]
                         ):
                             # Simulación de sesión inactiva reciente
                             dummy_inactive = {
                                 "id": sinfo["id"],
                                 "player_name": sinfo["player_name"],
                                 "map_name": sinfo["map_name"],
+                                "guild_id": sinfo["guild_id"],
                                 "start_time": sinfo.get("start_time", ""),
                                 "end_time": now.strftime("%Y-%m-%d %H:%M:%S"),
                             }
@@ -544,14 +545,16 @@ class K4Ultra(commands.Cog):
                     if (
                         extract_base(s["player_name"]) == raw_name
                         and s["player_name"] not in identities_already_online
+                        and s["guild_id"] == fp["guild_id"]
                     ):
                         true_identity = s["player_name"]
                         # Creación de nueva sesión tras salto o reconexión
                         cursor = await db.execute(
-                            "INSERT INTO k4ultra_sessions (player_name, map_name, start_time, end_time, is_active) VALUES (?, ?, ?, ?, 1)",
+                            "INSERT INTO k4ultra_sessions (player_name, map_name, guild_id, start_time, end_time, is_active) VALUES (?, ?, ?, ?, ?, 1)",
                             (
                                 true_identity,
                                 map_m,
+                                fp["guild_id"],
                                 now.strftime("%Y-%m-%d %H:%M:%S"),
                                 now.strftime("%Y-%m-%d %H:%M:%S"),
                             ),
@@ -562,6 +565,7 @@ class K4Ultra(commands.Cog):
                             "id": new_id,
                             "player_name": true_identity,
                             "map_name": map_m,
+                            "guild_id": fp["guild_id"]
                         }
                         fp["true_identity"] = true_identity
                         break
@@ -571,8 +575,8 @@ class K4Ultra(commands.Cog):
                     if is_generic:
                         # Generación de un nuevo sufijo (si los anteriores están ocupados)
                         cursor = await db.execute(
-                            "SELECT player_name FROM k4ultra_sessions WHERE player_name LIKE ?",
-                            (f"{raw_name}_%",),
+                            "SELECT player_name FROM k4ultra_sessions WHERE player_name LIKE ? AND guild_id = ?",
+                            (f"{raw_name}_%", fp["guild_id"]),
                         )
                         existing = await cursor.fetchall()
                         max_suffix = 0
@@ -600,10 +604,11 @@ class K4Ultra(commands.Cog):
                         true_identity = raw_name
 
                     cursor = await db.execute(
-                        "INSERT INTO k4ultra_sessions (player_name, map_name, start_time, end_time, is_active) VALUES (?, ?, ?, ?, 1)",
+                        "INSERT INTO k4ultra_sessions (player_name, map_name, guild_id, start_time, end_time, is_active) VALUES (?, ?, ?, ?, ?, 1)",
                         (
                             true_identity,
                             map_m,
+                            fp["guild_id"],
                             now.strftime("%Y-%m-%d %H:%M:%S"),
                             now.strftime("%Y-%m-%d %H:%M:%S"),
                         ),
@@ -614,6 +619,7 @@ class K4Ultra(commands.Cog):
                         "id": new_id,
                         "player_name": true_identity,
                         "map_name": map_m,
+                        "guild_id": fp["guild_id"]
                     }
                     fp["true_identity"] = true_identity
 
@@ -627,8 +633,8 @@ class K4Ultra(commands.Cog):
 
                 # 1. k4ultra_playtime (Estadísticas por mapa)
                 cursor = await db.execute(
-                    "SELECT id FROM k4ultra_playtime WHERE player_name = ? AND map_name = ?",
-                    (t_identity, t_map),
+                    "SELECT id FROM k4ultra_playtime WHERE player_name = ? AND map_name = ? AND guild_id = ?",
+                    (t_identity, t_map, fp["guild_id"]),
                 )
                 pt_row = await cursor.fetchone()
                 if pt_row:
@@ -638,15 +644,15 @@ class K4Ultra(commands.Cog):
                     )
                 else:
                     await db.execute(
-                        "INSERT INTO k4ultra_playtime (player_name, map_name, total_minutes, last_seen) VALUES (?, ?, ?, ?)",
-                        (t_identity, t_map, 5, now.strftime("%Y-%m-%d %H:%M:%S")),
+                        "INSERT INTO k4ultra_playtime (player_name, map_name, guild_id, total_minutes, last_seen) VALUES (?, ?, ?, ?, ?)",
+                        (t_identity, t_map, fp["guild_id"], 5, now.strftime("%Y-%m-%d %H:%M:%S")),
                     )
 
-                # 2. blacklist (Estadísticas globales de horas)
+                # 2. blacklist (Estadísticas globales de horas por servidor)
                 try:
                     cursor = await db.execute(
-                        "SELECT id, total_hours FROM blacklist WHERE player = ?",
-                        (t_identity,),
+                        "SELECT id, total_hours FROM blacklist WHERE player = ? AND guild_id = ?",
+                        (t_identity, fp["guild_id"]),
                     )
                     bl_row = await cursor.fetchone()
                     if bl_row:
@@ -672,20 +678,21 @@ class K4Ultra(commands.Cog):
 
             # --- Lógica de Auto-Blacklist ---
             try:
-                cursor = await db.execute(
-                    "SELECT members_json FROM k4ultra_fixed_tribes WHERE name = 'UNNAMED'"
-                )
-                unnamed_row = await cursor.fetchone()
+                # El auto-blacklist ahora se gestiona por gremio correctamente
+                for guild_id in [gr[0] for gr in guild_rows]:
+                    cursor = await db.execute(
+                        "SELECT members_json FROM k4ultra_fixed_tribes WHERE name = 'UNNAMED' AND guild_id = ?",
+                        (guild_id,)
+                    )
+                    unnamed_row = await cursor.fetchone()
                 if unnamed_row:
                     import json
 
                     unnamed_members = set(json.loads(unnamed_row["members_json"]))
 
-                    # Check for aliases (currently unused)
-
                     blacklisted = set()
                     try:
-                        cursor = await db.execute("SELECT player FROM blacklist")
+                        cursor = await db.execute("SELECT player FROM blacklist WHERE guild_id = ?", (guild_id,))
                         blacklisted = {r["player"] for r in await cursor.fetchall()}
                     except aiosqlite.OperationalError:
                         pass
@@ -698,6 +705,9 @@ class K4Ultra(commands.Cog):
                     for sid in seen_identities:
                         if sid in active_pool_dict:
                             s_info = active_pool_dict[sid]
+                            if s_info["guild_id"] != guild_id:
+                                continue
+                                
                             t_name = s_info["player_name"]
                             t_map = s_info["map_name"]
 
@@ -707,8 +717,9 @@ class K4Ultra(commands.Cog):
                             ):
                                 try:
                                     await db.execute(
-                                        "INSERT INTO blacklist (player, tribe, map, notes, created_at, is_enemy) VALUES (?, ?, ?, ?, ?, ?)",
+                                        "INSERT INTO blacklist (guild_id, player, tribe, map, notes, created_at, is_enemy) VALUES (?, ?, ?, ?, ?, ?, ?)",
                                         (
+                                            guild_id,
                                             t_name,
                                             "Desconocido",
                                             t_map,
@@ -839,12 +850,21 @@ class K4Ultra(commands.Cog):
             except Exception:
                 pass
 
-            # Extracción de sesiones con actividad en la víspera ("Ayer")
-            cursor = await db.execute(
-                "SELECT player_name, map_name, start_time, end_time FROM k4ultra_sessions WHERE start_time >= ? AND start_time < ?",
-                (ys_str, ye_str),
-            )
-            sessions = await cursor.fetchall()
+            # Extracción de todos los gremios configurados
+            cursor = await db.execute("SELECT guild_id FROM guild_config")
+            guild_rows = await cursor.fetchall()
+            
+            for g_row in guild_rows:
+                guild_id = g_row["guild_id"]
+                
+                # Extracción de sesiones con actividad en la víspera ("Ayer") para este gremio
+                cursor = await db.execute(
+                    "SELECT player_name, map_name, start_time, end_time FROM k4ultra_sessions WHERE start_time >= ? AND start_time < ? AND guild_id = ?",
+                    (ys_str, ye_str, guild_id),
+                )
+                sessions = await cursor.fetchall()
+                if not sessions:
+                    continue
 
             points_to_add = {}
             shared_mins_to_add = {}
@@ -939,56 +959,56 @@ class K4Ultra(commands.Cog):
                                     ):
                                         add_points(p1, p2, 5)
 
-            # Volcado de puntuación de relaciones a SQL
-            for (p1, p2), mins in shared_mins_to_add.items():
-                cursor = await db.execute(
-                    "SELECT probability_score, shared_minutes, is_manual FROM k4ultra_relationships WHERE player1 = ? AND player2 = ?",
-                    (p1, p2),
-                )
-                row = await cursor.fetchone()
-                pts_to_add = points_to_add.get((p1, p2), 0)
-
-                if row:
-                    old_mins = (
-                        row["shared_minutes"] if "shared_minutes" in row.keys() else 0
-                    )
-                    new_mins = old_mins + mins
-                    # Cálculo de puntos adicionales derivados de Regla A
-                    pts_to_add += (new_mins // 180) - (old_mins // 180)
-
-                    if row["is_manual"] == 0:
-                        await db.execute(
-                            "UPDATE k4ultra_relationships SET probability_score = probability_score + ?, shared_minutes = ? WHERE player1 = ? AND player2 = ?",
-                            (pts_to_add, new_mins, p1, p2),
-                        )
-                else:
-                    pts_to_add += mins // 180
-                    if pts_to_add > 0:
-                        await db.execute(
-                            "INSERT INTO k4ultra_relationships (player1, player2, probability_score, shared_minutes, is_manual) VALUES (?, ?, ?, ?, 0)",
-                            (p1, p2, pts_to_add, mins),
-                        )
-
-            # Aplicación de puntos exclusivos de Reglas B y C (sin Regla A combinada)
-            for (p1, p2), pts in points_to_add.items():
-                if (p1, p2) not in shared_mins_to_add:
+                # Volcado de puntuación de relaciones a SQL (Aislado por gremio)
+                for (p1, p2), mins in shared_mins_to_add.items():
                     cursor = await db.execute(
-                        "SELECT probability_score, is_manual FROM k4ultra_relationships WHERE player1 = ? AND player2 = ?",
-                        (p1, p2),
+                        "SELECT probability_score, shared_minutes, is_manual FROM k4ultra_relationships WHERE player1 = ? AND player2 = ? AND guild_id = ?",
+                        (p1, p2, guild_id),
                     )
                     row = await cursor.fetchone()
+                    pts_to_add = points_to_add.get((p1, p2), 0)
+
                     if row:
+                        old_mins = (
+                            row["shared_minutes"] if "shared_minutes" in row.keys() else 0
+                        )
+                        new_mins = old_mins + mins
+                        # Cálculo de puntos adicionales derivados de Regla A
+                        pts_to_add += (new_mins // 180) - (old_mins // 180)
+
                         if row["is_manual"] == 0:
                             await db.execute(
-                                "UPDATE k4ultra_relationships SET probability_score = probability_score + ? WHERE player1 = ? AND player2 = ?",
-                                (pts, p1, p2),
+                                "UPDATE k4ultra_relationships SET probability_score = probability_score + ?, shared_minutes = ? WHERE player1 = ? AND player2 = ? AND guild_id = ?",
+                                (pts_to_add, new_mins, p1, p2, guild_id),
                             )
                     else:
-                        if pts > 0:
+                        pts_to_add += mins // 180
+                        if pts_to_add > 0:
                             await db.execute(
-                                "INSERT INTO k4ultra_relationships (player1, player2, probability_score, shared_minutes, is_manual) VALUES (?, ?, ?, 0, 0)",
-                                (p1, p2, pts),
+                                "INSERT INTO k4ultra_relationships (guild_id, player1, player2, probability_score, shared_minutes, is_manual) VALUES (?, ?, ?, ?, ?, 0)",
+                                (guild_id, p1, p2, pts_to_add, mins),
                             )
+
+                # Aplicación de puntos exclusivos de Reglas B y C (sin Regla A combinada)
+                for (p1, p2), pts in points_to_add.items():
+                    if (p1, p2) not in shared_mins_to_add:
+                        cursor = await db.execute(
+                            "SELECT probability_score, is_manual FROM k4ultra_relationships WHERE player1 = ? AND player2 = ? AND guild_id = ?",
+                            (p1, p2, guild_id),
+                        )
+                        row = await cursor.fetchone()
+                        if row:
+                            if row["is_manual"] == 0:
+                                await db.execute(
+                                    "UPDATE k4ultra_relationships SET probability_score = probability_score + ? WHERE player1 = ? AND player2 = ? AND guild_id = ?",
+                                    (pts, p1, p2, guild_id),
+                                )
+                        else:
+                            if pts > 0:
+                                await db.execute(
+                                    "INSERT INTO k4ultra_relationships (guild_id, player1, player2, probability_score, shared_minutes, is_manual) VALUES (?, ?, ?, ?, 0, 0)",
+                                    (guild_id, p1, p2, pts),
+                                )
 
             # Limpieza mensual de registros crudos (Logs) para preservación de DB
             await db.execute(
@@ -1040,7 +1060,8 @@ class K4Ultra(commands.Cog):
             cursor = await db.execute("""
                 SELECT player_name, map_name, total_minutes
                 FROM k4ultra_playtime
-            """)
+                WHERE guild_id = ?
+            """, (guild_id,))
             all_playtimes = await cursor.fetchall()
 
             from collections import defaultdict
@@ -1056,9 +1077,10 @@ class K4Ultra(commands.Cog):
             # Aplicación de Alias y Nombres de Tribu Personalizados
             # Moved further down the code, logic is fine.
 
-            # Obtención de jugadores conectados en este instante
+            # Obtención de jugadores conectados en este instante para este servidor
             cursor = await db.execute(
-                "SELECT player_name FROM k4ultra_sessions WHERE is_active = 1"
+                "SELECT player_name FROM k4ultra_sessions WHERE is_active = 1 AND guild_id = ?",
+                (guild_id,)
             )
             active_sessions = await cursor.fetchall()
             active_players = {s["player_name"] for s in active_sessions}
@@ -1146,9 +1168,10 @@ class K4Ultra(commands.Cog):
                     inline=False,
                 )
 
-            # Consulta de Tribus Fijas
+            # Consulta de Tribus Fijas para este servidor
             cursor = await db.execute(
-                "SELECT name, members_json FROM k4ultra_fixed_tribes"
+                "SELECT name, members_json FROM k4ultra_fixed_tribes WHERE guild_id = ?",
+                (guild_id,)
             )
             fixed_rows = await cursor.fetchall()
             fixed_players = set()
@@ -1159,9 +1182,10 @@ class K4Ultra(commands.Cog):
                 for m in members:
                     fixed_players.add(m)
 
-            # Consulta de Relaciones Dinámicas Calculadas
+            # Consulta de Relaciones Dinámicas Calculadas para este servidor
             cursor = await db.execute(
-                "SELECT player1, player2 FROM k4ultra_relationships WHERE probability_score >= 10 OR is_manual = 1"
+                "SELECT player1, player2 FROM k4ultra_relationships WHERE (probability_score >= 10 OR is_manual = 1) AND guild_id = ?",
+                (guild_id,)
             )
             rels = await cursor.fetchall()
 
@@ -1233,8 +1257,8 @@ class K4Ultra(commands.Cog):
                 custom_name = None
                 for m in tribe:
                     cursor = await db.execute(
-                        "SELECT custom_name FROM k4ultra_tribe_names WHERE tribe_signature = ?",
-                        (m,),
+                        "SELECT custom_name FROM k4ultra_tribe_names WHERE tribe_signature = ? AND guild_id = ?",
+                        (m, guild_id),
                     )
                     cname_row = await cursor.fetchone()
                     if cname_row:
@@ -1251,12 +1275,12 @@ class K4Ultra(commands.Cog):
                     f"""
                     SELECT map_name, SUM(total_minutes) as tribe_mins
                     FROM k4ultra_playtime
-                    WHERE player_name IN ({placeholders})
+                    WHERE player_name IN ({placeholders}) AND guild_id = ?
                     GROUP BY map_name
                     ORDER BY tribe_mins DESC
                     LIMIT 1
                 """,
-                    list(tribe),
+                    list(tribe) + [guild_id],
                 )
                 map_row = await cursor.fetchone()
 
@@ -1323,8 +1347,8 @@ class K4Ultra(commands.Cog):
             await interaction.response.defer(ephemeral=True)
             async with aiosqlite.connect(self.bot.db_name) as db:
                 cursor = await db.execute(
-                    "SELECT embed_json FROM k4ultra_snapshots WHERE week_number = ?",
-                    (semana,),
+                    "SELECT embed_json FROM k4ultra_snapshots WHERE week_number = ? AND guild_id = ?",
+                    (semana, interaction.guild_id),
                 )
                 row = await cursor.fetchone()
 
@@ -1353,10 +1377,10 @@ class K4Ultra(commands.Cog):
             async with aiosqlite.connect(self.bot.db_name) as db:
                 await db.execute(
                     """
-                    INSERT INTO k4ultra_messages (channel_id, message_id)
-                    VALUES (?, ?)
+                    INSERT INTO k4ultra_messages (guild_id, channel_id, message_id)
+                    VALUES (?, ?, ?)
                 """,
-                    (interaction.channel_id, message.id),
+                    (interaction.guild_id, interaction.channel_id, message.id),
                 )
                 await db.commit()
 
@@ -1380,7 +1404,8 @@ class K4Ultra(commands.Cog):
             import re
 
             cursor = await db.execute(
-                "SELECT DISTINCT player_name FROM k4ultra_playtime"
+                "SELECT DISTINCT player_name FROM k4ultra_playtime WHERE guild_id = ?",
+                (interaction.guild_id,)
             )
             all_players = [r["player_name"] for r in await cursor.fetchall()]
 
@@ -1407,16 +1432,16 @@ class K4Ultra(commands.Cog):
             for dup_name, base_name in duplicates_to_merge:
                 # 1. Fusión de Playtime (Minutos jugados)
                 cursor = await db.execute(
-                    "SELECT map_name, total_minutes, last_seen FROM k4ultra_playtime WHERE player_name = ?",
-                    (dup_name,),
+                    "SELECT map_name, total_minutes, last_seen FROM k4ultra_playtime WHERE player_name = ? AND guild_id = ?",
+                    (dup_name, interaction.guild_id),
                 )
                 dup_maps = await cursor.fetchall()
 
                 for dm in dup_maps:
                     # Comprobación de existencia de Playtime previo para el nombre base en ese mapa
                     c2 = await db.execute(
-                        "SELECT total_minutes, last_seen FROM k4ultra_playtime WHERE player_name = ? AND map_name = ?",
-                        (base_name, dm["map_name"]),
+                        "SELECT total_minutes, last_seen FROM k4ultra_playtime WHERE player_name = ? AND map_name = ? AND guild_id = ?",
+                        (base_name, dm["map_name"], interaction.guild_id),
                     )
                     base_map = await c2.fetchone()
 
@@ -1425,14 +1450,15 @@ class K4Ultra(commands.Cog):
                         new_mins = base_map["total_minutes"] + dm["total_minutes"]
                         new_last_seen = max(base_map["last_seen"], dm["last_seen"])
                         await db.execute(
-                            "UPDATE k4ultra_playtime SET total_minutes = ?, last_seen = ? WHERE player_name = ? AND map_name = ?",
-                            (new_mins, new_last_seen, base_name, dm["map_name"]),
+                            "UPDATE k4ultra_playtime SET total_minutes = ?, last_seen = ? WHERE player_name = ? AND map_name = ? AND guild_id = ?",
+                            (new_mins, new_last_seen, base_name, dm["map_name"], interaction.guild_id),
                         )
                     else:
                         # Inserción de registro nuevo bajo el nombre base
                         await db.execute(
-                            "INSERT INTO k4ultra_playtime (player_name, map_name, total_minutes, last_seen) VALUES (?, ?, ?, ?)",
+                            "INSERT INTO k4ultra_playtime (guild_id, player_name, map_name, total_minutes, last_seen) VALUES (?, ?, ?, ?, ?)",
                             (
+                                interaction.guild_id,
                                 base_name,
                                 dm["map_name"],
                                 dm["total_minutes"],
@@ -1441,39 +1467,40 @@ class K4Ultra(commands.Cog):
                         )
 
                 await db.execute(
-                    "DELETE FROM k4ultra_playtime WHERE player_name = ?", (dup_name,)
+                    "DELETE FROM k4ultra_playtime WHERE player_name = ? AND guild_id = ?", (dup_name, interaction.guild_id)
                 )
 
                 # 2. Actualización de Sesiones
                 await db.execute(
-                    "UPDATE k4ultra_sessions SET player_name = ? WHERE player_name = ?",
-                    (base_name, dup_name),
+                    "UPDATE k4ultra_sessions SET player_name = ? WHERE player_name = ? AND guild_id = ?",
+                    (base_name, dup_name, interaction.guild_id),
                 )
 
                 # 3. Actualización de Relaciones
                 # Modificación cuidadosa de pares para evitar pérdida de datos
                 await db.execute(
-                    "UPDATE k4ultra_relationships SET player1 = ? WHERE player1 = ?",
-                    (base_name, dup_name),
+                    "UPDATE k4ultra_relationships SET player1 = ? WHERE player1 = ? AND guild_id = ?",
+                    (base_name, dup_name, interaction.guild_id),
                 )
                 await db.execute(
-                    "UPDATE k4ultra_relationships SET player2 = ? WHERE player2 = ?",
-                    (base_name, dup_name),
+                    "UPDATE k4ultra_relationships SET player2 = ? WHERE player2 = ? AND guild_id = ?",
+                    (base_name, dup_name, interaction.guild_id),
                 )
 
                 # Limpieza de auto-relaciones generadas por la fusión
                 await db.execute(
-                    "DELETE FROM k4ultra_relationships WHERE player1 = player2"
+                    "DELETE FROM k4ultra_relationships WHERE player1 = player2 AND guild_id = ?",
+                    (interaction.guild_id,)
                 )
 
                 # 4. Limpieza en Blacklist y Alias
-                await db.execute("DELETE FROM blacklist WHERE player = ?", (dup_name,))
+                await db.execute("DELETE FROM blacklist WHERE player = ? AND guild_id = ?", (dup_name, interaction.guild_id))
                 await db.execute(
-                    "DELETE FROM k4ultra_aliases WHERE player_name = ?", (dup_name,)
+                    "DELETE FROM k4ultra_aliases WHERE player_name = ? AND guild_id = ?", (dup_name, interaction.guild_id)
                 )
                 await db.execute(
-                    "UPDATE k4ultra_players_log SET player_name = ? WHERE player_name = ?",
-                    (base_name, dup_name),
+                    "UPDATE k4ultra_players_log SET player_name = ? WHERE player_name = ? AND guild_id = ?",
+                    (base_name, dup_name, interaction.guild_id),
                 )
 
                 merged_count += 1
@@ -1521,8 +1548,8 @@ class K4Ultra(commands.Cog):
             import json
 
             await db.execute(
-                "INSERT INTO k4ultra_fixed_tribes (name, members_json) VALUES (?, ?)",
-                (nombre, json.dumps(miembros)),
+                "INSERT INTO k4ultra_fixed_tribes (guild_id, name, members_json) VALUES (?, ?, ?)",
+                (interaction.guild_id, nombre, json.dumps(miembros)),
             )
             await db.commit()
 
@@ -1547,7 +1574,7 @@ class K4Ultra(commands.Cog):
 
         async with aiosqlite.connect(self.bot.db_name) as db:
             cursor = await db.execute(
-                "DELETE FROM k4ultra_fixed_tribes WHERE name = ?", (nombre,)
+                "DELETE FROM k4ultra_fixed_tribes WHERE name = ? AND guild_id = ?", (nombre, interaction.guild_id)
             )
             deleted = cursor.rowcount
             await db.commit()
@@ -1582,8 +1609,8 @@ class K4Ultra(commands.Cog):
 
         async with aiosqlite.connect(self.bot.db_name) as db:
             await db.execute(
-                "INSERT INTO k4ultra_aliases (player_name, alias) VALUES (?, ?) ON CONFLICT(player_name) DO UPDATE SET alias=excluded.alias",
-                (jugador, alias),
+                "INSERT INTO k4ultra_aliases (guild_id, player_name, alias) VALUES (?, ?, ?) ON CONFLICT(guild_id, player_name) DO UPDATE SET alias=excluded.alias",
+                (interaction.guild_id, jugador, alias),
             )
             await db.commit()
 
@@ -1625,7 +1652,8 @@ class K4Ultra(commands.Cog):
 
             # Verificación de existencia del perfil de origen
             cursor = await db.execute(
-                "SELECT * FROM k4ultra_playtime WHERE player_name = ?", (origen,)
+                "SELECT * FROM k4ultra_playtime WHERE player_name = ? AND guild_id = ?",
+                (origen, interaction.guild_id),
             )
             origen_maps = await cursor.fetchall()
             if not origen_maps:
@@ -1638,8 +1666,8 @@ class K4Ultra(commands.Cog):
             # 1. Merge Playtime
             for dm in origen_maps:
                 c2 = await db.execute(
-                    "SELECT total_minutes, last_seen FROM k4ultra_playtime WHERE player_name = ? AND map_name = ?",
-                    (destino, dm["map_name"]),
+                    "SELECT total_minutes, last_seen FROM k4ultra_playtime WHERE player_name = ? AND map_name = ? AND guild_id = ?",
+                    (destino, dm["map_name"], interaction.guild_id),
                 )
                 base_map = await c2.fetchone()
 
@@ -1647,46 +1675,47 @@ class K4Ultra(commands.Cog):
                     new_mins = base_map["total_minutes"] + dm["total_minutes"]
                     new_last_seen = max(base_map["last_seen"], dm["last_seen"])
                     await db.execute(
-                        "UPDATE k4ultra_playtime SET total_minutes = ?, last_seen = ? WHERE player_name = ? AND map_name = ?",
-                        (new_mins, new_last_seen, destino, dm["map_name"]),
+                        "UPDATE k4ultra_playtime SET total_minutes = ?, last_seen = ? WHERE player_name = ? AND map_name = ? AND guild_id = ?",
+                        (new_mins, new_last_seen, destino, dm["map_name"], interaction.guild_id),
                     )
                 else:
                     await db.execute(
-                        "INSERT INTO k4ultra_playtime (player_name, map_name, total_minutes, last_seen) VALUES (?, ?, ?, ?)",
-                        (destino, dm["map_name"], dm["total_minutes"], dm["last_seen"]),
+                        "INSERT INTO k4ultra_playtime (guild_id, player_name, map_name, total_minutes, last_seen) VALUES (?, ?, ?, ?, ?)",
+                        (interaction.guild_id, destino, dm["map_name"], dm["total_minutes"], dm["last_seen"]),
                     )
 
             await db.execute(
-                "DELETE FROM k4ultra_playtime WHERE player_name = ?", (origen,)
+                "DELETE FROM k4ultra_playtime WHERE player_name = ? AND guild_id = ?", (origen, interaction.guild_id)
             )
 
             # 2. Update Sessions
             await db.execute(
-                "UPDATE k4ultra_sessions SET player_name = ? WHERE player_name = ?",
-                (destino, origen),
+                "UPDATE k4ultra_sessions SET player_name = ? WHERE player_name = ? AND guild_id = ?",
+                (destino, origen, interaction.guild_id),
             )
 
             # 3. Update Relationships
             await db.execute(
-                "UPDATE k4ultra_relationships SET player1 = ? WHERE player1 = ?",
-                (destino, origen),
+                "UPDATE k4ultra_relationships SET player1 = ? WHERE player1 = ? AND guild_id = ?",
+                (destino, origen, interaction.guild_id),
             )
             await db.execute(
-                "UPDATE k4ultra_relationships SET player2 = ? WHERE player2 = ?",
-                (destino, origen),
+                "UPDATE k4ultra_relationships SET player2 = ? WHERE player2 = ? AND guild_id = ?",
+                (destino, origen, interaction.guild_id),
             )
             await db.execute(
-                "DELETE FROM k4ultra_relationships WHERE player1 = player2"
+                "DELETE FROM k4ultra_relationships WHERE player1 = player2 AND guild_id = ?",
+                (interaction.guild_id,)
             )
 
             # 4. Cleanup Blacklist and Aliases
-            await db.execute("DELETE FROM blacklist WHERE player = ?", (origen,))
+            await db.execute("DELETE FROM blacklist WHERE player = ? AND guild_id = ?", (origen, interaction.guild_id))
             await db.execute(
-                "DELETE FROM k4ultra_aliases WHERE player_name = ?", (origen,)
+                "DELETE FROM k4ultra_aliases WHERE player_name = ? AND guild_id = ?", (origen, interaction.guild_id)
             )
             await db.execute(
-                "UPDATE k4ultra_players_log SET player_name = ? WHERE player_name = ?",
-                (destino, origen),
+                "UPDATE k4ultra_players_log SET player_name = ? WHERE player_name = ? AND guild_id = ?",
+                (destino, origen, interaction.guild_id),
             )
 
             await db.commit()
@@ -1729,8 +1758,8 @@ class K4Ultra(commands.Cog):
 
             # Comprobación de existencia de sesión activa para el perfil de origen
             cursor = await db.execute(
-                "SELECT id, map_name FROM k4ultra_sessions WHERE player_name = ? AND is_active = 1",
-                (origen,),
+                "SELECT id, map_name FROM k4ultra_sessions WHERE player_name = ? AND is_active = 1 AND guild_id = ?",
+                (origen, interaction.guild_id),
             )
             active_sessions = await cursor.fetchall()
 
@@ -1753,22 +1782,22 @@ class K4Ultra(commands.Cog):
 
             # 1. Modificación de identidad en la sesión activa
             await db.execute(
-                "UPDATE k4ultra_sessions SET player_name = ? WHERE id = ?",
-                (destino, session_id),
+                "UPDATE k4ultra_sessions SET player_name = ? WHERE id = ? AND guild_id = ?",
+                (destino, session_id, interaction.guild_id),
             )
 
             # 2. Garantía de existencia del destino en Playtime (prevención de errores visuales)
             cursor = await db.execute(
-                "SELECT total_minutes FROM k4ultra_playtime WHERE player_name = ? AND map_name = ?",
-                (destino, map_name),
+                "SELECT total_minutes FROM k4ultra_playtime WHERE player_name = ? AND map_name = ? AND guild_id = ?",
+                (destino, map_name, interaction.guild_id),
             )
             if not await cursor.fetchone():
                 import datetime as dt
 
                 now_str = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 await db.execute(
-                    "INSERT INTO k4ultra_playtime (player_name, map_name, total_minutes, last_seen) VALUES (?, ?, 0, ?)",
-                    (destino, map_name, now_str),
+                    "INSERT INTO k4ultra_playtime (guild_id, player_name, map_name, total_minutes, last_seen) VALUES (?, ?, ?, 0, ?)",
+                    (interaction.guild_id, destino, map_name, now_str),
                 )
 
             await db.commit()

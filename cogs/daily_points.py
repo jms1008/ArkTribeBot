@@ -249,7 +249,7 @@ class DailyPoints(commands.Cog):
         async with aiosqlite.connect(self.bot.db_name) as db:
             db.row_factory = aiosqlite.Row
             cursor = await db.execute(
-                "SELECT user_id, alert_hour, timezone, last_sent_date FROM daily_points_users"
+                "SELECT guild_id, user_id, alert_hour, timezone, last_sent_date FROM daily_points_users"
             )
             users = await cursor.fetchall()
 
@@ -268,41 +268,35 @@ class DailyPoints(commands.Cog):
 
             for u in users:
                 try:
+                    g_id = u["guild_id"]
+                    # Si el sistema está desactivado en ese guild, saltarse
+                    if g_id in guild_configs and guild_configs[g_id]["daily_points_enabled"] == 0:
+                        continue
+                        
                     tz_key = u["timezone"] if u["timezone"] in TIMEZONES else "es"
                     tz = TIMEZONES[tz_key]
                     user_time = now_utc.astimezone(tz)
 
                     target_hour = u["alert_hour"] if u["alert_hour"] is not None else 8
-
                     current_date_str = user_time.strftime("%Y-%m-%d")
 
-                    # Comprobación de coincidencia con la hora objetivo configurada
                     if user_time.hour == target_hour:
                         if u["last_sent_date"] != current_date_str:
-                            users_to_notify.append((u["user_id"], current_date_str))
+                            users_to_notify.append((u["user_id"], g_id, current_date_str))
                 except Exception as e:
                     logger.error(
-                        f"[DailyPoints] Error calculando hora para usuario {u['user_id']}: {e}"
+                        f"[DailyPoints] Error calculando hora para usuario {u['user_id']} en guild {u['guild_id']}: {e}"
                     )
 
             if users_to_notify:
-                for uid, date_str in users_to_notify:
+                for uid, gid, date_str in users_to_notify:
                     try:
-                        user_obj = self.bot.get_user(uid) or await self.bot.fetch_user(
-                            uid
-                        )
+                        user_obj = self.bot.get_user(uid) or await self.bot.fetch_user(uid)
                         if not user_obj:
                             continue
 
-                        # Determinar las URLs del servidor del usuario (si está visible)
-                        vote_urls_str = None
-                        # Intentar obtener el guild del usuario mirando los guilds mutuos
-                        for guild_id, cfg in guild_configs.items():
-                            # Si el sistema está desactivado en ese guild, saltarse
-                            if cfg["daily_points_enabled"] == 0:
-                                continue
-                            vote_urls_str = cfg["vote_urls"]
-                            break  # Usar config del primer guild activo encontrado
+                        cfg = guild_configs.get(gid)
+                        vote_urls_str = cfg["vote_urls"] if cfg else None
 
                         vote_links = parse_vote_urls(vote_urls_str)
                         links_block = "\n".join(
@@ -320,8 +314,8 @@ class DailyPoints(commands.Cog):
 
                         # Registro de notificación diaria enviada en base de datos
                         await db.execute(
-                            "UPDATE daily_points_users SET last_sent_date = ? WHERE user_id = ?",
-                            (date_str, uid),
+                            "UPDATE daily_points_users SET last_sent_date = ? WHERE user_id = ? AND guild_id = ?",
+                            (date_str, uid, gid),
                         )
                     except discord.Forbidden:
                         logger.warning(
@@ -329,7 +323,7 @@ class DailyPoints(commands.Cog):
                         )
                     except Exception as e:
                         logger.error(
-                            f"[DailyPoints] Error enviando recordatorio a {uid}: {e}"
+                            f"[DailyPoints] Error enviando recordatorio a {uid} (Guild {gid}): {e}"
                         )
 
                 await db.commit()

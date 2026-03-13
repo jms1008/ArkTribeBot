@@ -396,8 +396,8 @@ class Admin(commands.Cog):
 
                 async with aiosqlite.connect(self.bot.db_name) as db:
                     await db.execute(
-                        "INSERT INTO todo_messages (channel_id, message_id) VALUES (?, ?)",
-                        (canal_todo.id, msg.id),
+                        "INSERT INTO todo_messages (guild_id, channel_id, message_id) VALUES (?, ?, ?)",
+                        (interaction.guild_id, canal_todo.id, msg.id),
                     )
                     await db.commit()
             except Exception as e:
@@ -452,8 +452,8 @@ class Admin(commands.Cog):
 
                 async with aiosqlite.connect(self.bot.db_name) as db:
                     await db.execute(
-                        "INSERT INTO breeding_messages (channel_id, message_id) VALUES (?, ?)",
-                        (canal_crianza.id, msg.id),
+                        "INSERT INTO breeding_messages (guild_id, channel_id, message_id) VALUES (?, ?, ?)",
+                        (interaction.guild_id, canal_crianza.id, msg.id),
                     )
                     await db.commit()
             except Exception as e:
@@ -512,8 +512,8 @@ class Admin(commands.Cog):
 
                 async with aiosqlite.connect(self.bot.db_name) as db:
                     await db.execute(
-                        "INSERT INTO blacklist_messages (channel_id, message_id) VALUES (?, ?)",
-                        (canal_blacklist.id, msg.id),
+                        "INSERT INTO blacklist_messages (guild_id, channel_id, message_id) VALUES (?, ?, ?)",
+                        (interaction.guild_id, canal_blacklist.id, msg.id),
                     )
                     await db.commit()
             except Exception as e:
@@ -577,8 +577,8 @@ class Admin(commands.Cog):
 
                 async with aiosqlite.connect(self.bot.db_name) as db:
                     await db.execute(
-                        "INSERT INTO scout_messages (channel_id, message_id) VALUES (?, ?)",
-                        (canal_scouting.id, msg.id),
+                        "INSERT INTO scout_messages (guild_id, channel_id, message_id) VALUES (?, ?, ?)",
+                        (interaction.guild_id, canal_scouting.id, msg.id),
                     )
                     await db.commit()
             except Exception as e:
@@ -670,6 +670,7 @@ class Admin(commands.Cog):
                     "breeding_messages",
                     "blacklist",
                     "blacklist_messages",
+                    "status_online_messages",
                     "status_messages",
                 ]
 
@@ -718,6 +719,7 @@ class Admin(commands.Cog):
                     "todo_messages",
                     "breeding_messages",
                     "blacklist_messages",
+                    "status_online_messages",
                     "status_messages",
                 ]
 

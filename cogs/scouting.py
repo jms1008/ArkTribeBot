@@ -334,7 +334,7 @@ class DeleteScoutModal(discord.ui.Modal, title="Eliminar Scout"):
                         f"No se pudo eliminar imagen del scout #{sid}: {e}"
                     )
 
-            await db.execute("DELETE FROM scouts WHERE id = ?", (sid,))
+            await db.execute("DELETE FROM scouts WHERE id = ? AND guild_id = ?", (sid, interaction.guild_id))
             await db.commit()
 
         await interaction.response.send_message(
