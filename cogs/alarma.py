@@ -144,6 +144,9 @@ class Alarma(commands.Cog):
     async def check_alarms_loop(self):
         await self.bot.wait_until_ready()
         
+        # Semáforo para no saturar la red (especialmente si coincide con server_status)
+        semaphore = asyncio.Semaphore(3)
+
         async with aiosqlite.connect(self.bot.db_name) as db:
             db.row_factory = aiosqlite.Row
             cursor = await db.execute("SELECT DISTINCT guild_id, map_name FROM map_alarms")
@@ -161,9 +164,10 @@ class Alarma(commands.Cog):
                 address = (ip, port)
                 
                 try:
-                    players_data = await asyncio.wait_for(
-                        asyncio.to_thread(a2s.players, address), timeout=5.0
-                    )
+                    async with semaphore:
+                        players_data = await asyncio.wait_for(
+                            asyncio.to_thread(a2s.players, address), timeout=6.0
+                        )
                     current_names = {p.name for p in players_data if p.name}
                     
                     c_prev = await db.execute(

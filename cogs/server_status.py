@@ -259,40 +259,44 @@ class ServerStatus(commands.Cog):
             )
             return embed
 
+        # Semáforo para limitar concurrencia de consultas A2S
+        semaphore = asyncio.Semaphore(5)
+
         async def fetch_server(name, ip, port):
-            address = (ip, port)
-            try:
-                # Límite de tiempo en la consulta A2S para prevenir bloqueos de la rutina
-                info = await asyncio.wait_for(
-                    asyncio.to_thread(a2s.info, address), timeout=5.0
-                )
-                players = await asyncio.wait_for(
-                    asyncio.to_thread(a2s.players, address), timeout=5.0
-                )
+            async with semaphore:
+                address = (ip, port)
+                try:
+                    # Límite de tiempo en la consulta A2S para prevenir bloqueos de la rutina
+                    info = await asyncio.wait_for(
+                        asyncio.to_thread(a2s.info, address), timeout=6.0
+                    )
+                    players = await asyncio.wait_for(
+                        asyncio.to_thread(a2s.players, address), timeout=6.0
+                    )
 
-                valid_players = [p.name for p in players if p.name]
-                p_count = len(valid_players)
+                    valid_players = [p.name for p in players if p.name]
+                    p_count = len(valid_players)
 
-                player_list = ", ".join(valid_players)
-                ping_ms = int(info.ping * 1000)
+                    player_list = ", ".join(valid_players)
+                    ping_ms = int(info.ping * 1000)
 
-                # Manejo de respuesta vacía (0 jugadores)
-                if p_count == 0:
-                    player_list = "Nadie conectado."
+                    # Manejo de respuesta vacía (0 jugadores)
+                    if p_count == 0:
+                        player_list = "Nadie conectado."
 
-                if len(player_list) > 1000:
-                    player_list = player_list[:1000] + "..."
+                    if len(player_list) > 1000:
+                        player_list = player_list[:1000] + "..."
 
-                return {
-                    "name": name,
-                    "players": p_count,
-                    "max_players": info.max_players,
-                    "list": player_list,
-                    "ping": ping_ms,
-                    "error": None,
-                }
-            except Exception as e:
-                return {"name": name, "error": str(e)}
+                    return {
+                        "name": name,
+                        "players": p_count,
+                        "max_players": info.max_players,
+                        "list": player_list,
+                        "ping": ping_ms,
+                        "error": None,
+                    }
+                except Exception as e:
+                    return {"name": name, "error": str(e)}
 
         fetch_tasks = [
             fetch_server(name, ip, port) for name, (ip, port) in servers.items()
@@ -308,7 +312,7 @@ class ServerStatus(commands.Cog):
 
         for res in results:
             if res.get("error"):
-                offline_servers.append(res["name"])
+                offline_servers.append(res)
             else:
                 total_players += res.get("players", 0)
                 total_max += res.get("max_players", 0)
@@ -340,7 +344,10 @@ class ServerStatus(commands.Cog):
 
         # 3. Servidores Inactivos (Offline/Timeout)
         if offline_servers:
-            offline_list_str = "\n".join([f"❌ **{s}**" for s in offline_servers])
+            # Mostramos el nombre junto con el error abreviado (si es timeout o conexión)
+            offline_list_str = "\n".join(
+                [f"❌ **{s['name']}** - `{s['error']}`" for s in offline_servers]
+            )
             embed.add_field(
                 name="🔴 Servidores Offline / Timeout",
                 value=offline_list_str,
