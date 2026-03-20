@@ -429,6 +429,10 @@ class ServerStatus(commands.Cog):
                     new_embed = guild_embeds.get(guild_id)
 
                     if new_embed:
+                        # Marca de tiempo de actualización para transparencia
+                        from datetime import datetime
+                        now_str = datetime.now().strftime("%H:%M:%S")
+                        new_embed.set_footer(text=f"Actualizado cada 2 min • Última vez: {now_str}")
                         await message.edit(embed=new_embed)
 
                 except discord.NotFound:

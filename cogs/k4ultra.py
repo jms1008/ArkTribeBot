@@ -7,6 +7,7 @@ import aiosqlite
 import logging
 from datetime import datetime, timedelta
 import json
+from cogs.warfare import build_player_detail_embed
 
 logger = logging.getLogger("ArkTribeBot")
 
@@ -162,167 +163,12 @@ class PlayerSelectMenu(discord.ui.Select):
             await interaction.followup.send("No hay datos.", ephemeral=True)
             return
 
-        async with aiosqlite.connect(self.bot.db_name) as db:
-            db.row_factory = aiosqlite.Row
-            cursor = await db.execute(
-                "SELECT map_name, sum(total_minutes) as m FROM k4ultra_playtime WHERE player_name = ? GROUP BY map_name ORDER BY m DESC",
-                (player_name,),
-            )
-            maps = await cursor.fetchall()
-
-            total_mins = sum(m["m"] for m in maps) if maps else 0
-            if total_mins == 0:
-                await interaction.followup.send(
-                    "No hay datos suficientes de este jugador.", ephemeral=True
-                )
-                return
-
-            main_map = maps[0]["map_name"]
-
-            cursor = await db.execute(
-                "SELECT start_time FROM k4ultra_sessions WHERE player_name = ?",
-                (player_name,),
-            )
-            sessions = await cursor.fetchall()
-
-            hours_played = {i: 0 for i in range(24)}
-            for s in sessions:
-                try:
-                    st = datetime.strptime(s["start_time"], "%Y-%m-%d %H:%M:%S")
-                    hours_played[st.hour] += 1
-                except Exception:
-                    pass
-
-            best_hour = max(hours_played, key=hours_played.get) if sessions else "N/A"
-
-            embed = discord.Embed(
-                title=f"👤 Perfil Detallado: {player_name}", color=discord.Color.blue()
-            )
-
-            # Adición de alias (si consta en el registro)
-            try:
-                cursor = await db.execute(
-                    "SELECT alias FROM k4ultra_aliases WHERE player_name = ? AND guild_id = ?",
-                    (player_name, interaction.guild_id),
-                )
-                alias_row = await cursor.fetchone()
-                if alias_row:
-                    embed.title += f" [{alias_row['alias']}]"
-            except aiosqlite.OperationalError:
-                pass
-
-            # Búsqueda de Estado Online Actual
-            try:
-                cursor = await db.execute(
-                    "SELECT map_name FROM k4ultra_sessions WHERE player_name = ? AND guild_id = ? AND is_active = 1 LIMIT 1",
-                    (player_name, interaction.guild_id)
-                )
-                online_row = await cursor.fetchone()
-                if online_row:
-                    embed.description = f"🟢 **Online Ahora** (Jugando en {online_row['map_name']})"
-                else:
-                    embed.description = "🔴 **Offline**"
-            except aiosqlite.OperationalError:
-                embed.description = "🔴 **Offline**"
-
-            # Formateo de tiempos básicos
-            hours = total_mins // 60
-            mins = total_mins % 60
-            
-            # Búsqueda de "Primera vez visto"
-            first_seen_str = "Desconocido"
-            if sessions:
-                try:
-                    first_date = min([datetime.strptime(s["start_time"], "%Y-%m-%d %H:%M:%S") for s in sessions if s["start_time"]])
-                    first_seen_str = first_date.strftime("%d/%m/%Y")
-                except Exception:
-                    pass
-
-            embed.add_field(
-                name="⏱️ Tiempo Total", value=f"{hours}h {mins}m", inline=True
-            )
-            embed.add_field(name="🗺️ Main Map", value=f"{main_map}", inline=True)
-            embed.add_field(
-                name="⏰ Hora Frecuente", value=f"{best_hour}:00", inline=True
-            )
-            
-            # Adición de KDA y Stats PvP
-            try:
-                cursor = await db.execute(
-                    "SELECT kills, deaths FROM tribe_kda WHERE player_name = ? AND guild_id = ?",
-                    (player_name, self.guild_id)
-                )
-                kda_row = await cursor.fetchone()
-                if kda_row:
-                    kills = kda_row["kills"]
-                    deaths = kda_row["deaths"]
-                    ratio = round(kills / deaths, 2) if deaths > 0 else kills
-                    embed.add_field(
-                        name="⚔️ Historial PvP", 
-                        value=f"**Kills:** {kills} | **Deaths:** {deaths}\n**K/D Ratio:** {ratio}", 
-                        inline=False
-                    )
-            except aiosqlite.OperationalError:
-                pass
-            
-            # Adición de Personajes (Alts) conocidos
-            try:
-                cursor = await db.execute(
-                    "SELECT character_name FROM tribe_characters WHERE player_name = ? AND guild_id = ?",
-                    (player_name, self.guild_id)
-                )
-                char_rows = await cursor.fetchall()
-                if char_rows:
-                    chars = ", ".join([f"`{c['character_name']}`" for c in char_rows])
-                    embed.add_field(
-                        name="🧑‍🤝‍🧑 Personajes Conocidos", 
-                        value=chars, 
-                        inline=False
-                    )
-            except aiosqlite.OperationalError:
-                pass
-
-            # Extracción de datos de Blacklist manual
-            try:
-                cursor = await db.execute(
-                    "SELECT tribe, notes FROM blacklist WHERE player = ? AND guild_id = ?",
-                    (player_name, self.guild_id),
-                )
-                bl_row = await cursor.fetchone()
-                if bl_row:
-                    embed.add_field(
-                        name="🏠 Tribu (Manual)",
-                        value=f"**{bl_row['tribe']}**",
-                        inline=True,
-                    )
-                    embed.add_field(
-                        name="📓 Extra (Notas)",
-                        value=bl_row["notes"] or "Ninguna",
-                        inline=True,
-                    )
-            except aiosqlite.OperationalError:
-                pass
-                
-            embed.set_footer(text=f"Primera vez visto: {first_seen_str}")
-
-            map_str = ""
-            for m in maps:
-                pct = int((m["m"] / total_mins) * 100)
-                map_str += f"**{m['map_name'][:4].upper()}** ({pct}%)\n"
-
-            if len(map_str) > 1024:
-                map_str = map_str[:1020] + "..."
-
-            embed.add_field(
-                name="Distribución de Servidores",
-                value=map_str or "No data",
-                inline=False,
-            )
-
-            try:
-                await interaction.followup.send(embed=embed, ephemeral=True)
-            except Exception as e:
-                logger.error(f"[K4Ultra] Error sending dropdown profile: {e}")
+        try:
+            embed = await build_player_detail_embed(self.bot, player_name, self.guild_id)
+            await interaction.followup.send(embed=embed, ephemeral=True)
+        except Exception as e:
+            logger.error(f"[K4Ultra] Error generating unified profile: {e}")
+            await interaction.followup.send(f"❌ Error al generar el perfil: {e}", ephemeral=True)
 
 
 class K4UltraView(discord.ui.View):

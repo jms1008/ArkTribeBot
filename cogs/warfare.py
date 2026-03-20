@@ -327,59 +327,51 @@ class DeleteBlacklistModal(discord.ui.Modal, title="Eliminar de Blacklist"):
 
 
 async def build_player_detail_embed(bot, player_name: str, guild_id: int) -> discord.Embed:
-    """Construye un embed detallado para un jugador, cruzando datos de Blacklist y K4Ultra."""
+    """Construye un embed detallado para un jugador, cruzando datos de Blacklist, K4Ultra y KDA."""
     embed = discord.Embed(
-        title=f"👤 Detalle de Jugador: {player_name}", color=discord.Color.dark_orange()
+        title=f"👤 Expediente: {player_name}", color=discord.Color.dark_orange()
     )
 
     async with aiosqlite.connect(bot.db_name) as db:
         db.row_factory = aiosqlite.Row
 
-        # 1. Datos de Blacklist
+        # --- 0. Alias y Identidad ---
+        cursor = await db.execute(
+            "SELECT alias FROM k4ultra_aliases WHERE player_name = ? AND guild_id = ?",
+            (player_name, guild_id),
+        )
+        alias_row = await cursor.fetchone()
+        if alias_row:
+            embed.title = f"👤 Expediente: {player_name} [{alias_row['alias']}]"
+
+        # --- 1. Datos de Blacklist ---
         cursor = await db.execute(
             "SELECT tribe, map, notes, created_at, last_seen, total_hours FROM blacklist WHERE player = ? AND guild_id = ? LIMIT 1",
             (player_name, guild_id,)
         )
-        row = await cursor.fetchone()
+        bl_row = await cursor.fetchone()
         
-        if not row:
-            embed.description = "Este jugador ya no está en la blacklist."
-            return embed
+        status_msg = "⚪ Registro Pasivo (K4Ultra)"
+        if bl_row:
+            status_msg = "🔴 Marcado en Blacklist (Enemigo)"
+            embed.color = discord.Color.red()
+            
+            notes_str = bl_row["notes"] if bl_row["notes"] else "Ninguna"
+            embed.add_field(name="🏠 Tribu", value=bl_row["tribe"] or "Desconocida", inline=True)
+            embed.add_field(name="🗺️ Mapa Origen", value=bl_row["map"] or "Desconocido", inline=True)
+            embed.add_field(name="📝 Notas", value=notes_str, inline=False)
+        else:
+            embed.description = "Este jugador no está en la blacklist manual."
 
-        notes_str = row["notes"] if row["notes"] else "Ninguna"
-        created_at_fmt = row["created_at"] if row["created_at"] else "Desconocida"
-        last_seen = row["last_seen"] if row["last_seen"] else "Nunca"
-        total_hours = row["total_hours"] if row["total_hours"] else 0.0
-
-        embed.add_field(name="🏠 Tribu", value=row["tribe"] or "Desconocida", inline=True)
-        embed.add_field(name="🗺️ Mapa Inicial", value=row["map"] or "Desconocido", inline=True)
-        embed.add_field(name="📅 Añadido", value=created_at_fmt, inline=True)
-        embed.add_field(
-            name="📝 Notas",
-            value=notes_str,
-            inline=False
-        )
-        embed.add_field(name="👀 Última vez visto", value=last_seen, inline=True)
-        embed.add_field(name="⏱️ Tiempo total", value=f"{total_hours:.1f} horas", inline=True)
-
-        # 2. Mapas de K4Ultra
+        # --- 2. Estadísticas de Juego (K4Ultra) ---
         cursor = await db.execute(
-            "SELECT map_name, sum(total_minutes) as m FROM k4ultra_playtime WHERE player_name = ? AND guild_id = ? GROUP BY map_name ORDER BY m DESC",
+            "SELECT SUM(total_minutes) as t_mins FROM k4ultra_playtime WHERE player_name = ? AND guild_id = ?",
             (player_name, guild_id,)
         )
-        maps = await cursor.fetchall()
-        
-        map_text = "Sin registros."
-        if maps:
-            map_list = []
-            for m in maps:
-                hours = m["m"] / 60
-                map_list.append(f"• **{m['map_name']}**: {hours:.1f}h")
-            map_text = "\n".join(map_list)
-        
-        embed.add_field(name="🌍 Actividad por Mapa (K4)", value=map_text, inline=False)
-        
-        # --- NUEVO: Estado Online Actual ---
+        playtime_row = await cursor.fetchone()
+        total_hours = (playtime_row["t_mins"] / 60) if playtime_row and playtime_row["t_mins"] else 0.0
+
+        # --- 3. Estado Online y Map Orbit ---
         cursor = await db.execute(
             "SELECT map_name, start_time FROM k4ultra_sessions WHERE player_name = ? AND is_active = 1 AND guild_id = ? LIMIT 1",
             (player_name, guild_id,)
@@ -388,62 +380,119 @@ async def build_player_detail_embed(bot, player_name: str, guild_id: int) -> dis
         
         if active_session:
             since = active_session["start_time"][11:16] if active_session["start_time"] else "?"
-            online_str = f"🟢 **Sí** (en {active_session['map_name']} desde {since})"
+            online_str = f"🟢 **En línea** (en {active_session['map_name']} desde {since})"
         else:
-            online_str = "🔴 **No**"
+            online_str = "🔴 **Desconectado**"
             
-        embed.add_field(name="🔌 Conectado Ahora", value=online_str, inline=True)
-        
-        # --- NUEVO: Frecuencia Horaria ---
+        embed.add_field(name="🔌 Estado Actual", value=online_str, inline=True)
+        embed.add_field(name="⏱️ Tiempo Total", value=f"{total_hours:.1f} horas", inline=True)
+
+        # Historial de Desplazamiento (Últimos 3 mapas)
         cursor = await db.execute(
-            """
-            SELECT strftime('%H', start_time) as hour, COUNT(*) as c 
-            FROM k4ultra_sessions 
-            WHERE player_name = ? AND start_time IS NOT NULL AND guild_id = ?
-            GROUP BY hour ORDER BY c DESC LIMIT 3
-            """,
+            "SELECT DISTINCT map_name FROM k4ultra_sessions WHERE player_name = ? AND guild_id = ? ORDER BY start_time DESC LIMIT 3",
             (player_name, guild_id,)
         )
-        hours = await cursor.fetchall()
-        
-        if hours:
-            # Mostramos las 3 horas más comunes de conexión en formato "HH:00"
-            hour_strings = [f"{h['hour']}:00" for h in hours if h["hour"]]
-            freq_str = ", ".join(hour_strings) if hour_strings else "Desconocida"
-        else:
-            freq_str = "Desconocida"
-            
-        embed.add_field(name="🕒 Frecuencia Conexión", value=freq_str, inline=True)
+        orbit_rows = await cursor.fetchall()
+        if orbit_rows:
+            orbit_str = " -> ".join([r["map_name"] for r in orbit_rows])
+            embed.add_field(name="🛰️ Órbita (Últimos Mapas)", value=f"`{orbit_str}`", inline=False)
 
-        # 3. Aliados de K4Ultra
+        # --- 4. Análisis Horario y Predicción ---
+        from datetime import datetime
+        now = datetime.now()
+        current_hour = now.hour
+        
+        cursor = await db.execute(
+            "SELECT strftime('%H', start_time) as h, COUNT(*) as c FROM k4ultra_sessions WHERE player_name = ? AND guild_id = ? GROUP BY h",
+            (player_name, guild_id,)
+        )
+        hour_data = await cursor.fetchall()
+        
+        total_sessions = sum(h["c"] for h in hour_data)
+        prob = 0
+        vulnerability_window = "Indeterminada"
+        
+        if total_sessions > 0:
+            # Predicción para la próxima hora
+            next_hour = (current_hour + 1) % 24
+            next_hour_str = f"{next_hour:02d}"
+            
+            matches = [h["c"] for h in hour_data if h["h"] == next_hour_str]
+            if matches:
+                prob = int((matches[0] / total_sessions) * 100)
+            
+            # Ventana de Vulnerabilidad (Bloque de 4 horas con menos actividad)
+            # Simplificado: buscar la hora con 0 sesiones
+            inactive_hours = []
+            recorded_hours = {int(h["h"]) for h in hour_data}
+            for i in range(24):
+                if i not in recorded_hours:
+                    inactive_hours.append(i)
+            
+            if inactive_hours:
+                # Buscar el bloque más largo de horas inactivas
+                vulnerability_window = "Madrugada / Variable"
+                if len(inactive_hours) >= 4:
+                    # Ejemplo: 03:00 - 07:00
+                    vulnerability_window = f"Entre {min(inactive_hours):02d}:00 y {max(inactive_hours):02d}:00"
+
+        embed.add_field(name="🕒 Ventana Vulnerable", value=vulnerability_window, inline=True)
+        embed.add_field(name="📈 Prob. Conexión (1h)", value=f"{prob}%", inline=True)
+
+        # --- 5. PVP y Alts ---
+        cursor = await db.execute(
+            "SELECT kills, deaths FROM tribe_kda WHERE player_name = ? AND guild_id = ?",
+            (player_name, guild_id)
+        )
+        kda_row = await cursor.fetchone()
+        kills, deaths, kda = 0, 0, 0.0
+        if kda_row:
+            kills = kda_row["kills"]
+            deaths = kda_row["deaths"]
+            kda = round(kills / deaths, 2) if deaths > 0 else float(kills)
+
+        cursor = await db.execute(
+            "SELECT character_name FROM tribe_characters WHERE player_name = ? AND guild_id = ?",
+            (player_name, guild_id)
+        )
+        chars = await cursor.fetchall()
+        chars_str = ", ".join([f"`{c['character_name']}`" for c in chars]) if chars else "Ninguno"
+
+        embed.add_field(
+            name="⚔️ Estadísticas PVP", 
+            value=f"**Kills:** {kills} | **Deaths:** {deaths} | **KDA:** {kda}", 
+            inline=False
+        )
+        embed.add_field(name="🧑‍🤝‍🧑 Alts / Personajes", value=chars_str, inline=False)
+
+        # --- 6. Grado de Peligro (1-5 💀) ---
+        threat = 1
+        if total_hours > 50:
+            threat += 1
+        if kda > 1.5:
+            threat += 1
+        if bl_row:
+            threat += 1
+        if kills > 10:
+            threat += 1
+        
+        threat_str = "💀" * threat + "▫️" * (5 - threat)
+        embed.add_field(name="🔥 Grado de Peligro", value=f"`{threat_str}`", inline=True)
+        embed.add_field(name="📑 Tipo de Registro", value=status_msg, inline=True)
+
+        # --- 7. Aliados ---
         cursor = await db.execute(
             """
-            SELECT player2 as ally, probability_score 
-            FROM k4ultra_relationships 
-            WHERE player1 = ? AND guild_id = ?
+            SELECT player2 as ally, probability_score FROM k4ultra_relationships WHERE player1 = ? AND guild_id = ?
             UNION
-            SELECT player1 as ally, probability_score 
-            FROM k4ultra_relationships 
-            WHERE player2 = ? AND guild_id = ?
+            SELECT player1 as ally, probability_score FROM k4ultra_relationships WHERE player2 = ? AND guild_id = ?
             ORDER BY probability_score DESC LIMIT 3
             """,
             (player_name, guild_id, player_name, guild_id,)
         )
         allies = await cursor.fetchall()
-        
-        ally_text = "Sin aliados conocidos."
-        if allies:
-            ally_list = []
-            for a in allies:
-                ally_list.append(f"• **{a['ally']}** ({a['probability_score']}%)")
-            ally_text = "\n".join(ally_list)
-
-        embed.add_field(name="🤝 Aliados en K4Ultra", value=ally_text, inline=False)
-        
-        # --- NUEVO: Advertencia Nombre Genérico ---
-        generic_names = ["123", "humano", "human", "survivor", "bob", "player"]
-        if player_name.lower() in generic_names:
-            embed.set_footer(text="⚠️ Nombre genérico. Datos mezclados de distintos jugadores.")
+        ally_text = "\n".join([f"• **{a['ally']}** ({a['probability_score']}%)" for a in allies]) if allies else "Sin aliados conocidos."
+        embed.add_field(name="🤝 Aliados Cercanos", value=ally_text, inline=False)
 
     return embed
 
