@@ -770,9 +770,14 @@ class ArkTribeBot(commands.Bot):
                     map_name TEXT,
                     start_time DATETIME,
                     end_time DATETIME,
-                    is_active INTEGER DEFAULT 1
+                    is_active INTEGER DEFAULT 1,
+                    last_duration INTEGER DEFAULT 0
                 )
             """)
+            try:
+                await db.execute("ALTER TABLE k4ultra_sessions ADD COLUMN last_duration INTEGER DEFAULT 0")
+            except Exception:
+                pass
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS k4ultra_tribe_names (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,

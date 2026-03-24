@@ -19,7 +19,7 @@ async def test_k4ultra_generic():
 
     async with aiosqlite.connect(bot.db_name) as db:
         await db.execute(
-            "CREATE TABLE IF NOT EXISTS k4ultra_sessions (id INTEGER PRIMARY KEY AUTOINCREMENT, player_name TEXT, map_name TEXT, start_time DATETIME, end_time DATETIME, is_active INTEGER DEFAULT 1)"
+            "CREATE TABLE IF NOT EXISTS k4ultra_sessions (id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id INTEGER, player_name TEXT, map_name TEXT, start_time DATETIME, end_time DATETIME, is_active INTEGER DEFAULT 1, last_duration INTEGER DEFAULT 0)"
         )
         # Insert historical data: 123 is offline, 123_1 is offline, 123_2 is offline
         now = datetime.now()

@@ -30,7 +30,7 @@ def mock_bot():
 
             async with aiosqlite.connect(self.db_name) as db:
                 await db.execute(
-                    "CREATE TABLE IF NOT EXISTS k4ultra_sessions (id INTEGER PRIMARY KEY AUTOINCREMENT, player_name TEXT, map_name TEXT, start_time DATETIME, end_time DATETIME, is_active INTEGER DEFAULT 1)"
+                    "CREATE TABLE IF NOT EXISTS k4ultra_sessions (id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id INTEGER, player_name TEXT, map_name TEXT, start_time DATETIME, end_time DATETIME, is_active INTEGER DEFAULT 1, last_duration INTEGER DEFAULT 0)"
                 )
                 await db.execute(
                     "CREATE TABLE IF NOT EXISTS k4ultra_players_log (id INTEGER PRIMARY KEY AUTOINCREMENT, player_name TEXT, map_name TEXT, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)"

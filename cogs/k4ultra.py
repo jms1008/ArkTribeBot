@@ -708,7 +708,7 @@ class K4Ultra(commands.Cog):
                         # Cargar la página actual para no perder foco
                         current_embed = message.embeds[0] if message.embeds else None
                         use_page_index = 0
-                        if current_embed and "Tribus" in current_embed.title:
+                        if current_embed and current_embed.title and "Tribus" in current_embed.title:
                             use_page_index = 1
                             
                         await message.edit(embed=pages[use_page_index], view=view)
