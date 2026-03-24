@@ -80,11 +80,11 @@ class Admin(commands.Cog):
 
         k_cog = self.bot.get_cog("K4Ultra")
         if k_cog:
-            embed, top_players = await k_cog.generate_k4ultra_embed(
+            pages, top_players, k4_aliases = await k_cog.generate_k4ultra_embed(
                 interaction.guild_id
             )
-            view = K4UltraView(self.bot, interaction.guild_id, top_players)
-            await message.edit(embed=embed, view=view)
+            view = K4UltraView(self.bot, interaction.guild_id, top_players, k4_aliases)
+            await message.edit(embed=pages[0], view=view)
 
         await interaction.response.send_message(
             f"✅ Mensaje `{message_id}` del canal `<#{ch_id_int}>` asociado a K4Ultra con éxito.",
@@ -595,13 +595,13 @@ class Admin(commands.Cog):
 
                 k_cog = self.bot.get_cog("K4Ultra")
                 if k_cog:
-                    embed_k, top_players_k = await k_cog.generate_k4ultra_embed(
+                    pages_k, top_players_k, k4_aliases_k = await k_cog.generate_k4ultra_embed(
                         interaction.guild_id
                     )
                     view_k = __import__(
                         "cogs.k4ultra", fromlist=["K4UltraView"]
-                    ).K4UltraView(self.bot, interaction.guild_id, top_players_k)
-                    msg = await canal_k4ultra.send(embed=embed_k, view=view_k)
+                    ).K4UltraView(self.bot, interaction.guild_id, top_players_k, k4_aliases_k)
+                    msg = await canal_k4ultra.send(embed=pages_k[0], view=view_k)
                     await asyncio.sleep(0.5)
 
                     async with aiosqlite.connect(self.bot.db_name) as db:

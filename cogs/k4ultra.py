@@ -136,14 +136,20 @@ class RenameTribeModal(discord.ui.Modal, title="Asignar Nombre a Tribu"):
 
 
 class PlayerSelectMenu(discord.ui.Select):
-    def __init__(self, bot, guild_id: int, players):
+    def __init__(self, bot, guild_id: int, players, aliases=None):
         self.bot = bot
         self.guild_id = guild_id
+        if aliases is None:
+            aliases = {}
         options = []
         for i, p in enumerate(players[:25]):
+            alias_desc = f"Alias: {aliases[p]}" if p in aliases else "Ver detalles y horarios"
+            label = f"{p} [{aliases[p]}]" if p in aliases else p
+            if len(label) > 100:
+                label = label[:97] + "..."
             options.append(
                 discord.SelectOption(
-                    label=p, description="Ver detalles y horarios", value=p
+                    label=label, description=alias_desc, value=p
                 )
             )
         if not options:
@@ -172,13 +178,13 @@ class PlayerSelectMenu(discord.ui.Select):
 
 
 class K4UltraView(discord.ui.View):
-    def __init__(self, bot, guild_id: int, top_players=None):
+    def __init__(self, bot, guild_id: int, top_players=None, aliases=None):
         super().__init__(timeout=None)
         self.bot = bot
         self.guild_id = guild_id
         if top_players is None:
             top_players = []
-        self.add_item(PlayerSelectMenu(bot, guild_id, top_players))
+        self.add_item(PlayerSelectMenu(bot, guild_id, top_players, aliases))
 
     @discord.ui.button(
         label="Añadir Relación",
@@ -215,6 +221,40 @@ class K4UltraView(discord.ui.View):
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
         await interaction.response.send_modal(RenameTribeModal(self.bot))
+
+    @discord.ui.button(
+        label="◀️",
+        style=discord.ButtonStyle.secondary,
+        custom_id="k4ultra_prev_page",
+        row=2,
+    )
+    async def prev_page_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._flip_page(interaction)
+
+    @discord.ui.button(
+        label="▶️",
+        style=discord.ButtonStyle.secondary,
+        custom_id="k4ultra_next_page",
+        row=2,
+    )
+    async def next_page_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._flip_page(interaction)
+
+    async def _flip_page(self, interaction: discord.Interaction):
+        k_cog = self.bot.get_cog("K4Ultra")
+        if not k_cog:
+            await interaction.response.send_message("Módulo no disponible.", ephemeral=True)
+            return
+
+        pages, top_players, aliases = await k_cog.generate_k4ultra_embed(self.guild_id)
+
+        is_page_1 = True
+        if interaction.message.embeds and "Tribus" in interaction.message.embeds[0].title:
+            is_page_1 = False
+
+        new_embed = pages[1] if is_page_1 else pages[0]
+        view = K4UltraView(self.bot, self.guild_id, top_players, aliases)
+        await interaction.response.edit_message(embed=new_embed, view=view)
 
 
 class K4Ultra(commands.Cog):
@@ -274,19 +314,25 @@ class K4Ultra(commands.Cog):
         all_fetched = []
         for guild_id, map_name, players in results:
             for p in players:
-                all_fetched.append({"guild_id": guild_id, "map": map_name, "raw_name": p["name"]})
+                all_fetched.append({"guild_id": guild_id, "map": map_name, "raw_name": p["name"], "duration": p["duration"]})
 
         async with aiosqlite.connect(self.bot.db_name) as db:
             db.row_factory = aiosqlite.Row
 
             cursor = await db.execute(
-                "SELECT id, player_name, map_name, guild_id, start_time, end_time FROM k4ultra_sessions WHERE is_active = 1"
+                "SELECT id, player_name, map_name, guild_id, start_time, end_time, last_duration FROM k4ultra_sessions WHERE is_active = 1"
             )
             active_pool = [dict(s) for s in await cursor.fetchall()]
 
+            # Migración: añadir columna last_duration si no existe
+            try:
+                await db.execute("ALTER TABLE k4ultra_sessions ADD COLUMN last_duration REAL DEFAULT 0")
+            except Exception:
+                pass
+
             ten_mins_ago = (now - timedelta(minutes=10)).strftime("%Y-%m-%d %H:%M:%S")
             cursor = await db.execute(
-                "SELECT id, player_name, map_name, guild_id, start_time, end_time FROM k4ultra_sessions WHERE is_active = 0 AND end_time >= ? ORDER BY end_time DESC",
+                "SELECT id, player_name, map_name, guild_id, start_time, end_time, last_duration FROM k4ultra_sessions WHERE is_active = 0 AND end_time >= ? ORDER BY end_time DESC",
                 (ten_mins_ago,),
             )
             recent_closed_pool = [dict(s) for s in await cursor.fetchall()]
@@ -313,8 +359,8 @@ class K4Ultra(commands.Cog):
                             fp["true_identity"] = true_identity
                             seen_identities.add(sid)
                             await db.execute(
-                                "UPDATE k4ultra_sessions SET end_time = ? WHERE id = ?",
-                                (now.strftime("%Y-%m-%d %H:%M:%S"), sid),
+                                "UPDATE k4ultra_sessions SET end_time = ?, last_duration = ? WHERE id = ?",
+                                (now.strftime("%Y-%m-%d %H:%M:%S"), fp.get("duration", 0), sid),
                             )
                             fp["matched"] = True
                             break
@@ -345,12 +391,12 @@ class K4Ultra(commands.Cog):
                 if is_generic:
                     # Recuperación de sesiones inactivas bajo el mismo nombre base
                     cursor = await db.execute(
-                        "SELECT id, player_name, map_name, guild_id, start_time, end_time FROM k4ultra_sessions WHERE is_active = 0 AND player_name LIKE ? AND guild_id = ? ORDER BY end_time DESC",
+                        "SELECT id, player_name, map_name, guild_id, start_time, end_time, last_duration FROM k4ultra_sessions WHERE is_active = 0 AND player_name LIKE ? AND guild_id = ? ORDER BY end_time DESC",
                         (f"{raw_name}_%", fp["guild_id"]),
                     )
                     # Inclusión del propio nombre base si constaba inactivo
                     cursor2 = await db.execute(
-                        "SELECT id, player_name, map_name, guild_id, start_time, end_time FROM k4ultra_sessions WHERE is_active = 0 AND player_name = ? AND guild_id = ? ORDER BY end_time DESC",
+                        "SELECT id, player_name, map_name, guild_id, start_time, end_time, last_duration FROM k4ultra_sessions WHERE is_active = 0 AND player_name = ? AND guild_id = ? ORDER BY end_time DESC",
                         (raw_name, fp["guild_id"]),
                     )
 
@@ -375,13 +421,44 @@ class K4Ultra(commands.Cog):
                             }
                             generic_inactive.append(dummy_inactive)
 
-                    # Ordenación descendente por tiempo límite para reutilización
-                    generic_inactive.sort(key=lambda x: x["end_time"], reverse=True)
+                    # --- Heurística de duración A2S para desambiguación ---
+                    # A2S reporta cuántos segundos lleva el jugador en el servidor.
+                    # Si la duración A2S es corta (<15 min) y una sesión cerró hace poco,
+                    # es probable que sea el MISMO jugador reconectando.
+                    # Si la duración A2S es larga pero no coincide con ningún historial,
+                    # probablemente es un jugador DIFERENTE.
+                    a2s_duration = fp.get("duration", 0)  # segundos
 
-                    # Priorización del nombre base sobre los variantes ante colisiones
-                    # Ordenación secundaria por menor longitud
+                    def duration_score(session):
+                        """Puntuación de compatibilidad entre duración A2S y sesión histórica."""
+                        last_dur = session.get("last_duration", 0) or 0
+                        end_t = session.get("end_time", "")
+                        if not end_t:
+                            return 0
+                        try:
+                            end_dt = datetime.strptime(end_t, "%Y-%m-%d %H:%M:%S")
+                            gap_secs = (now - end_dt).total_seconds()
+                        except (ValueError, TypeError):
+                            gap_secs = 9999
+
+                        score = 0
+                        # Si A2S reporta <15 min y la sesión cerró hace poco (<15 min),
+                        # es muy probable que sea reconexion del mismo jugador
+                        if a2s_duration < 900 and gap_secs < 900:
+                            score += 10
+                        # Si A2S reporta duración larga y la sesión tenía duración similar,
+                        # probablemente es el mismo jugador (A2S mantiene el timer)
+                        elif last_dur > 0 and a2s_duration > 900:
+                            diff_ratio = abs(a2s_duration - last_dur) / max(last_dur, 1)
+                            if diff_ratio < 0.3:  # Menos del 30% de diferencia
+                                score += 8
+                        # Bonificación por cierre reciente (indica reconexion)
+                        if gap_secs < 600:
+                            score += 3
+                        return score
+
                     generic_inactive.sort(
-                        key=lambda x: (x["end_time"], -len(x["player_name"])),
+                        key=lambda x: (duration_score(x), x["end_time"]),
                         reverse=True,
                     )
 
@@ -396,13 +473,14 @@ class K4Ultra(commands.Cog):
                         true_identity = s["player_name"]
                         # Creación de nueva sesión tras salto o reconexión
                         cursor = await db.execute(
-                            "INSERT INTO k4ultra_sessions (player_name, map_name, guild_id, start_time, end_time, is_active) VALUES (?, ?, ?, ?, ?, 1)",
+                            "INSERT INTO k4ultra_sessions (player_name, map_name, guild_id, start_time, end_time, is_active, last_duration) VALUES (?, ?, ?, ?, ?, 1, ?)",
                             (
                                 true_identity,
                                 map_m,
                                 fp["guild_id"],
                                 now.strftime("%Y-%m-%d %H:%M:%S"),
                                 now.strftime("%Y-%m-%d %H:%M:%S"),
+                                fp.get("duration", 0),
                             ),
                         )
                         new_id = cursor.lastrowid
@@ -450,13 +528,14 @@ class K4Ultra(commands.Cog):
                         true_identity = raw_name
 
                     cursor = await db.execute(
-                        "INSERT INTO k4ultra_sessions (player_name, map_name, guild_id, start_time, end_time, is_active) VALUES (?, ?, ?, ?, ?, 1)",
+                        "INSERT INTO k4ultra_sessions (player_name, map_name, guild_id, start_time, end_time, is_active, last_duration) VALUES (?, ?, ?, ?, ?, 1, ?)",
                         (
                             true_identity,
                             map_m,
                             fp["guild_id"],
                             now.strftime("%Y-%m-%d %H:%M:%S"),
                             now.strftime("%Y-%m-%d %H:%M:%S"),
+                            fp.get("duration", 0),
                         ),
                     )
                     new_id = cursor.lastrowid
@@ -611,7 +690,7 @@ class K4Ultra(commands.Cog):
                     channel_id = row["channel_id"]
                     message_id = row["message_id"]
 
-                    new_embed, top_players = await self.generate_k4ultra_embed(guild_id)
+                    pages, top_players, k4_aliases = await self.generate_k4ultra_embed(guild_id)
 
                     try:
                         channel = self.bot.get_channel(
@@ -624,8 +703,15 @@ class K4Ultra(commands.Cog):
                         message = await channel.fetch_message(message_id)
 
                         # Reconexión de la vista interactiva (View) del Embed
-                        view = K4UltraView(self.bot, guild_id, top_players)
-                        await message.edit(embed=new_embed, view=view)
+                        view = K4UltraView(self.bot, guild_id, top_players, k4_aliases)
+                        
+                        # Cargar la página actual para no perder foco
+                        current_embed = message.embeds[0] if message.embeds else None
+                        use_page_index = 0
+                        if current_embed and "Tribus" in current_embed.title:
+                            use_page_index = 1
+                            
+                        await message.edit(embed=pages[use_page_index], view=view)
                     except discord.NotFound:
                         messages_to_remove.append(row_id)
                     except discord.Forbidden:
@@ -679,6 +765,16 @@ class K4Ultra(commands.Cog):
                 )
             except Exception:
                 pass
+
+            # --- Decaimiento diario de relaciones (5% por día) ---
+            # Aplicar ANTES de calcular nuevos puntos para que relaciones inactivas pierdan fuerza
+            await db.execute(
+                "UPDATE k4ultra_relationships SET probability_score = CAST(probability_score * 0.95 AS INTEGER) WHERE is_manual = 0"
+            )
+            # Limpieza de relaciones residuales con puntuación insignificante
+            await db.execute(
+                "DELETE FROM k4ultra_relationships WHERE probability_score < 2 AND is_manual = 0"
+            )
 
             # Extracción de todos los gremios configurados
             cursor = await db.execute("SELECT guild_id FROM guild_config")
@@ -766,16 +862,16 @@ class K4Ultra(commands.Cog):
                                         )
                                         add_mins(p1, p2, mins)
 
-                        # Regla C: Sincronía en Login/Logout (margen <= 10 mins)
-                        if (
+                        # Regla C: Sincronía en Login Y Logout (margen <= 3 mins, ambas condiciones)
+                        login_sync = (
                             abs((s1_list[0]["st"] - s2_list[0]["st"]).total_seconds())
-                            <= 600
-                        ):
-                            add_points(p1, p2, 2)
-                        if (
+                            <= 180
+                        )
+                        logout_sync = (
                             abs((s1_list[-1]["et"] - s2_list[-1]["et"]).total_seconds())
-                            <= 600
-                        ):
+                            <= 180
+                        )
+                        if login_sync and logout_sync:
                             add_points(p1, p2, 2)
 
                         # Regla B: Transferencias simultáneas (margen <= 5 mins)
@@ -881,7 +977,8 @@ class K4Ultra(commands.Cog):
                     )
                     if not await cursor.fetchone():
                         # Generación de Embed para guardado en Snapshot
-                        embed, _ = await self.generate_k4ultra_embed(g_id)
+                        pages, _ , _a = await self.generate_k4ultra_embed(g_id)
+                        embed = pages[0]
                         embed.title = (
                             f"🌐 Tracker de Jugadores K4Ultra - Semana {current_week}"
                         )
@@ -897,10 +994,12 @@ class K4Ultra(commands.Cog):
                         )
                         await db.commit()
 
-    async def generate_k4ultra_embed(self, guild_id: int) -> tuple[discord.Embed, list]:
-        embed = discord.Embed(
-            title="🌐 Tracker de Jugadores K4Ultra", color=discord.Color.purple()
-        )
+    async def generate_k4ultra_embed(self, guild_id: int) -> tuple[list, list, dict]:
+        """Genera páginas de embeds para K4Ultra.
+        Página 1: Jugadores conectados + Ranking global.
+        Página 2: Tribus fijadas + Grupos dinámicos.
+        Retorna: (pages_list, top_player_names, aliases)
+        """
         top_player_names = []
 
         async with aiosqlite.connect(self.bot.db_name) as db:
@@ -922,27 +1021,59 @@ class K4Ultra(commands.Cog):
                     {"map": row["map_name"], "mins": row["total_minutes"]}
                 )
 
-            # Aplicación de Alias y Nombres de Tribu Personalizados
-            # Moved further down the code, logic is fine.
+            # Obtención de alias para mostrar nombres legibles
+            aliases = {}
+            try:
+                cursor = await db.execute(
+                    "SELECT player_name, alias FROM k4ultra_aliases WHERE guild_id = ?",
+                    (guild_id,)
+                )
+                aliases = {r['player_name']: r['alias'] for r in await cursor.fetchall()}
+            except aiosqlite.OperationalError:
+                pass
 
-            # Obtención de jugadores conectados en este instante para este servidor
+            # Obtención de jugadores conectados
             cursor = await db.execute(
-                "SELECT player_name FROM k4ultra_sessions WHERE is_active = 1 AND guild_id = ?",
+                "SELECT player_name, map_name, start_time FROM k4ultra_sessions WHERE is_active = 1 AND guild_id = ?",
                 (guild_id,)
             )
             active_sessions = await cursor.fetchall()
             active_players = {s["player_name"] for s in active_sessions}
 
-            # Obtención de alias (funcionalidad base)
+            # ═══════════ PÁGINA 1: Radar en Vivo ═══════════
+            page1 = discord.Embed(
+                title="🌐 Tracker K4Ultra — Radar en Vivo",
+                color=discord.Color.purple(),
+            )
 
-            sorted_players = sorted(p_totals.items(), key=lambda x: x[1], reverse=True)[
-                :25
-            ]
+            # Sección: Jugadores Conectados Ahora
+            if active_sessions:
+                online_lines = []
+                for s in active_sessions:
+                    p_name = s["player_name"]
+                    alias_tag = f" [{aliases[p_name]}]" if p_name in aliases else ""
+                    since = s["start_time"][11:16] if s["start_time"] else "?"
+                    online_lines.append(f"🟢 **{p_name}{alias_tag}** — {s['map_name']} (desde {since})")
+                online_text = "\n".join(online_lines)
+                if len(online_text) > 900:
+                    online_text = online_text[:897] + "..."
+                page1.add_field(name=f"📡 En Línea Ahora ({len(active_sessions)})", value=online_text, inline=False)
+            else:
+                page1.add_field(name="📡 En Línea Ahora", value="Ningún jugador conectado.", inline=False)
+
+            # Sección: Ranking Global
+            sorted_players = sorted(p_totals.items(), key=lambda x: x[1], reverse=True)[:25]
+
+            map_acronyms = {
+                "Aberration": "Aber", "Crystal Isles": "Crys", "Extinction": "Exti",
+                "Fjordur": "Fjor", "Gen1": "Gen1", "Gen2": "Gen2", "Hub": "Hub ",
+                "Lost Island": "Lost", "Ragnarok": "Ragn", "Scorched Earth": "Scor",
+                "The Center": "Cent", "The Island": "Isla", "Valguero": "Valg",
+            }
 
             players_text = ""
             for p_name, total_m in sorted_players:
                 top_player_names.append(p_name)
-                # Límite visual de 15 jugadores (25 para Select Menu interactivo)
                 if len(top_player_names) <= 15:
                     h = total_m // 60
                     m = total_m % 60
@@ -952,71 +1083,44 @@ class K4Ultra(commands.Cog):
                     maps_for_p.sort(key=lambda x: x["mins"], reverse=True)
 
                     map_str_list = []
-
-                    map_acronyms = {
-                        "Aberration": "Aber",
-                        "Crystal Isles": "Crys",
-                        "Extinction": "Exti",
-                        "Fjordur": "Fjor",
-                        "Gen1": "Gen1",
-                        "Gen2": "Gen2",
-                        "Hub": "Hub ",
-                        "Lost Island": "Lost",
-                        "Ragnarok": "Ragn",
-                        "Scorched Earth": "Scor",
-                        "The Center": "Cent",
-                        "The Island": "Isla",
-                        "Valguero": "Valg",
-                    }
-
                     for mm in maps_for_p:
                         pct = int((mm["mins"] / total_m) * 100) if total_m > 0 else 0
                         if pct > 0:
-                            # Búsqueda de acrónimo en diccionario o formateo por defecto
                             raw_map = mm["map"]
-                            acronym = map_acronyms.get(
-                                raw_map, raw_map.replace(" ", "")[:4].capitalize()
-                            )
+                            acronym = map_acronyms.get(raw_map, raw_map.replace(" ", "")[:4].capitalize())
                             map_str_list.append(f"*{pct}% {acronym}*")
 
                     map_joined = ", ".join(map_str_list)
-                    # Identificador visual de jugador en línea
                     online_marker = "🟢 " if p_name in active_players else ""
-                    players_text += (
-                        f"- **{online_marker}{p_name}** ⏱️ {time_str}: {map_joined}\n"
-                    )
+                    alias_tag = f" [{aliases[p_name]}]" if p_name in aliases else ""
+                    players_text += f"- **{online_marker}{p_name}{alias_tag}** ⏱️ {time_str}: {map_joined}\n"
 
             if players_text:
-                # Fragmentación segura de texto para evasión de límite de 1024 caracteres
                 chunks = []
                 while len(players_text) > 900:
-                    # Localización de salto de línea ideal (límite de 900 caracteres)
                     break_point = players_text.rfind("\n", 0, 900)
                     if break_point == -1:
                         break_point = 900
                     else:
-                        break_point += 1  # Inclusión del salto de línea
+                        break_point += 1
                     chunks.append(players_text[:break_point])
                     players_text = players_text[break_point:]
-
                 if players_text:
                     chunks.append(players_text)
-
                 for idx, chunk in enumerate(chunks):
-                    name = (
-                        "🏆 Top Jugadores (Global)"
-                        if idx == 0
-                        else f"🏆 Top Jugadores (v{idx + 1})"
-                    )
-                    embed.add_field(name=name, value=chunk, inline=False)
+                    name = "🏆 Top Jugadores (Global)" if idx == 0 else f"🏆 Top Jugadores (v{idx + 1})"
+                    page1.add_field(name=name, value=chunk, inline=False)
             else:
-                embed.add_field(
-                    name="🏆 Top Jugadores (Global)",
-                    value="No hay datos suficientes aún.",
-                    inline=False,
-                )
+                page1.add_field(name="🏆 Top Jugadores (Global)", value="No hay datos suficientes aún.", inline=False)
 
-            # Consulta de Tribus Fijas para este servidor
+            page1.set_footer(text="Página 1/2 — Usa ◀️ ▶️ para navegar")
+
+            # ═══════════ PÁGINA 2: Tribus y Grupos ═══════════
+            page2 = discord.Embed(
+                title="🌐 Tracker K4Ultra — Tribus y Grupos",
+                color=discord.Color.dark_purple(),
+            )
+
             cursor = await db.execute(
                 "SELECT name, members_json FROM k4ultra_fixed_tribes WHERE guild_id = ?",
                 (guild_id,)
@@ -1030,9 +1134,8 @@ class K4Ultra(commands.Cog):
                 for m in members:
                     fixed_players.add(m)
 
-            # Consulta de Relaciones Dinámicas Calculadas para este servidor
             cursor = await db.execute(
-                "SELECT player1, player2 FROM k4ultra_relationships WHERE (probability_score >= 10 OR is_manual = 1) AND guild_id = ?",
+                "SELECT player1, player2 FROM k4ultra_relationships WHERE ((probability_score >= 25 AND shared_minutes >= 60) OR is_manual = 1) AND guild_id = ?",
                 (guild_id,)
             )
             rels = await cursor.fetchall()
@@ -1040,7 +1143,6 @@ class K4Ultra(commands.Cog):
             adjacency = {}
             for r in rels:
                 p1, p2 = r["player1"], r["player2"]
-                # Exclusión de jugadores de Tribus Fijas en algoritmos dinámicos
                 if p1 in fixed_players or p2 in fixed_players:
                     continue
                 if p1 not in adjacency:
@@ -1052,7 +1154,6 @@ class K4Ultra(commands.Cog):
 
             visited = set()
             dynamic_tribes = []
-
             for node in adjacency:
                 if node not in visited:
                     cluster = set()
@@ -1065,40 +1166,27 @@ class K4Ultra(commands.Cog):
                             if neighbor not in visited:
                                 visited.add(neighbor)
                                 queue.append(neighbor)
-
                     if len(cluster) > 1:
                         dynamic_tribes.append(list(cluster))
-
             dynamic_tribes.sort(key=len, reverse=True)
 
             rels_text = ""
-
-            # Representación visual de Tribus Fijas (prioritario)
             for fr in fixed_rows:
                 tribe_name = fr["name"]
                 members = json.loads(fr["members_json"])
                 if not members:
                     continue
-                tribe_str = ", ".join(members)
-
+                tribe_str = ", ".join(f"{m} [{aliases[m]}]" if m in aliases else m for m in members)
                 placeholders = ", ".join(["?"] * len(members))
-                cursor = await db.execute(
-                    f"""
+                cursor = await db.execute(f"""
                     SELECT map_name, SUM(total_minutes) as tribe_mins
-                    FROM k4ultra_playtime
-                    WHERE player_name IN ({placeholders})
-                    GROUP BY map_name
-                    ORDER BY tribe_mins DESC
-                    LIMIT 1
-                """,
-                    list(members),
-                )
+                    FROM k4ultra_playtime WHERE player_name IN ({placeholders})
+                    GROUP BY map_name ORDER BY tribe_mins DESC LIMIT 1
+                """, list(members))
                 map_row = await cursor.fetchone()
                 map_info = f" | 🗺️ {map_row['map_name']}" if map_row else ""
-
                 rels_text += f"**{tribe_name}** [🛡️ Fijada] ({len(members)}){map_info}\n└ {tribe_str}\n"
 
-            # Representación visual de Tribus Dinámicas calculadas
             for i, tribe in enumerate(dynamic_tribes[:8]):
                 if not tribe:
                     continue
@@ -1112,30 +1200,19 @@ class K4Ultra(commands.Cog):
                     if cname_row:
                         custom_name = cname_row["custom_name"]
                         break
-
                 tribe_label = custom_name if custom_name else f"Grupo {i + 1}"
-                tribe_str = ", ".join(tribe)
-                if len(tribe_str) > 100:
-                    tribe_str = tribe_str[:97] + "..."
-
+                tribe_str = ", ".join(f"{m} [{aliases[m]}]" if m in aliases else m for m in tribe)
+                if len(tribe_str) > 150:
+                    tribe_str = tribe_str[:147] + "..."
                 placeholders = ", ".join(["?"] * len(tribe))
-                cursor = await db.execute(
-                    f"""
+                cursor = await db.execute(f"""
                     SELECT map_name, SUM(total_minutes) as tribe_mins
-                    FROM k4ultra_playtime
-                    WHERE player_name IN ({placeholders}) AND guild_id = ?
-                    GROUP BY map_name
-                    ORDER BY tribe_mins DESC
-                    LIMIT 1
-                """,
-                    list(tribe) + [guild_id],
-                )
+                    FROM k4ultra_playtime WHERE player_name IN ({placeholders}) AND guild_id = ?
+                    GROUP BY map_name ORDER BY tribe_mins DESC LIMIT 1
+                """, list(tribe) + [guild_id])
                 map_row = await cursor.fetchone()
-
                 map_info = f" | 🗺️ {map_row['map_name']}" if map_row else ""
-                rels_text += (
-                    f"**{tribe_label}** ({len(tribe)}){map_info}\n└ {tribe_str}\n"
-                )
+                rels_text += f"**{tribe_label}** ({len(tribe)}){map_info}\n└ {tribe_str}\n"
 
             if len(dynamic_tribes) > 8:
                 rels_text += f"*... y {len(dynamic_tribes) - 8} grupos más*\n"
@@ -1150,27 +1227,18 @@ class K4Ultra(commands.Cog):
                         break_point += 1
                     chunks.append(rels_text[:break_point])
                     rels_text = rels_text[break_point:]
-
                 if rels_text:
                     chunks.append(rels_text)
-
                 for idx, chunk in enumerate(chunks):
-                    name = (
-                        "🔗 Posibles Tribus / Grupos"
-                        if idx == 0
-                        else f"🔗 Tribus / Grupos (v{idx + 1})"
-                    )
-                    embed.add_field(name=name, value=chunk, inline=False)
+                    name = "🔗 Posibles Tribus / Grupos" if idx == 0 else f"🔗 Tribus / Grupos (v{idx + 1})"
+                    page2.add_field(name=name, value=chunk, inline=False)
             else:
-                embed.add_field(
-                    name="🔗 Posibles Tribus / Grupos",
-                    value="No se han detectado grupos de momento.",
-                    inline=False,
-                )
+                page2.add_field(name="🔗 Posibles Tribus / Grupos", value="No se han detectado grupos de momento.", inline=False)
 
-            embed.set_footer(text="Información y grupos calculados automáticamente.")
+            page2.set_footer(text="Página 2/2 — Usa ◀️ ▶️ para navegar")
 
-        return embed, top_player_names
+        pages = [page1, page2]
+        return pages, top_player_names, aliases
 
     @app_commands.command(
         name="k4ultra",
@@ -1212,14 +1280,14 @@ class K4Ultra(commands.Cog):
         else:
             # Visualización de estadísticas en vivo y guardado como mensaje persistente
             await interaction.response.defer(ephemeral=False)
-            embed, top_players = await self.generate_k4ultra_embed(interaction.guild_id)
-            view = K4UltraView(self.bot, interaction.guild_id, top_players)
+            pages, top_players, k4_aliases = await self.generate_k4ultra_embed(interaction.guild_id)
+            view = K4UltraView(self.bot, interaction.guild_id, top_players, k4_aliases)
 
             try:
-                message = await interaction.followup.send(embed=embed, view=view)
+                message = await interaction.followup.send(embed=pages[0], view=view)
             except discord.HTTPException as e:
                 logger.error(f"[K4Ultra Debug] HTTPException on send: {e}")
-                logger.error(f"[K4Ultra Debug] Embed payload: {embed.to_dict()}")
+                logger.error(f"[K4Ultra Debug] Embed payload: {pages[0].to_dict()}")
                 raise e
 
             async with aiosqlite.connect(self.bot.db_name) as db:

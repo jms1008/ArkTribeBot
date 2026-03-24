@@ -34,8 +34,8 @@ async def test_fetch_server_players_success(k4ultra_cog):
 
     with patch("cogs.k4ultra.a2s.players", return_value=mock_response):
         # A2s players is synchronous but wrapped in to_thread, so we patch the sync function
-        mapa, valid_players = await k4ultra_cog.fetch_server_players(
-            mapa_prueba, "127.0.0.1", 21000
+        gid, mapa, valid_players = await k4ultra_cog.fetch_server_players(
+            12345, mapa_prueba, "127.0.0.1", 21000
         )
 
         assert mapa == mapa_prueba
@@ -55,8 +55,8 @@ async def test_fetch_server_players_timeout(k4ultra_cog):
 
     # We patch a2s.players to raise asyncio.TimeoutError directly since it is what wait_for does internally when blocked
     with patch("cogs.k4ultra.a2s.players", side_effect=asyncio.TimeoutError("Timeout")):
-        mapa, valid_players = await k4ultra_cog.fetch_server_players(
-            "Aberration", "127.0.0.1", 21000
+        gid, mapa, valid_players = await k4ultra_cog.fetch_server_players(
+            12345, "Aberration", "127.0.0.1", 21000
         )
         assert mapa == "Aberration"
         assert len(valid_players) == 0  # No crashea, devuelve lista vacía
@@ -76,8 +76,8 @@ async def test_generate_k4ultra_embed(k4ultra_cog, mock_bot, mocker):
     ]
     mock_db.return_value.execute.return_value = mock_execute
 
-    embed, messages_to_remove = await k4ultra_cog.generate_k4ultra_embed(123456)
+    pages, top_players, aliases = await k4ultra_cog.generate_k4ultra_embed(123456)
 
-    assert embed is not None
-    assert type(messages_to_remove) is list
-    assert "TRACKER" in embed.title.upper()
+    assert pages is not None
+    assert len(pages) == 2
+    assert "TRACKER" in pages[0].title.upper()
