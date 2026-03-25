@@ -720,10 +720,12 @@ class K4Ultra(commands.Cog):
                         if use_page_index >= len(pages):
                             use_page_index = len(pages) - 1 if pages else 0
 
-                        # Reconexión de la vista interactiva (View) del Embed
-                        view = K4UltraView(self.bot, guild_id, top_players, k4_aliases, pages=pages, current_page=use_page_index, mode=mode)
-                            
-                        await message.edit(embed=pages[use_page_index], view=view)
+                        if mode == "tribus":
+                            await message.edit(embed=pages[0], view=None)
+                        else:
+                            # Reconexión de la vista interactiva (View) del Embed
+                            view = K4UltraView(self.bot, guild_id, top_players, k4_aliases, pages=pages, current_page=use_page_index, mode=mode)
+                            await message.edit(embed=pages[use_page_index], view=view)
                     except discord.NotFound:
                         messages_to_remove.append(row_id)
                     except discord.Forbidden:
@@ -1280,10 +1282,13 @@ class K4Ultra(commands.Cog):
             # Visualización de estadísticas en vivo y guardado como mensaje persistente
             await interaction.response.defer(ephemeral=False)
             pages, top_players, k4_aliases = await self.generate_k4ultra_embed(interaction.guild_id, modo)
-            view = K4UltraView(self.bot, interaction.guild_id, top_players, k4_aliases, pages=pages)
+            view = K4UltraView(self.bot, interaction.guild_id, top_players, k4_aliases, pages=pages) if modo != "tribus" else None
 
             try:
-                message = await interaction.followup.send(embed=pages[0], view=view)
+                if view:
+                    message = await interaction.followup.send(embed=pages[0], view=view)
+                else:
+                    message = await interaction.followup.send(embed=pages[0])
             except discord.HTTPException as e:
                 logger.error(f"[K4Ultra Debug] HTTPException on send: {e}")
                 logger.error(f"[K4Ultra Debug] Embed payload: {pages[0].to_dict()}")
