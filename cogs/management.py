@@ -400,15 +400,17 @@ Monitorea en tiempo real si los servidores están online, quién está conectado
 
 K4Ultra monitoriza de forma pasiva las redes para calcular el comportamiento y sesiones enemigas.
 
-### :satellite: Panel Global
-- **/k4ultra**: Levanta el panel principal. Muestra la clasificación de horas de todo el clúster.
+### :satellite: Modos de Visualización (Paginados)
+- **/k4ultra**: Levanta el panel principal. Ahora dispone de un selector `modo=radar` o `modo=tribus`:
+  - **Radar (Ranking):** Muestra jugadores online y el top de horas jugado. Dividido automáticamente en varias páginas interactivas :arrow_backward: :arrow_forward: .
+  - **Tribus (Relaciones):** Mapa predictivo con los grupos de alianzas. Permite marcar nuestra base con `/tribu_propia` para fijarla arriba del todo.
 
 ### :clipboard: Espionaje Localizado (Menú Desplegable)
-Si un jugador aparece rankeado en el menú desplegable inferior del Dashboard de K4Ultra, podrás seleccionarlo para que el bot devuelva su expediente completo:
-- **:green_circle: Actividad Inmediata:** Te marca si está `Online Ahora` (y en qué mapa) u `Offline`.
-- **:crossed_swords: K/D/A y Letalidad:** Su historial de bajas PVP en el servidor.
-- **:people_holding_hands: Nombres ingame:** Destapa qué otros nombres de personaje comparten esta ID en el clúster.
-- **:stopwatch: Patrones horarios y Antigüedad:** Indica cuántas horas lleva desde que el radar lo vio por primera vez y a qué hora en punto del día es su momento frecuente de inicio de sesión."""
+Selecciona a un jugador del menú inferior de K4Ultra para ver su expediente:
+- **:green_circle: Actividad Inmediata:** Estado Online / Offline.
+- **:crossed_swords: K/D/A y Letalidad:** Historial PVP en el servidor.
+- **:people_holding_hands: Nombres Ingame y Alias:** Descubre quién se esconde detrás de nombres falsos como "123" usando la protección `duration_score` y los alias globales.
+- **:stopwatch: Patrones:** Analítica de sus horarios más frecuentes."""
 }
 
 class Management(commands.Cog):

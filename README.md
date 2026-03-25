@@ -44,7 +44,9 @@ Proporciona herramientas para la monitorización de eventos en el servidor de ju
 
 Herramientas para la recopilación de datos sobre otros jugadores y ubicaciones.
 
-* **K4Ultra Intelligence:** Consulta perfiles de jugadores para obtener su estado de conexión, horarios de actividad recurrente, cuentas vinculadas y estadísticas de combate.
+* **K4Ultra Intelligence Dashboard:** Motor de inteligencia avanzada y continuo.
+  * **Modo Radar:** Ranking paginado dinámicamente (`/k4ultra modo:radar`) con jugadores conectados, tiempo de juego verificado y seguimiento anti-nombres genéricos (ej. `123`) mediante cálculo de tolerancia `duration_score` del protocolo A2S.
+  * **Modo Tribus:** Mapa de alianzas predictivo (`/k4ultra modo:tribus`). Agrupa jugadores por coincidencias de tiempo y sesiones. Permite establecer tu propia tribu principal (`/tribu_propia`) para destacarla visualmente, soporta la reasignación de nombres (Aliases globales) y aplica un decaimiento inactivo del 5% diario a las predicciones.
 * **Scouting Geográfico (`/scout_list`):** Directorio de bases enemigas organizado por mapas. Permite adjuntar imágenes mediante `/scout_add_image` para facilitar el reconocimiento previo.
 
 ---
@@ -95,7 +97,7 @@ Protocolos para garantizar la integridad y privacidad del servicio.
 
 * **Aislamiento de Datos:** Arquitectura diseñada para separar estrictamente la información por `guild_id`, evitando cualquier fuga de datos entre servidores.
 * **Roles Administrativos:** Acceso restringido a comandos críticos (`/config`, `/wipe_db`) limitado al propietario o usuarios con el rol designado.
-* **Gestión de Datos:** Herramientas para la limpieza selectiva de tablas (`/wipe_db`) durante cambios de temporada o mantenimiento.
+* **Gestión de Datos:** Herramientas para la limpieza selectiva de tablas (`/wipe_db`) durante cambios de temporada o mantenimiento. Purga selectiva de analíticas predictivas de IA mediante `/reset_k4_dynamic`.
 
 ---
 > *ArkTribeBot v2.0 • Sistema integral de gestión para el Cluster.*
