@@ -759,9 +759,14 @@ class ArkTribeBot(commands.Bot):
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     guild_id INTEGER NOT NULL,
                     channel_id INTEGER,
-                    message_id INTEGER
+                    message_id INTEGER,
+                    mode TEXT DEFAULT 'radar'
                 )
             """)
+            try:
+                await db.execute("ALTER TABLE k4ultra_messages ADD COLUMN mode TEXT DEFAULT 'radar'")
+            except Exception:
+                pass
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS k4ultra_sessions (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -792,9 +797,14 @@ class ArkTribeBot(commands.Bot):
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     guild_id INTEGER NOT NULL,
                     name TEXT,
-                    members_json TEXT
+                    members_json TEXT,
+                    is_own INTEGER DEFAULT 0
                 )
             """)
+            try:
+                await db.execute("ALTER TABLE k4ultra_fixed_tribes ADD COLUMN is_own INTEGER DEFAULT 0")
+            except Exception:
+                pass
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS k4ultra_aliases (
                     player_name TEXT,

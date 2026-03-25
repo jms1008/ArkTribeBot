@@ -76,8 +76,12 @@ async def test_generate_k4ultra_embed(k4ultra_cog, mock_bot, mocker):
     ]
     mock_db.return_value.execute.return_value = mock_execute
 
-    pages, top_players, aliases = await k4ultra_cog.generate_k4ultra_embed(123456)
-
+    pages, top_players, aliases = await k4ultra_cog.generate_k4ultra_embed(123456, mode="radar")
     assert pages is not None
-    assert len(pages) == 2
+    assert len(pages) >= 1
     assert "TRACKER" in pages[0].title.upper()
+
+    pages_t, top_t, aliases_t = await k4ultra_cog.generate_k4ultra_embed(123456, mode="tribus")
+    assert pages_t is not None
+    assert len(pages_t) == 1
+    assert "TRIBUS" in pages_t[0].title.upper()

@@ -178,12 +178,15 @@ class PlayerSelectMenu(discord.ui.Select):
 
 
 class K4UltraView(discord.ui.View):
-    def __init__(self, bot, guild_id: int, top_players=None, aliases=None):
+    def __init__(self, bot, guild_id: int, top_players=None, aliases=None, pages=None, current_page=0, mode="radar"):
         super().__init__(timeout=None)
         self.bot = bot
         self.guild_id = guild_id
         if top_players is None:
             top_players = []
+        self.pages = pages or []
+        self.current_page = current_page
+        self.mode = mode
         self.add_item(PlayerSelectMenu(bot, guild_id, top_players, aliases))
 
     @discord.ui.button(
@@ -224,36 +227,37 @@ class K4UltraView(discord.ui.View):
 
     @discord.ui.button(
         label="◀️",
-        style=discord.ButtonStyle.secondary,
+        style=discord.ButtonStyle.blurple,
         custom_id="k4ultra_prev_page",
         row=2,
     )
     async def prev_page_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self._flip_page(interaction)
+        await self._flip_page(interaction, -1)
 
     @discord.ui.button(
         label="▶️",
-        style=discord.ButtonStyle.secondary,
+        style=discord.ButtonStyle.blurple,
         custom_id="k4ultra_next_page",
         row=2,
     )
     async def next_page_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self._flip_page(interaction)
+        await self._flip_page(interaction, 1)
 
-    async def _flip_page(self, interaction: discord.Interaction):
+    async def _flip_page(self, interaction: discord.Interaction, direction: int):
         k_cog = self.bot.get_cog("K4Ultra")
         if not k_cog:
             await interaction.response.send_message("Módulo no disponible.", ephemeral=True)
             return
 
-        pages, top_players, aliases = await k_cog.generate_k4ultra_embed(self.guild_id)
+        pages, top_players, aliases = await k_cog.generate_k4ultra_embed(self.guild_id, self.mode)
+        if not pages:
+            return
 
-        is_page_1 = True
-        if interaction.message.embeds and "Tribus" in interaction.message.embeds[0].title:
-            is_page_1 = False
+        total = len(pages)
+        self.current_page = (self.current_page + direction) % total
+        new_embed = pages[self.current_page]
 
-        new_embed = pages[1] if is_page_1 else pages[0]
-        view = K4UltraView(self.bot, self.guild_id, top_players, aliases)
+        view = K4UltraView(self.bot, self.guild_id, top_players, aliases, pages, self.current_page, self.mode)
         await interaction.response.edit_message(embed=new_embed, view=view)
 
 
@@ -677,7 +681,7 @@ class K4Ultra(commands.Cog):
             # --- Actualización de Dashboards K4Ultra ---
             db.row_factory = aiosqlite.Row
             cursor = await db.execute(
-                "SELECT id, guild_id, channel_id, message_id FROM k4ultra_messages"
+                "SELECT id, guild_id, channel_id, message_id, mode FROM k4ultra_messages"
             )
             rows = await cursor.fetchall()
 
@@ -689,8 +693,9 @@ class K4Ultra(commands.Cog):
                     guild_id = row["guild_id"]
                     channel_id = row["channel_id"]
                     message_id = row["message_id"]
+                    mode = row["mode"] if "mode" in row.keys() else "radar"
 
-                    pages, top_players, k4_aliases = await self.generate_k4ultra_embed(guild_id)
+                    pages, top_players, k4_aliases = await self.generate_k4ultra_embed(guild_id, mode)
 
                     try:
                         channel = self.bot.get_channel(
@@ -702,14 +707,21 @@ class K4Ultra(commands.Cog):
 
                         message = await channel.fetch_message(message_id)
 
-                        # Reconexión de la vista interactiva (View) del Embed
-                        view = K4UltraView(self.bot, guild_id, top_players, k4_aliases)
-                        
-                        # Cargar la página actual para no perder foco
                         current_embed = message.embeds[0] if message.embeds else None
                         use_page_index = 0
-                        if current_embed and current_embed.title and "Tribus" in current_embed.title:
-                            use_page_index = 1
+                        if current_embed and current_embed.footer and current_embed.footer.text:
+                            import re
+                            match = re.search(r"Página (\d+)/", current_embed.footer.text)
+                            if match:
+                                idx_str = match.group(1)
+                                if idx_str.isdigit():
+                                    use_page_index = int(idx_str) - 1
+                        
+                        if use_page_index >= len(pages):
+                            use_page_index = len(pages) - 1 if pages else 0
+
+                        # Reconexión de la vista interactiva (View) del Embed
+                        view = K4UltraView(self.bot, guild_id, top_players, k4_aliases, pages=pages, current_page=use_page_index, mode=mode)
                             
                         await message.edit(embed=pages[use_page_index], view=view)
                     except discord.NotFound:
@@ -994,10 +1006,10 @@ class K4Ultra(commands.Cog):
                         )
                         await db.commit()
 
-    async def generate_k4ultra_embed(self, guild_id: int) -> tuple[list, list, dict]:
+    async def generate_k4ultra_embed(self, guild_id: int, mode: str = "radar") -> tuple[list, list, dict]:
         """Genera páginas de embeds para K4Ultra.
-        Página 1: Jugadores conectados + Ranking global.
-        Página 2: Tribus fijadas + Grupos dinámicos.
+        Modo 'radar': Jugadores conectados + Ranking global (paginado en Múltiples Páginas).
+        Modo 'tribus': Tribus fijadas + Nuestra Tribu + Grupos dinámicos.
         Retorna: (pages_list, top_player_names, aliases)
         """
         top_player_names = []
@@ -1032,56 +1044,51 @@ class K4Ultra(commands.Cog):
             except aiosqlite.OperationalError:
                 pass
 
-            # Obtención de jugadores conectados
-            cursor = await db.execute(
-                "SELECT player_name, map_name, start_time FROM k4ultra_sessions WHERE is_active = 1 AND guild_id = ?",
-                (guild_id,)
-            )
-            active_sessions = await cursor.fetchall()
-            active_players = {s["player_name"] for s in active_sessions}
+            pages = []
+            if mode == "radar":
+                # Obtención de jugadores conectados
+                cursor = await db.execute(
+                    "SELECT player_name, map_name, start_time FROM k4ultra_sessions WHERE is_active = 1 AND guild_id = ?",
+                    (guild_id,)
+                )
+                active_sessions = await cursor.fetchall()
+                active_players = {s["player_name"] for s in active_sessions}
 
-            # ═══════════ PÁGINA 1: Radar en Vivo ═══════════
-            page1 = discord.Embed(
-                title="🌐 Tracker K4Ultra — Radar en Vivo",
-                color=discord.Color.purple(),
-            )
+                page1 = discord.Embed(
+                    title="🌐 Tracker K4Ultra — Radar en Vivo",
+                    color=discord.Color.purple(),
+                )
+                if active_sessions:
+                    online_lines = []
+                    for s in active_sessions:
+                        p_name = s["player_name"]
+                        alias_tag = f" [{aliases[p_name]}]" if p_name in aliases else ""
+                        since = s["start_time"][11:16] if s["start_time"] else "?"
+                        online_lines.append(f"🟢 **{p_name}{alias_tag}** — {s['map_name']} (desde {since})")
+                    online_text = "\n".join(online_lines)
+                    if len(online_text) > 900:
+                        online_text = online_text[:897] + "..."
+                    page1.add_field(name=f"📡 En Línea Ahora ({len(active_sessions)})", value=online_text, inline=False)
+                else:
+                    page1.add_field(name="📡 En Línea Ahora", value="Ningún jugador conectado.", inline=False)
 
-            # Sección: Jugadores Conectados Ahora
-            if active_sessions:
-                online_lines = []
-                for s in active_sessions:
-                    p_name = s["player_name"]
-                    alias_tag = f" [{aliases[p_name]}]" if p_name in aliases else ""
-                    since = s["start_time"][11:16] if s["start_time"] else "?"
-                    online_lines.append(f"🟢 **{p_name}{alias_tag}** — {s['map_name']} (desde {since})")
-                online_text = "\n".join(online_lines)
-                if len(online_text) > 900:
-                    online_text = online_text[:897] + "..."
-                page1.add_field(name=f"📡 En Línea Ahora ({len(active_sessions)})", value=online_text, inline=False)
-            else:
-                page1.add_field(name="📡 En Línea Ahora", value="Ningún jugador conectado.", inline=False)
+                sorted_players = sorted(p_totals.items(), key=lambda x: x[1], reverse=True)[:50]
+                map_acronyms = {
+                    "Aberration": "Aber", "Crystal Isles": "Crys", "Extinction": "Exti",
+                    "Fjordur": "Fjor", "Gen1": "Gen1", "Gen2": "Gen2", "Hub": "Hub ",
+                    "Lost Island": "Lost", "Ragnarok": "Ragn", "Scorched Earth": "Scor",
+                    "The Center": "Cent", "The Island": "Isla", "Valguero": "Valg",
+                }
 
-            # Sección: Ranking Global
-            sorted_players = sorted(p_totals.items(), key=lambda x: x[1], reverse=True)[:25]
-
-            map_acronyms = {
-                "Aberration": "Aber", "Crystal Isles": "Crys", "Extinction": "Exti",
-                "Fjordur": "Fjor", "Gen1": "Gen1", "Gen2": "Gen2", "Hub": "Hub ",
-                "Lost Island": "Lost", "Ragnarok": "Ragn", "Scorched Earth": "Scor",
-                "The Center": "Cent", "The Island": "Isla", "Valguero": "Valg",
-            }
-
-            players_text = ""
-            for p_name, total_m in sorted_players:
-                top_player_names.append(p_name)
-                if len(top_player_names) <= 15:
+                players_text = ""
+                for p_name, total_m in sorted_players:
+                    top_player_names.append(p_name)
                     h = total_m // 60
                     m = total_m % 60
                     time_str = f"{h}h {m}m" if h > 0 else f"{m}m"
 
                     maps_for_p = p_maps[p_name]
                     maps_for_p.sort(key=lambda x: x["mins"], reverse=True)
-
                     map_str_list = []
                     for mm in maps_for_p:
                         pct = int((mm["mins"] / total_m) * 100) if total_m > 0 else 0
@@ -1095,160 +1102,152 @@ class K4Ultra(commands.Cog):
                     alias_tag = f" [{aliases[p_name]}]" if p_name in aliases else ""
                     players_text += f"- **{online_marker}{p_name}{alias_tag}** ⏱️ {time_str}: {map_joined}\n"
 
-            if players_text:
                 chunks = []
-                while len(players_text) > 900:
-                    break_point = players_text.rfind("\n", 0, 900)
-                    if break_point == -1:
-                        break_point = 900
-                    else:
-                        break_point += 1
-                    chunks.append(players_text[:break_point])
-                    players_text = players_text[break_point:]
                 if players_text:
-                    chunks.append(players_text)
-                for idx, chunk in enumerate(chunks):
-                    name = "🏆 Top Jugadores (Global)" if idx == 0 else f"🏆 Top Jugadores (v{idx + 1})"
-                    page1.add_field(name=name, value=chunk, inline=False)
-            else:
-                page1.add_field(name="🏆 Top Jugadores (Global)", value="No hay datos suficientes aún.", inline=False)
+                    while len(players_text) > 900:
+                        break_point = players_text.rfind("\n", 0, 900)
+                        if break_point == -1: break_point = 900
+                        else: break_point += 1
+                        chunks.append(players_text[:break_point])
+                        players_text = players_text[break_point:]
+                    if players_text:
+                        chunks.append(players_text)
+                
+                if not chunks:
+                    page1.add_field(name="🏆 Top Jugadores", value="No hay datos suficientes.", inline=False)
+                    pages.append(page1)
+                else:
+                    page1.add_field(name="🏆 Top Jugadores", value=chunks[0], inline=False)
+                    pages.append(page1)
+                    
+                    for idx, chunk in enumerate(chunks[1:]):
+                        p_next = discord.Embed(
+                            title="🌐 Tracker K4Ultra — Radar en Vivo",
+                            color=discord.Color.purple(),
+                        )
+                        p_next.add_field(name=f"🏆 Top Jugadores (Cont.)", value=chunk, inline=False)
+                        pages.append(p_next)
+                
+                for i, p in enumerate(pages):
+                    p.set_footer(text=f"Radar | Página {i+1}/{len(pages)} — Usa ◀️ ▶️ para navegar")
 
-            page1.set_footer(text="Página 1/2 — Usa ◀️ ▶️ para navegar")
+            elif mode == "tribus":
+                page_t = discord.Embed(
+                    title="🌐 Tracker K4Ultra — Tribus y Grupos",
+                    color=discord.Color.dark_purple(),
+                )
 
-            # ═══════════ PÁGINA 2: Tribus y Grupos ═══════════
-            page2 = discord.Embed(
-                title="🌐 Tracker K4Ultra — Tribus y Grupos",
-                color=discord.Color.dark_purple(),
-            )
+                cursor = await db.execute("SELECT name, members_json, is_own FROM k4ultra_fixed_tribes WHERE guild_id = ?", (guild_id,))
+                fixed_rows = await cursor.fetchall()
+                
+                fixed_players = set()
+                import json
+                
+                own_tribe_text = ""
+                fixed_tribes_text = ""
 
-            cursor = await db.execute(
-                "SELECT name, members_json FROM k4ultra_fixed_tribes WHERE guild_id = ?",
-                (guild_id,)
-            )
-            fixed_rows = await cursor.fetchall()
-            fixed_players = set()
-            import json
-
-            for fr in fixed_rows:
-                members = json.loads(fr["members_json"])
-                for m in members:
-                    fixed_players.add(m)
-
-            cursor = await db.execute(
-                "SELECT player1, player2 FROM k4ultra_relationships WHERE ((probability_score >= 25 AND shared_minutes >= 60) OR is_manual = 1) AND guild_id = ?",
-                (guild_id,)
-            )
-            rels = await cursor.fetchall()
-
-            adjacency = {}
-            for r in rels:
-                p1, p2 = r["player1"], r["player2"]
-                if p1 in fixed_players or p2 in fixed_players:
-                    continue
-                if p1 not in adjacency:
-                    adjacency[p1] = set()
-                if p2 not in adjacency:
-                    adjacency[p2] = set()
-                adjacency[p1].add(p2)
-                adjacency[p2].add(p1)
-
-            visited = set()
-            dynamic_tribes = []
-            for node in adjacency:
-                if node not in visited:
-                    cluster = set()
-                    queue = [node]
-                    visited.add(node)
-                    while queue:
-                        curr = queue.pop(0)
-                        cluster.add(curr)
-                        for neighbor in adjacency[curr]:
-                            if neighbor not in visited:
-                                visited.add(neighbor)
-                                queue.append(neighbor)
-                    if len(cluster) > 1:
-                        dynamic_tribes.append(list(cluster))
-            dynamic_tribes.sort(key=len, reverse=True)
-
-            rels_text = ""
-            for fr in fixed_rows:
-                tribe_name = fr["name"]
-                members = json.loads(fr["members_json"])
-                if not members:
-                    continue
-                tribe_str = ", ".join(f"{m} [{aliases[m]}]" if m in aliases else m for m in members)
-                placeholders = ", ".join(["?"] * len(members))
-                cursor = await db.execute(f"""
-                    SELECT map_name, SUM(total_minutes) as tribe_mins
-                    FROM k4ultra_playtime WHERE player_name IN ({placeholders})
-                    GROUP BY map_name ORDER BY tribe_mins DESC LIMIT 1
-                """, list(members))
-                map_row = await cursor.fetchone()
-                map_info = f" | 🗺️ {map_row['map_name']}" if map_row else ""
-                rels_text += f"**{tribe_name}** [🛡️ Fijada] ({len(members)}){map_info}\n└ {tribe_str}\n"
-
-            for i, tribe in enumerate(dynamic_tribes[:8]):
-                if not tribe:
-                    continue
-                custom_name = None
-                for m in tribe:
-                    cursor = await db.execute(
-                        "SELECT custom_name FROM k4ultra_tribe_names WHERE tribe_signature = ? AND guild_id = ?",
-                        (m, guild_id),
-                    )
-                    cname_row = await cursor.fetchone()
-                    if cname_row:
-                        custom_name = cname_row["custom_name"]
-                        break
-                tribe_label = custom_name if custom_name else f"Grupo {i + 1}"
-                tribe_str = ", ".join(f"{m} [{aliases[m]}]" if m in aliases else m for m in tribe)
-                if len(tribe_str) > 150:
-                    tribe_str = tribe_str[:147] + "..."
-                placeholders = ", ".join(["?"] * len(tribe))
-                cursor = await db.execute(f"""
-                    SELECT map_name, SUM(total_minutes) as tribe_mins
-                    FROM k4ultra_playtime WHERE player_name IN ({placeholders}) AND guild_id = ?
-                    GROUP BY map_name ORDER BY tribe_mins DESC LIMIT 1
-                """, list(tribe) + [guild_id])
-                map_row = await cursor.fetchone()
-                map_info = f" | 🗺️ {map_row['map_name']}" if map_row else ""
-                rels_text += f"**{tribe_label}** ({len(tribe)}){map_info}\n└ {tribe_str}\n"
-
-            if len(dynamic_tribes) > 8:
-                rels_text += f"*... y {len(dynamic_tribes) - 8} grupos más*\n"
-
-            if rels_text:
-                chunks = []
-                while len(rels_text) > 900:
-                    break_point = rels_text.rfind("\n", 0, 900)
-                    if break_point == -1:
-                        break_point = 900
+                for fr in fixed_rows:
+                    tribe_name = fr["name"]
+                    is_own = fr["is_own"]
+                    members = json.loads(fr["members_json"])
+                    if not members: continue
+                    for m in members: fixed_players.add(m)
+                    
+                    tribe_str = ", ".join(f"{m} [{aliases[m]}]" if m in aliases else m for m in members)
+                    placeholders = ", ".join(["?"] * len(members))
+                    cursor = await db.execute(f"""
+                        SELECT map_name, SUM(total_minutes) as tribe_mins
+                        FROM k4ultra_playtime WHERE player_name IN ({placeholders})
+                        GROUP BY map_name ORDER BY tribe_mins DESC LIMIT 1
+                    """, list(members))
+                    map_row = await cursor.fetchone()
+                    map_info = f" | 🗺️ {map_row['map_name']}" if map_row else ""
+                    
+                    if is_own:
+                        own_tribe_text += f"**{tribe_name}** [🏰 Nuestra Tribu] ({len(members)}){map_info}\n└ {tribe_str}\n"
                     else:
-                        break_point += 1
-                    chunks.append(rels_text[:break_point])
-                    rels_text = rels_text[break_point:]
-                if rels_text:
-                    chunks.append(rels_text)
-                for idx, chunk in enumerate(chunks):
-                    name = "🔗 Posibles Tribus / Grupos" if idx == 0 else f"🔗 Tribus / Grupos (v{idx + 1})"
-                    page2.add_field(name=name, value=chunk, inline=False)
-            else:
-                page2.add_field(name="🔗 Posibles Tribus / Grupos", value="No se han detectado grupos de momento.", inline=False)
+                        fixed_tribes_text += f"**{tribe_name}** [🛡️ Fijada] ({len(members)}){map_info}\n└ {tribe_str}\n"
 
-            page2.set_footer(text="Página 2/2 — Usa ◀️ ▶️ para navegar")
+                cursor = await db.execute("SELECT player1, player2 FROM k4ultra_relationships WHERE ((probability_score >= 25 AND shared_minutes >= 60) OR is_manual = 1) AND guild_id = ?", (guild_id,))
+                rels = await cursor.fetchall()
 
-        pages = [page1, page2]
+                adjacency = {}
+                for r in rels:
+                    p1, p2 = r["player1"], r["player2"]
+                    if p1 in fixed_players or p2 in fixed_players: continue
+                    if p1 not in adjacency: adjacency[p1] = set()
+                    if p2 not in adjacency: adjacency[p2] = set()
+                    adjacency[p1].add(p2)
+                    adjacency[p2].add(p1)
+
+                visited = set()
+                dynamic_tribes = []
+                for node in adjacency:
+                    if node not in visited:
+                        cluster = set()
+                        queue = [node]
+                        visited.add(node)
+                        while queue:
+                            curr = queue.pop(0)
+                            cluster.add(curr)
+                            for neighbor in adjacency[curr]:
+                                if neighbor not in visited:
+                                    visited.add(neighbor)
+                                    queue.append(neighbor)
+                        if len(cluster) > 1:
+                            dynamic_tribes.append(list(cluster))
+                dynamic_tribes.sort(key=len, reverse=True)
+
+                dyn_text = ""
+                for i, tribe in enumerate(dynamic_tribes[:8]):
+                    tribe_label = f"Grupo {i + 1}"
+                    tribe_str = ", ".join(f"{m} [{aliases[m]}]" if m in aliases else m for m in tribe)
+                    if len(tribe_str) > 150: tribe_str = tribe_str[:147] + "..."
+                    placeholders = ", ".join(["?"] * len(tribe))
+                    cursor = await db.execute(f"""
+                        SELECT map_name, SUM(total_minutes) as tribe_mins
+                        FROM k4ultra_playtime WHERE player_name IN ({placeholders}) AND guild_id = ?
+                        GROUP BY map_name ORDER BY tribe_mins DESC LIMIT 1
+                    """, list(tribe) + [guild_id])
+                    map_row = await cursor.fetchone()
+                    map_info = f" | 🗺️ {map_row['map_name']}" if map_row else ""
+                    dyn_text += f"**{tribe_label}** ({len(tribe)}){map_info}\n└ {tribe_str}\n"
+
+                if len(dynamic_tribes) > 8:
+                    dyn_text += f"*... y {len(dynamic_tribes) - 8} grupos más*\n"
+
+                if own_tribe_text:
+                    page_t.add_field(name="🏰 Nuestra Tribu", value=own_tribe_text, inline=False)
+                if fixed_tribes_text:
+                    page_t.add_field(name="🛡️ Otras Tribus Fijadas", value=fixed_tribes_text, inline=False)
+                if dyn_text:
+                    page_t.add_field(name="🔗 Grupos / Predicciones", value=dyn_text, inline=False)
+                
+                if not own_tribe_text and not fixed_tribes_text and not dyn_text:
+                    page_t.add_field(name="Tribus", value="No hay tribus registradas ni grupos predecidos aún.", inline=False)
+                
+                page_t.set_footer(text="Explorador de Tribus — Página Única")
+                pages = [page_t]
+
         return pages, top_player_names, aliases
+
 
     @app_commands.command(
         name="k4ultra",
         description="Muestra información detallada de jugadores, tiempos y relaciones.",
     )
     @app_commands.describe(
-        semana="Opcional. Número de semana para ver el histórico de esa semana."
+        semana="Opcional. Número de semana para ver el histórico de esa semana.",
+        modo="Opcional. Selecciona si ver radar o tribus (por defecto radar)."
+    )
+    @app_commands.choices(
+        modo=[
+            app_commands.Choice(name="Radar y Ranking", value="radar"),
+            app_commands.Choice(name="Explorador de Tribus", value="tribus")
+        ]
     )
     async def k4ultra_command(
-        self, interaction: discord.Interaction, semana: int = None
+        self, interaction: discord.Interaction, semana: int = None, modo: str = "radar"
     ):
 
         # Validación de permisos (Admin o ID autorizado)
@@ -1280,8 +1279,8 @@ class K4Ultra(commands.Cog):
         else:
             # Visualización de estadísticas en vivo y guardado como mensaje persistente
             await interaction.response.defer(ephemeral=False)
-            pages, top_players, k4_aliases = await self.generate_k4ultra_embed(interaction.guild_id)
-            view = K4UltraView(self.bot, interaction.guild_id, top_players, k4_aliases)
+            pages, top_players, k4_aliases = await self.generate_k4ultra_embed(interaction.guild_id, modo)
+            view = K4UltraView(self.bot, interaction.guild_id, top_players, k4_aliases, pages=pages)
 
             try:
                 message = await interaction.followup.send(embed=pages[0], view=view)
@@ -1293,10 +1292,10 @@ class K4Ultra(commands.Cog):
             async with aiosqlite.connect(self.bot.db_name) as db:
                 await db.execute(
                     """
-                    INSERT INTO k4ultra_messages (guild_id, channel_id, message_id)
-                    VALUES (?, ?, ?)
+                    INSERT INTO k4ultra_messages (guild_id, channel_id, message_id, mode)
+                    VALUES (?, ?, ?, ?)
                 """,
-                    (interaction.guild_id, interaction.channel_id, message.id),
+                    (interaction.guild_id, interaction.channel_id, message.id, modo),
                 )
                 await db.commit()
 
@@ -1435,9 +1434,10 @@ class K4Ultra(commands.Cog):
     @app_commands.describe(
         nombre="Nombre de la tribu",
         jugadores="Nombres de los jugadores separados por coma",
+        propia="Opcional. Marca True si esta es tu tribu (aparecerá destacada)."
     )
     async def fijar_tribu(
-        self, interaction: discord.Interaction, nombre: str, jugadores: str
+        self, interaction: discord.Interaction, nombre: str, jugadores: str, propia: bool = False
     ):
         if not await interaction.client.is_authorized_admin(interaction):
             await interaction.response.send_message(
@@ -1463,16 +1463,51 @@ class K4Ultra(commands.Cog):
         async with aiosqlite.connect(self.bot.db_name) as db:
             import json
 
+            is_own = 1 if propia else 0
+            if is_own == 1:
+                # Quitar is_own a todas las de la guild para que solo haya 1 propia
+                await db.execute("UPDATE k4ultra_fixed_tribes SET is_own = 0 WHERE guild_id = ?", (interaction.guild_id,))
+
             await db.execute(
-                "INSERT INTO k4ultra_fixed_tribes (guild_id, name, members_json) VALUES (?, ?, ?)",
-                (interaction.guild_id, nombre, json.dumps(miembros)),
+                "INSERT INTO k4ultra_fixed_tribes (guild_id, name, members_json, is_own) VALUES (?, ?, ?, ?)",
+                (interaction.guild_id, nombre, json.dumps(miembros), is_own),
             )
             await db.commit()
 
+        tag_propia = "\n🌟 Ha sido marcada como TU TRIBU PROPIA." if propia else ""
         await interaction.response.send_message(
-            f"✅ Tribu fijada: **{nombre}** con los jugadores: {', '.join(miembros)}.\nEl algoritmo no añadirá jugadores externos a este bloque.",
+            f"✅ Tribu fijada: **{nombre}** con los jugadores: {', '.join(miembros)}.\nEl algoritmo no añadirá jugadores externos a este bloque.{tag_propia}",
             ephemeral=True,
         )
+
+    @app_commands.command(
+        name="tribu_propia",
+        description="[Admin] Marca una tribu ya fijada como la tribu principal/dueña del servidor.",
+    )
+    @app_commands.describe(nombre="Fija la tribu que el bot debe destacar al principio de la página.")
+    async def tribu_propia(self, interaction: discord.Interaction, nombre: str):
+        if not await interaction.client.is_authorized_admin(interaction):
+            await interaction.response.send_message(
+                "❌ Acceso denegado.", ephemeral=True
+            )
+            return
+
+        nombre = nombre.strip()
+        async with aiosqlite.connect(self.bot.db_name) as db:
+            cursor = await db.execute("SELECT 1 FROM k4ultra_fixed_tribes WHERE name = ? AND guild_id = ?", (nombre, interaction.guild_id))
+            if not await cursor.fetchone():
+                await interaction.response.send_message(f"❌ La tribu **{nombre}** no está fijada. Usa /fijar_tribu primero.", ephemeral=True)
+                return
+
+            await db.execute("UPDATE k4ultra_fixed_tribes SET is_own = 0 WHERE guild_id = ?", (interaction.guild_id,))
+            await db.execute("UPDATE k4ultra_fixed_tribes SET is_own = 1 WHERE name = ? AND guild_id = ?", (nombre, interaction.guild_id))
+            await db.commit()
+
+        await interaction.response.send_message(
+            f"✅ La tribu **{nombre}** ha sido marcada como la tribu propia del servidor. Ahora aparecerá destacada en el Tracker.",
+            ephemeral=True,
+        )
+
 
     @app_commands.command(
         name="unfijar_tribu",
