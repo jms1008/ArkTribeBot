@@ -3,6 +3,9 @@ from discord import app_commands
 from discord.ext import commands
 import aiosqlite
 import asyncio
+import logging
+
+logger = logging.getLogger("ArkTribeBot")
 
 
 class TodoView(discord.ui.View):
@@ -498,6 +501,134 @@ class Management(commands.Cog):
             color=discord.Color.from_rgb(43, 45, 49)  # Color invisible de Discord (oscuro)
         )
         await interaction.response.send_message(embed=embed)
+
+    @app_commands.command(
+        name="bl_editar",
+        description="Edita los campos de un jugador en la Blacklist (tribu, mapa, notas, etc.).",
+    )
+    @app_commands.describe(
+        jugador="Nombre del jugador (nombre de Steam)",
+        tribu="Nombre de la tribu",
+        mapa="Mapa principal del jugador",
+        personaje="Nombre del personaje en el juego (se puede usar varias veces para añadir alts)",
+        notas="Notas o información relevante",
+        enemigo="¿Es enemigo?",
+    )
+    @app_commands.choices(
+        enemigo=[
+            app_commands.Choice(name="Sí (Enemigo)", value="1"),
+            app_commands.Choice(name="No (Neutral)", value="0"),
+        ]
+    )
+    async def bl_editar(
+        self,
+        interaction: discord.Interaction,
+        jugador: str,
+        tribu: str = None,
+        mapa: str = None,
+        personaje: str = None,
+        notas: str = None,
+        enemigo: app_commands.Choice[str] = None,
+    ):
+        if not await interaction.client.is_authorized_admin(interaction):
+            await interaction.response.send_message(
+                "❌ Acceso denegado.", ephemeral=True
+            )
+            return
+
+        async with aiosqlite.connect(self.bot.db_name) as db:
+            db.row_factory = aiosqlite.Row
+
+            # Verificar si el jugador existe en la blacklist
+            cursor = await db.execute(
+                "SELECT id FROM blacklist WHERE player = ? AND guild_id = ?",
+                (jugador, interaction.guild_id),
+            )
+            bl_row = await cursor.fetchone()
+
+            # Si no está en la blacklist, lo añadimos automáticamente
+            if not bl_row:
+                from datetime import datetime
+                await db.execute(
+                    "INSERT INTO blacklist (guild_id, player, tribe, map, notes, is_enemy, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        interaction.guild_id,
+                        jugador,
+                        tribu or "Desconocido",
+                        mapa or "Desconocido",
+                        notas or "",
+                        int(enemigo.value) if enemigo else 1,
+                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    ),
+                )
+                await db.commit()
+                was_new = True
+            else:
+                was_new = False
+                # Actualizar los campos proporcionados en blacklist
+                updates = {}
+                if tribu is not None:
+                    updates["tribe"] = tribu
+                if mapa is not None:
+                    updates["map"] = mapa
+                if notas is not None:
+                    updates["notes"] = notas
+                if enemigo is not None:
+                    updates["is_enemy"] = int(enemigo.value)
+
+                if updates:
+                    set_clause = ", ".join(f"{k} = ?" for k in updates.keys())
+                    values = list(updates.values()) + [bl_row["id"], interaction.guild_id]
+                    await db.execute(
+                        f"UPDATE blacklist SET {set_clause} WHERE id = ? AND guild_id = ?",
+                        values,
+                    )
+                    await db.commit()
+
+            # Gestión del personaje (nombre in-game) en tribe_characters
+            if personaje is not None:
+                try:
+                    cursor = await db.execute(
+                        "SELECT id FROM tribe_characters WHERE player_name = ? AND character_name = ? AND guild_id = ?",
+                        (jugador, personaje, interaction.guild_id),
+                    )
+                    if not await cursor.fetchone():
+                        await db.execute(
+                            "INSERT INTO tribe_characters (guild_id, player_name, character_name) VALUES (?, ?, ?)",
+                            (interaction.guild_id, jugador, personaje),
+                        )
+                        await db.commit()
+                except Exception as e:
+                    logger.error(f"[bl_editar] Error al guardar personaje: {e}")
+
+        # Resumen de cambios
+        changes = []
+        if was_new:
+            changes.append("📥 **Añadido** a la Blacklist (no existía)")
+        if tribu is not None:
+            changes.append(f"🏠 **Tribu** → {tribu}")
+        if mapa is not None:
+            changes.append(f"🗺️ **Mapa** → {mapa}")
+        if personaje is not None:
+            changes.append(f"🧑 **Personaje** → {personaje}")
+        if notas is not None:
+            changes.append(f"📝 **Notas** → {notas}")
+        if enemigo is not None:
+            changes.append(f"⚔️ **Enemigo** → {'Sí' if enemigo.value == '1' else 'No'}")
+
+        if not changes:
+            await interaction.response.send_message(
+                "⚠️ No has proporcionado ningún campo para actualizar.", ephemeral=True
+            )
+            return
+
+        await interaction.response.send_message(
+            f"✅ **{jugador}** actualizado:\n" + "\n".join(changes),
+            ephemeral=True,
+        )
+
+        from cogs.warfare import update_blacklist_dashboards
+        await update_blacklist_dashboards(self.bot, interaction.guild_id)
 
 
 async def setup(bot):
