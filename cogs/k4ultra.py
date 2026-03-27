@@ -734,9 +734,6 @@ class K4Ultra(commands.Cog):
                         logger.error(
                             f"[K4Ultra Debug] Error actualizando mensaje persistente {row_id}: {e}"
                         )
-                        logger.error(
-                            f"[K4Ultra Debug] Payload failed: {new_embed.to_dict()}"
-                        )
                     except Exception as e:
                         logger.error(
                             f"[K4Ultra] Error actualizando mensaje persistente {row_id}: {e}"
@@ -1108,8 +1105,10 @@ class K4Ultra(commands.Cog):
                 if players_text:
                     while len(players_text) > 900:
                         break_point = players_text.rfind("\n", 0, 900)
-                        if break_point == -1: break_point = 900
-                        else: break_point += 1
+                        if break_point == -1:
+                            break_point = 900
+                        else:
+                            break_point += 1
                         chunks.append(players_text[:break_point])
                         players_text = players_text[break_point:]
                     if players_text:
@@ -1127,7 +1126,7 @@ class K4Ultra(commands.Cog):
                             title="🌐 Tracker K4Ultra — Radar en Vivo",
                             color=discord.Color.purple(),
                         )
-                        p_next.add_field(name=f"🏆 Top Jugadores (Cont.)", value=chunk, inline=False)
+                        p_next.add_field(name="🏆 Top Jugadores (Cont.)", value=chunk, inline=False)
                         pages.append(p_next)
                 
                 for i, p in enumerate(pages):
@@ -1152,8 +1151,10 @@ class K4Ultra(commands.Cog):
                     tribe_name = fr["name"]
                     is_own = fr["is_own"]
                     members = json.loads(fr["members_json"])
-                    if not members: continue
-                    for m in members: fixed_players.add(m)
+                    if not members:
+                        continue
+                    for m in members:
+                        fixed_players.add(m)
                     
                     tribe_str = ", ".join(f"{m} [{aliases[m]}]" if m in aliases else m for m in members)
                     placeholders = ", ".join(["?"] * len(members))
@@ -1176,9 +1177,12 @@ class K4Ultra(commands.Cog):
                 adjacency = {}
                 for r in rels:
                     p1, p2 = r["player1"], r["player2"]
-                    if p1 in fixed_players or p2 in fixed_players: continue
-                    if p1 not in adjacency: adjacency[p1] = set()
-                    if p2 not in adjacency: adjacency[p2] = set()
+                    if p1 in fixed_players or p2 in fixed_players:
+                        continue
+                    if p1 not in adjacency:
+                        adjacency[p1] = set()
+                    if p2 not in adjacency:
+                        adjacency[p2] = set()
                     adjacency[p1].add(p2)
                     adjacency[p2].add(p1)
 
@@ -1204,7 +1208,8 @@ class K4Ultra(commands.Cog):
                 for i, tribe in enumerate(dynamic_tribes[:8]):
                     tribe_label = f"Grupo {i + 1}"
                     tribe_str = ", ".join(f"{m} [{aliases[m]}]" if m in aliases else m for m in tribe)
-                    if len(tribe_str) > 150: tribe_str = tribe_str[:147] + "..."
+                    if len(tribe_str) > 150:
+                        tribe_str = tribe_str[:147] + "..."
                     placeholders = ", ".join(["?"] * len(tribe))
                     cursor = await db.execute(f"""
                         SELECT map_name, SUM(total_minutes) as tribe_mins
