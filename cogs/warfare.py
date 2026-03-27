@@ -36,7 +36,7 @@ def build_blacklist_embed(rows: list, page: int = 0) -> discord.Embed:
         for row in chunk:
             # Safely check if 'is_enemy' column exists in this row, default to 1 if missing in old schema
             is_enemy = row["is_enemy"] if "is_enemy" in row.keys() else 1
-            
+
             # Separador de secciones
             if is_enemy == 1 and current_section != "Enemigos":
                 lines.append("\n🔴 **ENEMIGOS** 🔴")
@@ -52,13 +52,13 @@ def build_blacklist_embed(rows: list, page: int = 0) -> discord.Embed:
                 if row["notes"] and len(row["notes"]) > 30
                 else (row["notes"] or "")
             )
-            
+
             emoji = "🔴" if is_enemy == 1 else "⚪"
             lines.append(
                 f"`#{row['id']}` {emoji} **{row['player']}** | {row['tribe']} | {row['map']}\n"
                 f"    📝 {nota_corta}"
             )
-            
+
         embed.description = "\n".join(lines).strip()
         embed.set_footer(
             text=f"Página {page + 1}/{total_pages} • {total} entradas totales"
@@ -72,7 +72,9 @@ async def update_blacklist_dashboards(bot, guild_id: int, page: int = 0):
 
     async with aiosqlite.connect(bot.db_name) as db:
         db.row_factory = aiosqlite.Row
-        cursor = await db.execute("SELECT * FROM blacklist_messages WHERE guild_id = ?", (guild_id,))
+        cursor = await db.execute(
+            "SELECT * FROM blacklist_messages WHERE guild_id = ?", (guild_id,)
+        )
         dashboards = await cursor.fetchall()
 
     if not dashboards:
@@ -81,7 +83,10 @@ async def update_blacklist_dashboards(bot, guild_id: int, page: int = 0):
     # Recuperación de registros de la Blacklist
     async with aiosqlite.connect(bot.db_name) as db:
         db.row_factory = aiosqlite.Row
-        cursor = await db.execute("SELECT * FROM blacklist WHERE guild_id = ? ORDER BY is_enemy DESC, id DESC", (guild_id,))
+        cursor = await db.execute(
+            "SELECT * FROM blacklist WHERE guild_id = ? ORDER BY is_enemy DESC, id DESC",
+            (guild_id,),
+        )
         rows = await cursor.fetchall()
 
     embed, current_page, total_pages = build_blacklist_embed(rows, page)
@@ -273,16 +278,24 @@ class ModifyBlacklistModal(discord.ui.Modal, title="Modificar entrada de Blackli
         if campo == "is_enemy":
             if valor not in ("0", "1"):
                 await interaction.response.send_message(
-                    "❌ Para is_enemy, el valor debe ser 0 (Neutral) o 1 (Enemigo).", ephemeral=True
+                    "❌ Para is_enemy, el valor debe ser 0 (Neutral) o 1 (Enemigo).",
+                    ephemeral=True,
                 )
                 return
             valor = int(valor)
 
         async with aiosqlite.connect(self.bot.db_name) as db:
-            cursor = await db.execute("SELECT id FROM blacklist WHERE id = ? AND guild_id = ?", (bid, interaction.guild_id,))
+            cursor = await db.execute(
+                "SELECT id FROM blacklist WHERE id = ? AND guild_id = ?",
+                (
+                    bid,
+                    interaction.guild_id,
+                ),
+            )
             if not await cursor.fetchone():
                 await interaction.response.send_message(
-                    f"❌ No existe la entrada ID {bid} o no te pertenece.", ephemeral=True
+                    f"❌ No existe la entrada ID {bid} o no te pertenece.",
+                    ephemeral=True,
                 )
                 return
             await db.execute(
@@ -317,7 +330,13 @@ class DeleteBlacklistModal(discord.ui.Modal, title="Eliminar de Blacklist"):
             return
 
         async with aiosqlite.connect(self.bot.db_name) as db:
-            await db.execute("DELETE FROM blacklist WHERE id = ? AND guild_id = ?", (bid, interaction.guild_id,))
+            await db.execute(
+                "DELETE FROM blacklist WHERE id = ? AND guild_id = ?",
+                (
+                    bid,
+                    interaction.guild_id,
+                ),
+            )
             await db.commit()
 
         await interaction.response.send_message(
@@ -326,7 +345,9 @@ class DeleteBlacklistModal(discord.ui.Modal, title="Eliminar de Blacklist"):
         await update_blacklist_dashboards(self.bot, interaction.guild_id)
 
 
-async def build_player_detail_embed(bot, player_name: str, guild_id: int) -> discord.Embed:
+async def build_player_detail_embed(
+    bot, player_name: str, guild_id: int
+) -> discord.Embed:
     """Construye un embed detallado para un jugador, cruzando datos de Blacklist, K4Ultra y KDA."""
     embed = discord.Embed(
         title=f"👤 Expediente: {player_name}", color=discord.Color.dark_orange()
@@ -347,18 +368,25 @@ async def build_player_detail_embed(bot, player_name: str, guild_id: int) -> dis
         # --- 1. Datos de Blacklist ---
         cursor = await db.execute(
             "SELECT tribe, map, notes, created_at, last_seen, total_hours FROM blacklist WHERE player = ? AND guild_id = ? LIMIT 1",
-            (player_name, guild_id,)
+            (
+                player_name,
+                guild_id,
+            ),
         )
         bl_row = await cursor.fetchone()
-        
+
         status_msg = "⚪ Registro Pasivo (K4Ultra)"
         if bl_row:
             status_msg = "🔴 Marcado en Blacklist (Enemigo)"
             embed.color = discord.Color.red()
-            
+
             notes_str = bl_row["notes"] if bl_row["notes"] else "Ninguna"
-            embed.add_field(name="🏠 Tribu", value=bl_row["tribe"] or "Desconocida", inline=True)
-            embed.add_field(name="🗺️ Mapa Origen", value=bl_row["map"] or "Desconocido", inline=True)
+            embed.add_field(
+                name="🏠 Tribu", value=bl_row["tribe"] or "Desconocida", inline=True
+            )
+            embed.add_field(
+                name="🗺️ Mapa Origen", value=bl_row["map"] or "Desconocido", inline=True
+            )
             embed.add_field(name="📝 Notas", value=notes_str, inline=False)
         else:
             embed.description = "Este jugador no está en la blacklist manual."
@@ -366,61 +394,88 @@ async def build_player_detail_embed(bot, player_name: str, guild_id: int) -> dis
         # --- 2. Estadísticas de Juego (K4Ultra) ---
         cursor = await db.execute(
             "SELECT SUM(total_minutes) as t_mins FROM k4ultra_playtime WHERE player_name = ? AND guild_id = ?",
-            (player_name, guild_id,)
+            (
+                player_name,
+                guild_id,
+            ),
         )
         playtime_row = await cursor.fetchone()
-        total_hours = (playtime_row["t_mins"] / 60) if playtime_row and playtime_row["t_mins"] else 0.0
+        total_hours = (
+            (playtime_row["t_mins"] / 60)
+            if playtime_row and playtime_row["t_mins"]
+            else 0.0
+        )
 
         # --- 3. Estado Online y Map Orbit ---
         cursor = await db.execute(
             "SELECT map_name, start_time FROM k4ultra_sessions WHERE player_name = ? AND is_active = 1 AND guild_id = ? LIMIT 1",
-            (player_name, guild_id,)
+            (
+                player_name,
+                guild_id,
+            ),
         )
         active_session = await cursor.fetchone()
-        
+
         if active_session:
-            since = active_session["start_time"][11:16] if active_session["start_time"] else "?"
-            online_str = f"🟢 **En línea** (en {active_session['map_name']} desde {since})"
+            since = (
+                active_session["start_time"][11:16]
+                if active_session["start_time"]
+                else "?"
+            )
+            online_str = (
+                f"🟢 **En línea** (en {active_session['map_name']} desde {since})"
+            )
         else:
             online_str = "🔴 **Desconectado**"
-            
+
         embed.add_field(name="🔌 Estado Actual", value=online_str, inline=True)
-        embed.add_field(name="⏱️ Tiempo Total", value=f"{total_hours:.1f} horas", inline=True)
+        embed.add_field(
+            name="⏱️ Tiempo Total", value=f"{total_hours:.1f} horas", inline=True
+        )
 
         # Historial de Desplazamiento (Últimos 3 mapas)
         cursor = await db.execute(
             "SELECT DISTINCT map_name FROM k4ultra_sessions WHERE player_name = ? AND guild_id = ? ORDER BY start_time DESC LIMIT 3",
-            (player_name, guild_id,)
+            (
+                player_name,
+                guild_id,
+            ),
         )
         orbit_rows = await cursor.fetchall()
         if orbit_rows:
             orbit_str = " -> ".join([r["map_name"] for r in orbit_rows])
-            embed.add_field(name="🛰️ Órbita (Últimos Mapas)", value=f"`{orbit_str}`", inline=False)
+            embed.add_field(
+                name="🛰️ Órbita (Últimos Mapas)", value=f"`{orbit_str}`", inline=False
+            )
 
         # --- 4. Análisis Horario y Predicción ---
         from datetime import datetime
+
         now = datetime.now()
         current_hour = now.hour
-        
+
         cursor = await db.execute(
             "SELECT strftime('%H', start_time) as h, COUNT(*) as c FROM k4ultra_sessions WHERE player_name = ? AND guild_id = ? GROUP BY h",
-            (player_name, guild_id,)
+            (
+                player_name,
+                guild_id,
+            ),
         )
         hour_data = await cursor.fetchall()
-        
+
         total_sessions = sum(h["c"] for h in hour_data)
         prob = 0
         vulnerability_window = "Indeterminada"
-        
+
         if total_sessions > 0:
             # Predicción para la próxima hora
             next_hour = (current_hour + 1) % 24
             next_hour_str = f"{next_hour:02d}"
-            
+
             matches = [h["c"] for h in hour_data if h["h"] == next_hour_str]
             if matches:
                 prob = int((matches[0] / total_sessions) * 100)
-            
+
             # Ventana de Vulnerabilidad (Bloque de 4 horas con menos actividad)
             # Simplificado: buscar la hora con 0 sesiones
             inactive_hours = []
@@ -428,7 +483,7 @@ async def build_player_detail_embed(bot, player_name: str, guild_id: int) -> dis
             for i in range(24):
                 if i not in recorded_hours:
                     inactive_hours.append(i)
-            
+
             if inactive_hours:
                 # Buscar el bloque más largo de horas inactivas
                 vulnerability_window = "Madrugada / Variable"
@@ -436,13 +491,15 @@ async def build_player_detail_embed(bot, player_name: str, guild_id: int) -> dis
                     # Ejemplo: 03:00 - 07:00
                     vulnerability_window = f"Entre {min(inactive_hours):02d}:00 y {max(inactive_hours):02d}:00"
 
-        embed.add_field(name="🕒 Ventana Vulnerable", value=vulnerability_window, inline=True)
+        embed.add_field(
+            name="🕒 Ventana Vulnerable", value=vulnerability_window, inline=True
+        )
         embed.add_field(name="📈 Prob. Conexión (1h)", value=f"{prob}%", inline=True)
 
         # --- 5. PVP y Alts ---
         cursor = await db.execute(
             "SELECT kills, deaths FROM tribe_kda WHERE player_name = ? AND guild_id = ?",
-            (player_name, guild_id)
+            (player_name, guild_id),
         )
         kda_row = await cursor.fetchone()
         kills, deaths, kda = 0, 0, 0.0
@@ -453,15 +510,19 @@ async def build_player_detail_embed(bot, player_name: str, guild_id: int) -> dis
 
         cursor = await db.execute(
             "SELECT character_name FROM tribe_characters WHERE player_name = ? AND guild_id = ?",
-            (player_name, guild_id)
+            (player_name, guild_id),
         )
         chars = await cursor.fetchall()
-        chars_str = ", ".join([f"`{c['character_name']}`" for c in chars]) if chars else "Ninguno"
+        chars_str = (
+            ", ".join([f"`{c['character_name']}`" for c in chars])
+            if chars
+            else "Ninguno"
+        )
 
         embed.add_field(
-            name="⚔️ Estadísticas PVP", 
-            value=f"**Kills:** {kills} | **Deaths:** {deaths} | **KDA:** {kda}", 
-            inline=False
+            name="⚔️ Estadísticas PVP",
+            value=f"**Kills:** {kills} | **Deaths:** {deaths} | **KDA:** {kda}",
+            inline=False,
         )
         embed.add_field(name="🧑‍🤝‍🧑 Alts / Personajes", value=chars_str, inline=False)
 
@@ -475,9 +536,11 @@ async def build_player_detail_embed(bot, player_name: str, guild_id: int) -> dis
             threat += 1
         if kills > 10:
             threat += 1
-        
+
         threat_str = "💀" * threat + "▫️" * (5 - threat)
-        embed.add_field(name="🔥 Grado de Peligro", value=f"`{threat_str}`", inline=True)
+        embed.add_field(
+            name="🔥 Grado de Peligro", value=f"`{threat_str}`", inline=True
+        )
         embed.add_field(name="📑 Tipo de Registro", value=status_msg, inline=True)
 
         # --- 7. Aliados ---
@@ -488,10 +551,21 @@ async def build_player_detail_embed(bot, player_name: str, guild_id: int) -> dis
             SELECT player1 as ally, probability_score FROM k4ultra_relationships WHERE player2 = ? AND guild_id = ?
             ORDER BY probability_score DESC LIMIT 3
             """,
-            (player_name, guild_id, player_name, guild_id,)
+            (
+                player_name,
+                guild_id,
+                player_name,
+                guild_id,
+            ),
         )
         allies = await cursor.fetchall()
-        ally_text = "\n".join([f"• **{a['ally']}** ({a['probability_score']}%)" for a in allies]) if allies else "Sin aliados conocidos."
+        ally_text = (
+            "\n".join(
+                [f"• **{a['ally']}** ({a['probability_score']}%)" for a in allies]
+            )
+            if allies
+            else "Sin aliados conocidos."
+        )
         embed.add_field(name="🤝 Aliados Cercanos", value=ally_text, inline=False)
 
     return embed
@@ -503,7 +577,9 @@ class PlayerDetailSelect(discord.ui.Select):
         options = []
         if not rows:
             # Opcion dummy necesaria para poder registrar la vista persistente al inicio
-            options.append(discord.SelectOption(label="Cargando...", value="none_dummy_value"))
+            options.append(
+                discord.SelectOption(label="Cargando...", value="none_dummy_value")
+            )
         else:
             for row in rows:
                 name = row["player"]
@@ -514,25 +590,30 @@ class PlayerDetailSelect(discord.ui.Select):
                     tribe_desc = tribe_desc[:97] + "..."
                 options.append(
                     discord.SelectOption(
-                        label=name, description=f"Tribu: {tribe_desc}", value=row["player"]
+                        label=name,
+                        description=f"Tribu: {tribe_desc}",
+                        value=row["player"],
                     )
                 )
-        
+
         super().__init__(
             placeholder="Ver detalles de un jugador (K4Ultra)...",
             min_values=1,
             max_values=1,
             options=options,
             row=1,
-            custom_id="warfare_player_detail_select"
+            custom_id="warfare_player_detail_select",
         )
 
     async def callback(self, interaction: discord.Interaction):
         player_name = self.values[0]
         if player_name == "none_dummy_value":
-            await interaction.response.send_message("El menú se está actualizando, cierra este mensaje y reintenta en el dashboard nuevo.", ephemeral=True)
+            await interaction.response.send_message(
+                "El menú se está actualizando, cierra este mensaje y reintenta en el dashboard nuevo.",
+                ephemeral=True,
+            )
             return
-            
+
         await interaction.response.defer(ephemeral=True)
         guild_id = interaction.guild_id or 0
         embed = await build_player_detail_embed(self.bot, player_name, guild_id)
@@ -546,7 +627,7 @@ class BlacklistView(discord.ui.View):
         self.rows = rows or []
         self.page = page
         total_pages = max(1, (len(self.rows) + PAGE_SIZE - 1) // PAGE_SIZE)
-        
+
         # Select de Jugadores para esta página
         start = page * PAGE_SIZE
         chunk = self.rows[start : start + PAGE_SIZE]
@@ -578,7 +659,24 @@ class BlacklistView(discord.ui.View):
     async def modify_btn(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
-        await interaction.response.send_modal(ModifyBlacklistModal(self.bot))
+        await interaction.response.defer(ephemeral=True)
+        try:
+            # Buscar el comando global para obtener su ID
+            cmds = await self.bot.tree.fetch_commands()
+            cmd_id = next((c.id for c in cmds if c.name == "bl_editar"), None)
+            
+            if cmd_id:
+                await interaction.followup.send(
+                    f"Haz clic para ver el comando y modificar: </bl_editar:{cmd_id}>",
+                    ephemeral=True
+                )
+            else:
+                await interaction.followup.send(
+                    "📝 Escribe el comando **`/bl_editar`** en el chat para modificar a un jugador.",
+                    ephemeral=True
+                )
+        except Exception:
+            await interaction.followup.send("📝 Escribe el comando **`/bl_editar`** en el chat.", ephemeral=True)
 
     @discord.ui.button(
         label="Eliminar",
@@ -623,7 +721,10 @@ class BlacklistView(discord.ui.View):
         """Carga los datos frescos, construye el embed de la página pedida y edita el mensaje."""
         async with aiosqlite.connect(self.bot.db_name) as db:
             db.row_factory = aiosqlite.Row
-            cursor = await db.execute("SELECT * FROM blacklist WHERE guild_id = ? ORDER BY is_enemy DESC, id DESC", (interaction.guild_id,))
+            cursor = await db.execute(
+                "SELECT * FROM blacklist WHERE guild_id = ? ORDER BY is_enemy DESC, id DESC",
+                (interaction.guild_id,),
+            )
             rows = await cursor.fetchall()
 
         embed, current_page, _ = build_blacklist_embed(rows, new_page)
@@ -677,7 +778,10 @@ class Warfare(commands.Cog):
         async with aiosqlite.connect(self.bot.db_name) as db:
             cursor = await db.execute(
                 "SELECT DISTINCT tribe FROM blacklist WHERE tribe LIKE ? AND guild_id = ? ORDER BY tribe ASC LIMIT 25",
-                (f"%{current}%", interaction.guild_id,),
+                (
+                    f"%{current}%",
+                    interaction.guild_id,
+                ),
             )
             rows = await cursor.fetchall()
 
@@ -848,7 +952,10 @@ class Warfare(commands.Cog):
             # Inicialización segura del perfil del jugador en el Tracker KDA a 0
             await db.execute(
                 "INSERT OR IGNORE INTO tribe_kda (guild_id, player_name, kills, deaths) VALUES (?, ?, 0, 0)",
-                (interaction.guild_id, jugador,),
+                (
+                    interaction.guild_id,
+                    jugador,
+                ),
             )
             await db.commit()
 
@@ -868,7 +975,11 @@ class Warfare(commands.Cog):
     ):
         async with aiosqlite.connect(self.bot.db_name) as db:
             await db.execute(
-                "DELETE FROM tribe_characters WHERE character_name = ? AND guild_id = ?", (personaje, interaction.guild_id,)
+                "DELETE FROM tribe_characters WHERE character_name = ? AND guild_id = ?",
+                (
+                    personaje,
+                    interaction.guild_id,
+                ),
             )
             await db.commit()
 
@@ -884,9 +995,19 @@ class Warfare(commands.Cog):
     @app_commands.describe(jugador="Nombre del jugador a purgar")
     async def ranking_remove(self, interaction: discord.Interaction, jugador: str):
         async with aiosqlite.connect(self.bot.db_name) as db:
-            await db.execute("DELETE FROM tribe_kda WHERE player_name = ? AND guild_id = ?", (jugador, interaction.guild_id,))
             await db.execute(
-                "DELETE FROM tribe_characters WHERE player_name = ? AND guild_id = ?", (jugador, interaction.guild_id,)
+                "DELETE FROM tribe_kda WHERE player_name = ? AND guild_id = ?",
+                (
+                    jugador,
+                    interaction.guild_id,
+                ),
+            )
+            await db.execute(
+                "DELETE FROM tribe_characters WHERE player_name = ? AND guild_id = ?",
+                (
+                    jugador,
+                    interaction.guild_id,
+                ),
             )
             await db.commit()
 
