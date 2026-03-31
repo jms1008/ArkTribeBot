@@ -426,24 +426,45 @@ async def build_player_detail_embed(
                 f"🟢 **En línea** (en {active_session['map_name']} desde {since})"
             )
         else:
-            online_str = "🔴 **Desconectado**"
+            # Buscar el último mapa en el que estuvo conectado
+            cursor = await db.execute(
+                "SELECT map_name FROM k4ultra_sessions WHERE player_name = ? AND is_active = 0 AND guild_id = ? ORDER BY end_time DESC LIMIT 1",
+                (player_name, guild_id,)
+            )
+            offline_session = await cursor.fetchone()
+            if offline_session:
+                online_str = f"🔴 **Desconectado** (Visto en {offline_session['map_name']})"
+            else:
+                online_str = "🔴 **Desconectado**"
 
         embed.add_field(name="🔌 Estado Actual", value=online_str, inline=True)
         embed.add_field(
             name="⏱️ Tiempo Total", value=f"{total_hours:.1f} horas", inline=True
         )
 
-        # Historial de Desplazamiento (Últimos 3 mapas)
+        # Historial de Desplazamiento (Últimos 3 mapas visitados cronológicamente)
         cursor = await db.execute(
-            "SELECT DISTINCT map_name FROM k4ultra_sessions WHERE player_name = ? AND guild_id = ? ORDER BY start_time DESC LIMIT 3",
+            "SELECT map_name FROM k4ultra_sessions WHERE player_name = ? AND guild_id = ? ORDER BY start_time DESC LIMIT 20",
             (
                 player_name,
                 guild_id,
             ),
         )
-        orbit_rows = await cursor.fetchall()
-        if orbit_rows:
-            orbit_str = " -> ".join([r["map_name"] for r in orbit_rows])
+        recent_sessions = await cursor.fetchall()
+        
+        orbit_list = []
+        for r in recent_sessions:
+            m_name = r["map_name"]
+            # Filtrar si el mapa actual es igual al anterior registrado (evitar duplicados consecutivos)
+            if not orbit_list or orbit_list[-1] != m_name:
+                orbit_list.append(m_name)
+            if len(orbit_list) >= 3:
+                break
+                
+        if orbit_list:
+            # Invertimos el orden para mostrar la ruta cronológicamente (Pasado -> Reciente)
+            orbit_list.reverse()
+            orbit_str = " -> ".join(orbit_list)
             embed.add_field(
                 name="🛰️ Órbita (Últimos Mapas)", value=f"`{orbit_str}`", inline=False
             )
