@@ -180,8 +180,23 @@ class Alarma(commands.Cog):
                     new_entries = current_names - prev_names
                     
                     if new_entries:
+                        # Cargar miembros de la tribu propia
+                        c_own = await db.execute("SELECT members_json FROM k4ultra_fixed_tribes WHERE guild_id = ? AND is_own = 1", (guild_id,))
+                        own_members = set()
+                        for row_own in await c_own.fetchall():
+                            try:
+                                m_list = json.loads(row_own[0])
+                                for m in m_list:
+                                    own_members.add(m.lower())
+                            except Exception:
+                                pass
+
                         intruders = []
                         for name in new_entries:
+                            # Ignorar si está en la tribu propia fijada
+                            if name.lower() in own_members:
+                                continue
+
                             # Comprobamos si el nombre existe como Character Name O como Player Name
                             c_check = await db.execute(
                                 """SELECT 1 FROM tribe_characters 
