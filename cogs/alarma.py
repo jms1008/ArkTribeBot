@@ -66,6 +66,93 @@ class AlarmDismissView(discord.ui.View):
         except Exception:
             pass
 
+async def build_alarmas_embed(bot, guild_id: int, user_id: int) -> discord.Embed:
+    embed = discord.Embed(
+        title="🔔 Panel de Alarmas Activas",
+        description="Selecciona un mapa en el menú de abajo para encender o apagar la alarma contra intrusos.",
+        color=discord.Color.gold()
+    )
+    async with aiosqlite.connect(bot.db_name) as db:
+        c = await db.execute(
+            "SELECT map_name FROM map_alarms WHERE guild_id = ? AND user_id = ?",
+            (guild_id, user_id)
+        )
+        rows = await c.fetchall()
+        
+    if not rows:
+        embed.add_field(name="Estado", value="💤 No tienes ninguna alarma activada ahora.", inline=False)
+    else:
+        mapas = [r[0] for r in rows]
+        lista_str = "\n".join([f"• **{m}**" for m in mapas])
+        embed.add_field(name="👀 Mapas Vigilados:", value=lista_str, inline=False)
+        
+    return embed
+
+class AlarmasPanelView(discord.ui.View):
+    def __init__(self, bot, servers: list):
+        super().__init__(timeout=None)
+        self.bot = bot
+        self.selected_map = None
+
+        options = []
+        for s in servers[:25]:
+            options.append(discord.SelectOption(label=s, value=s))
+            
+        if not options:
+            options.append(discord.SelectOption(label="Sin servidores", value="none"))
+            
+        self.select_mapa.options = options
+
+    @discord.ui.select(placeholder="Selecciona un mapa del clúster...", custom_id="alarm_panel_select")
+    async def select_mapa(self, interaction: discord.Interaction, select: discord.ui.Select):
+        if select.values[0] == "none":
+            await interaction.response.send_message("No hay servidores configurados.", ephemeral=True)
+            return
+            
+        self.selected_map = select.values[0]
+        await interaction.response.send_message(f"📍 Servidor **{self.selected_map}** seleccionado.\n👉 *Usa los botones para Encender 🔔 o Apagar 🔕 la alarma.*", ephemeral=True)
+
+    @discord.ui.button(label="Encender 🔔", style=discord.ButtonStyle.success, custom_id="alarm_panel_on")
+    async def btn_on(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not self.selected_map:
+            await interaction.response.send_message("⚠️ Selecciona un mapa en el menú desplegable primero.", ephemeral=True)
+            return
+            
+        user_id = interaction.user.id
+        guild_id = interaction.guild_id
+        channel_id = interaction.channel_id
+        
+        async with aiosqlite.connect(self.bot.db_name) as db:
+            await db.execute(
+                "INSERT OR REPLACE INTO map_alarms (guild_id, user_id, map_name, channel_id) VALUES (?, ?, ?, ?)",
+                (guild_id, user_id, self.selected_map, channel_id)
+            )
+            await db.commit()
+            
+        embed = await build_alarmas_embed(self.bot, guild_id, user_id)
+        await interaction.response.edit_message(embed=embed, view=self)
+        await interaction.followup.send(f"🚨 **Alarma activada** para `{self.selected_map}`.", ephemeral=True)
+
+    @discord.ui.button(label="Apagar 🔕", style=discord.ButtonStyle.danger, custom_id="alarm_panel_off")
+    async def btn_off(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not self.selected_map:
+            await interaction.response.send_message("⚠️ Selecciona un mapa en el menú desplegable primero.", ephemeral=True)
+            return
+            
+        user_id = interaction.user.id
+        guild_id = interaction.guild_id
+        
+        async with aiosqlite.connect(self.bot.db_name) as db:
+            await db.execute(
+                "DELETE FROM map_alarms WHERE guild_id = ? AND user_id = ? AND map_name = ?",
+                (guild_id, user_id, self.selected_map)
+            )
+            await db.commit()
+            
+        embed = await build_alarmas_embed(self.bot, guild_id, user_id)
+        await interaction.response.edit_message(embed=embed, view=self)
+        await interaction.followup.send(f"🔕 **Alarma desactivada** para `{self.selected_map}`.", ephemeral=True)
+
 class Alarma(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -139,6 +226,22 @@ class Alarma(commands.Cog):
         except Exception as e:
             logger.error(f"Error en comando /alarma: {e}")
             await interaction.followup.send(f"❌ Ocurrió un error al procesar la alarma: {e}", ephemeral=True)
+
+    @app_commands.command(
+        name="alarmas",
+        description="Abre el panel interactivo rápido de tus alarmas de intrusos.",
+    )
+    async def alarmas(self, interaction: discord.Interaction):
+        servers = await get_guild_servers(self.bot, interaction.guild_id)
+        if not servers:
+            await interaction.response.send_message("❌ No hay servidores configurados. Usa `/inicio_ark` primero.", ephemeral=True)
+            return
+            
+        server_names = list(servers.keys())
+        embed = await build_alarmas_embed(self.bot, interaction.guild_id, interaction.user.id)
+        view = AlarmasPanelView(self.bot, server_names)
+        
+        await interaction.response.send_message(embed=embed, view=view)
 
     @tasks.loop(minutes=1)
     async def check_alarms_loop(self):
