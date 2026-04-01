@@ -417,6 +417,11 @@ class ArkTribeBot(commands.Bot):
                                         "INSERT INTO tribe_kda (guild_id, player_name, deaths) VALUES (?, ?, 1) ON CONFLICT(guild_id, player_name) DO UPDATE SET deaths = deaths + 1",
                                         (guild_id, victima_player),
                                     )
+                                # Registrar muerte individual con timestamp para estadísticas pico
+                                await db.execute(
+                                    "INSERT INTO tribe_death_log (guild_id, player_name) VALUES (?, ?)",
+                                    (guild_id, victima_player),
+                                )
                                 
                                 # Obtener el total de muertes actualizado para el sarcasmo
                                 cursor = await db.execute(
@@ -923,6 +928,14 @@ class ArkTribeBot(commands.Bot):
                     guild_id INTEGER NOT NULL,
                     channel_id INTEGER,
                     message_id INTEGER
+                )
+            """)
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS tribe_death_log (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id INTEGER NOT NULL,
+                    player_name TEXT NOT NULL,
+                    died_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
 

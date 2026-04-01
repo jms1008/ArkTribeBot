@@ -131,7 +131,6 @@ async def update_kda_dashboards(bot, guild_id: int):
     # Generación del Leaderboard de Mortalidad
     async with aiosqlite.connect(bot.db_name) as db:
         db.row_factory = aiosqlite.Row
-        # Ordenación por muertes DESC (Más muertes = Rank 1).
         cursor = await db.execute(
             """
             SELECT player_name, kills, deaths
@@ -145,6 +144,36 @@ async def update_kda_dashboards(bot, guild_id: int):
         
         # Calcular total de muertes de la tribu para las barras
         total_tribe_deaths = sum(row["deaths"] for row in rows) if rows else 0
+        
+        # Obtener pico de muertes/hora por jugador (máximo de muertes en cualquier ventana de 1h)
+        peak_dph_map = {}
+        try:
+            c_peak = await db.execute(
+                """
+                SELECT player_name, strftime('%Y-%m-%d %H', died_at) as hora, COUNT(*) as cnt 
+                FROM tribe_death_log 
+                WHERE guild_id = ? 
+                GROUP BY player_name, hora
+                """,
+                (guild_id,),
+            )
+            for peak_row in await c_peak.fetchall():
+                pname = peak_row["player_name"]
+                cnt = peak_row["cnt"]
+                if pname not in peak_dph_map or cnt > peak_dph_map[pname]:
+                    peak_dph_map[pname] = cnt
+        except Exception:
+            pass  # Tabla puede no existir aún
+
+    # Resolver apodos de Discord
+    guild = bot.get_guild(guild_id)
+    def resolve_display_name(player_name):
+        if not guild:
+            return player_name
+        for member in guild.members:
+            if member.display_name == player_name or member.name == player_name:
+                return member.display_name
+        return player_name
 
     if not rows:
         embed = discord.Embed(
@@ -178,13 +207,16 @@ async def update_kda_dashboards(bot, guild_id: int):
 
         # Cabecera del Top 1 especial
         top1 = rows[0]
+        top1_name = resolve_display_name(top1["player_name"])
         top1_rank, top1_emoji = get_mortality_rank(top1["deaths"])
         top1_pct = (top1["deaths"] / total_tribe_deaths * 100) if total_tribe_deaths > 0 else 0
+        top1_peak = peak_dph_map.get(top1["player_name"])
         
         lines = []
-        lines.append(f"## 🏆 Rey de los Mancos: **{top1['player_name']}**")
+        lines.append(f"## 🏆 Rey de los Mancos: **{top1_name}**")
         lines.append(f"> Con **{top1['deaths']}** muertes ostenta el trono de la vergüenza.")
-        lines.append(f"> {top1_emoji} Rango: **{top1_rank}** — `{get_bar(top1['deaths'], total_tribe_deaths)}` {top1_pct:.0f}%")
+        peak_txt = f" · 🔥 Pico: `{top1_peak}`/h" if top1_peak else ""
+        lines.append(f"> {top1_emoji} **{top1_rank}** — `{get_bar(top1['deaths'], total_tribe_deaths)}` {top1_pct:.0f}%{peak_txt}")
         lines.append("")
         lines.append(f"Muertes totales de la tribu: **{total_tribe_deaths}** 📉")
         lines.append("─────────────────────────────")
@@ -192,15 +224,17 @@ async def update_kda_dashboards(bot, guild_id: int):
         # Resto de jugadores en texto compacto
         for idx, row in enumerate(rows[1:15], start=2):
             deaths = row["deaths"]
-            player = row["player_name"]
+            player = resolve_display_name(row["player_name"])
             rank_title, rank_emoji = get_mortality_rank(deaths)
             bar = get_bar(deaths, total_tribe_deaths)
             pct = (deaths / total_tribe_deaths * 100) if total_tribe_deaths > 0 else 0
+            peak = peak_dph_map.get(row["player_name"])
             
             medalla = "🥈" if idx == 2 else "🥉" if idx == 3 else "☠️"
+            peak_str = f" · 🔥`{peak}`/h" if peak else ""
             
             lines.append(f"**{medalla} #{idx} {player}**")
-            lines.append(f"  {rank_emoji} *{rank_title}*  ·  `{bar}` **{deaths}** ({pct:.0f}%)")
+            lines.append(f"  {rank_emoji} *{rank_title}*  ·  `{bar}` **{deaths}** ({pct:.0f}%){peak_str}")
             lines.append("")      
 
         embed = discord.Embed(
@@ -219,7 +253,7 @@ async def update_kda_dashboards(bot, guild_id: int):
             "Respawneamos más rápido que los dinos salvajes.",
         ]
         embed.set_footer(
-            text=f"💡 {_rng.choice(footer_frases)} • Actualizado en vivo"
+            text=f"💡 {_rng.choice(footer_frases)} • 🔥/h = pico máximo en 1 hora"
         )
 
     messages_to_remove = []
