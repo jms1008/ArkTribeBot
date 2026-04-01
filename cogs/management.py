@@ -112,12 +112,20 @@ def build_todo_embed_view(bot, rows: list, page: int = 0):
         lines.append(f"⏳ `{n_pending}` Pendientes  ·  🔨 `{n_progress}` En Progreso  ·  📊 `{total}` Total")
         lines.append("")
         
-        import re
         for row in chunk:
-            raw_asignado = str(row['asignado_a']) if row["asignado_a"] else "*Sin asignar*"
-            # Formatear IDs numéricos antiguos como menciones de discord y limpiar si alguien metió <@nombre> manual
-            asignado = re.sub(r'\b(\d{17,20})\b', r'<@\1>', raw_asignado)
-            asignado = asignado.replace("<@", "@").replace("@>", "") if not re.search(r'<@\d+>', asignado) else asignado
+            raw_asignado = str(row['asignado_a']) if row["asignado_a"] else ""
+            if not raw_asignado:
+                asignado = "*Sin asignar*"
+            else:
+                parts = [p.strip() for p in raw_asignado.split(",") if p.strip()]
+                fixed = []
+                for p in parts:
+                    core = p.replace("<@", "").replace(">", "")
+                    if core.isdigit():
+                        fixed.append(f"<@{core}>")
+                    else:
+                        fixed.append(core)
+                asignado = ", ".join(fixed)
             if row["estado"] == "Pendiente":
                 icon = "⏳"
                 lines.append(f"> `#{row['id']}` {icon} **{row['tarea']}**")
@@ -244,14 +252,15 @@ class ClaimTaskModal(discord.ui.Modal, title="Reclamar Tarea"):
             actual_assignee = row["asignado_a"]
             actual_assignee_str = str(actual_assignee) if actual_assignee else ""
             user_mention = f"<@{interaction.user.id}>"
+            user_id_str = str(interaction.user.id)
             user_name = interaction.user.display_name
             
             assignees = [a.strip() for a in actual_assignee_str.split(",") if a.strip()]
             
-            # Buscar coincidencia (ya sea por nombre viejo o mención nueva) para hacer TOGGLE (quitar si ya está)
             encontrado = False
             for a in assignees:
-                if a == user_mention or a.lower() == user_name.lower():
+                core = a.replace("<@", "").replace(">", "")
+                if core == user_id_str or core.lower() == user_name.lower():
                     assignees.remove(a)
                     encontrado = True
                     break
