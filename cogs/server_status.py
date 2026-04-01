@@ -388,13 +388,22 @@ class ServerStatus(commands.Cog):
             )
             await db.commit()
 
-    @tasks.loop(minutes=2)
+    @tasks.loop(minutes=1)
     async def global_status_loop(self):
         await self.bot.wait_until_ready()
+        
+        import time
+        current_minute = int(time.time() // 60)
+        
         messages_to_remove = []
 
         async with aiosqlite.connect(self.bot.db_name) as db:
             db.row_factory = aiosqlite.Row
+            
+            # Extraer las configuraciones de intervalo por guild
+            c_config = await db.execute("SELECT guild_id, update_interval FROM guild_config")
+            guild_configs = {r["guild_id"]: r["update_interval"] or 2 for r in await c_config.fetchall()}
+            
             cursor = await db.execute(
                 "SELECT id, guild_id, channel_id, message_id FROM status_online_messages"
             )
@@ -403,15 +412,26 @@ class ServerStatus(commands.Cog):
             if not rows:
                 return
 
+            # Filtrar qué guilds deben actualizarse en base al minuto actual y su intervalo
+            guilds_to_update = set()
+            active_rows = []
+            for row in rows:
+                g_id = row["guild_id"]
+                interval = guild_configs.get(g_id, 2)
+                if current_minute % interval == 0:
+                    guilds_to_update.add(g_id)
+                    active_rows.append(row)
+                    
+            if not active_rows:
+                return
+
             # Generar un embed por Guild, agrupando los mensajes
             guild_embeds = {}
-            for row in rows:
-                guild_id = row["guild_id"]
-                if guild_id not in guild_embeds:
-                    servers = await get_guild_servers(self.bot, guild_id)
-                    guild_embeds[guild_id] = await self.get_global_status_embed(servers)
+            for guild_id in guilds_to_update:
+                servers = await get_guild_servers(self.bot, guild_id)
+                guild_embeds[guild_id] = await self.get_global_status_embed(servers)
 
-            for row in rows:
+            for row in active_rows:
                 row_id = row["id"]
                 guild_id = row["guild_id"]
                 channel_id = row["channel_id"]

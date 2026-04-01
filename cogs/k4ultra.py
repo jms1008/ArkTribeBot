@@ -289,23 +289,33 @@ class K4Ultra(commands.Cog):
             logger.debug(f"[K4Ultra] Error fetching from {map_name} (Guild {guild_id}): {e}")
             return guild_id, map_name, []
 
-    @tasks.loop(minutes=5)
+    @tasks.loop(minutes=1)
     async def gather_player_data(self):
-        """Tarea en segundo plano que recopila datos de los jugadores cada 5 minutos."""
+        """Tarea en segundo plano que recopila datos de los jugadores en base a su update_interval configurado."""
         await self.bot.wait_until_ready()
+        
+        import time
+        current_minute = int(time.time() // 60)
 
-        # Recorrido de todos los Guilds configurados para obtener sus servidores
+        # Recorrido de los Guilds y sus intervalos
         from cogs.server_status import get_guild_servers
 
         async with aiosqlite.connect(self.bot.db_name) as _cfg_db:
-            cfg_cursor = await _cfg_db.execute("SELECT guild_id FROM guild_config")
+            cfg_cursor = await _cfg_db.execute("SELECT guild_id, update_interval FROM guild_config")
             guild_rows = await cfg_cursor.fetchall()
 
         all_guild_servers = []
-        for (guild_id,) in guild_rows:
+        for guild_id, interval in guild_rows:
+            intrvl = interval if interval else 5
+            if current_minute % intrvl != 0:
+                continue
+                
             g_servers = await get_guild_servers(self.bot, guild_id)
             for name, (ip, port) in g_servers.items():
                 all_guild_servers.append((guild_id, name, ip, port))
+
+        if not all_guild_servers:
+            return
 
         tasks_list = [
             self.fetch_server_players(gid, name, ip, port)
@@ -315,13 +325,35 @@ class K4Ultra(commands.Cog):
 
         now = datetime.now()
 
+        # Diccionario para reemplazo en tiempo real (secondary -> primary)
+        async with aiosqlite.connect(self.bot.db_name) as db:
+            db.row_factory = aiosqlite.Row
+            identities = {}
+            for g_id in set([t[0] for t in all_guild_servers]):
+                c = await db.execute("SELECT secondary_name, primary_name FROM player_identities_link WHERE guild_id = ?", (g_id,))
+                rows = await c.fetchall()
+                identities[g_id] = {row["secondary_name"].lower(): row["primary_name"] for row in rows}
+
         all_fetched = []
         for guild_id, map_name, players in results:
+            g_identities = identities.get(guild_id, {})
             for p in players:
-                all_fetched.append({"guild_id": guild_id, "map": map_name, "raw_name": p["name"], "duration": p["duration"]})
+                raw_name = p["name"]
+                if not raw_name:
+                    continue
+                # Verificamos si este nombre fue fusionado alguna vez a otra cuenta principal
+                true_name = g_identities.get(raw_name.lower(), raw_name)
+                
+                all_fetched.append({
+                    "guild_id": guild_id, 
+                    "map": map_name, 
+                    "raw_name": true_name, 
+                    "duration": p["duration"]
+                })
 
         async with aiosqlite.connect(self.bot.db_name) as db:
             db.row_factory = aiosqlite.Row
+
 
             cursor = await db.execute(
                 "SELECT id, player_name, map_name, guild_id, start_time, end_time, last_duration FROM k4ultra_sessions WHERE is_active = 1"
@@ -707,19 +739,9 @@ class K4Ultra(commands.Cog):
 
                         message = await channel.fetch_message(message_id)
 
-                        current_embed = message.embeds[0] if message.embeds else None
+                        # Al actualizar los dashboards en segundo plano, forzamos la página 1 (índice 0)
+                        # como solicita el usuario para evitar cuelgues de interfaz por despoblamiento de servidores.
                         use_page_index = 0
-                        if current_embed and current_embed.footer and current_embed.footer.text:
-                            import re
-                            match = re.search(r"Página (\d+)/", current_embed.footer.text)
-                            if match:
-                                idx_str = match.group(1)
-                                if idx_str.isdigit():
-                                    use_page_index = int(idx_str) - 1
-                        
-                        if use_page_index >= len(pages):
-                            use_page_index = len(pages) - 1 if pages else 0
-
                         if mode == "tribus":
                             await message.edit(embed=pages[0], view=None)
                         else:
@@ -1770,4 +1792,16 @@ class K4Ultra(commands.Cog):
 
 
 async def setup(bot):
+    async with aiosqlite.connect(bot.db_name) as db:
+        await db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS player_identities_link (
+                guild_id INTEGER NOT NULL,
+                secondary_name TEXT NOT NULL,
+                primary_name TEXT NOT NULL,
+                PRIMARY KEY (guild_id, secondary_name)
+            )
+            """
+        )
+        await db.commit()
     await bot.add_cog(K4Ultra(bot))

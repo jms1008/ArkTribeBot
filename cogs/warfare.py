@@ -364,6 +364,14 @@ async def build_player_detail_embed(
         alias_row = await cursor.fetchone()
         if alias_row:
             embed.title = f"👤 Expediente: {player_name} [{alias_row['alias']}]"
+            
+        desc = []
+        c_ids = await db.execute("SELECT secondary_name FROM player_identities_link WHERE primary_name = ? AND guild_id = ?", (player_name, guild_id))
+        old_ids = await c_ids.fetchall()
+        if old_ids:
+            old_lst = ", ".join([r["secondary_name"] for r in old_ids])
+            desc.append(f"⚠️ **Antiguos nombres de Steam:** `{old_lst}`\n*(Progreso fusionado automáticamente a este perfil)*")
+        embed.description = "\n\n".join(desc) if desc else ""
 
         # --- 1. Datos de Blacklist ---
         cursor = await db.execute(
@@ -389,7 +397,10 @@ async def build_player_detail_embed(
             )
             embed.add_field(name="📝 Notas", value=notes_str, inline=False)
         else:
-            embed.description = "Este jugador no está en la blacklist manual."
+            if embed.description is None or embed.description == "":
+                embed.description = "Este jugador no está en la blacklist manual."
+            else:
+                embed.description += "\n\nEste jugador no está en la blacklist manual."
 
         # --- 2. Estadísticas de Juego (K4Ultra) ---
         cursor = await db.execute(

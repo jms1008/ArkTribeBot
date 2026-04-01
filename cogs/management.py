@@ -630,6 +630,105 @@ class Management(commands.Cog):
         from cogs.warfare import update_blacklist_dashboards
         await update_blacklist_dashboards(self.bot, interaction.guild_id)
 
+    @app_commands.command(
+        name="fusionar_perfiles",
+        description="Une todo el historial cronológico y mapas visitados de un Nombre Antiguo a uno Nuevo (Principal)."
+    )
+    @app_commands.describe(
+        secundario="Nombre de Steam antiguo o secundario que ya no se usa",
+        primario="Nombre de Steam oficial y definitivo del jugador"
+    )
+    async def fusionar_perfiles(self, interaction: discord.Interaction, secundario: str, primario: str):
+        if not await interaction.client.is_authorized_admin(interaction):
+            await interaction.response.send_message("❌ Acceso denegado.", ephemeral=True)
+            return
+            
+        secundario = secundario.strip()
+        primario = primario.strip()
+        
+        if secundario.lower() == primario.lower():
+            await interaction.response.send_message("❌ El nombre original y secundario no pueden ser iguales.", ephemeral=True)
+            return
+            
+        await interaction.response.defer(ephemeral=False)
+        guild_id = interaction.guild_id
+        
+        async with aiosqlite.connect(self.bot.db_name) as db:
+            # 1. Resolver el encadenamiento (Si Z se convierte en Y, actualizar todos los X apuntando a Z para que apunten a Y)
+            await db.execute(
+                "UPDATE player_identities_link SET primary_name = ? WHERE primary_name = ? AND guild_id = ?",
+                (primario, secundario, guild_id)
+            )
+            
+            # 2. Insertar el nuevo alias
+            await db.execute(
+                "INSERT OR REPLACE INTO player_identities_link (guild_id, secondary_name, primary_name) VALUES (?, ?, ?)",
+                (guild_id, secundario, primario)
+            )
+            
+            # 3. Trasladar registro de sesiones completas (radar activo e inactivo)
+            await db.execute(
+                "UPDATE k4ultra_sessions SET player_name = ? WHERE player_name = ? AND guild_id = ?",
+                (primario, secundario, guild_id)
+            )
+            
+            # 4. Fusión de Playtimes
+            c_play = await db.execute("SELECT map_name, total_minutes, last_seen FROM k4ultra_playtime WHERE player_name = ? AND guild_id = ?", (secundario, guild_id))
+            old_playtimes = await c_play.fetchall()
+            
+            for map_name, mins, last_seen in old_playtimes:
+                c_prim = await db.execute("SELECT total_minutes FROM k4ultra_playtime WHERE player_name = ? AND map_name = ? AND guild_id = ?", (primario, map_name, guild_id))
+                prim_row = await c_prim.fetchone()
+                if prim_row:
+                    new_mins = prim_row[0] + mins
+                    await db.execute("UPDATE k4ultra_playtime SET total_minutes = ?, last_seen = max(last_seen, ?) WHERE player_name = ? AND map_name = ? AND guild_id = ?", (new_mins, last_seen, primario, map_name, guild_id))
+                else:
+                    await db.execute("INSERT INTO k4ultra_playtime (guild_id, player_name, map_name, total_minutes, last_seen) VALUES (?, ?, ?, ?, ?)", (guild_id, primario, map_name, mins, last_seen))
+            
+            await db.execute("DELETE FROM k4ultra_playtime WHERE player_name = ? AND guild_id = ?", (secundario, guild_id))
+            
+            # 5. Trasladar alts en In-Game
+            await db.execute(
+                "UPDATE tribe_characters SET player_name = ? WHERE player_name = ? AND guild_id = ?",
+                (primario, secundario, guild_id)
+            )
+            
+            # 6. Para blacklist, simplemente si tenía notas antiguas, no queremos perderlas
+            c_bl = await db.execute("SELECT notes FROM blacklist WHERE player = ? AND guild_id = ?", (secundario, guild_id))
+            row_bl = await c_bl.fetchone()
+            if row_bl:
+                old_note = row_bl[0]
+                c_p_bl = await db.execute("SELECT id, notes FROM blacklist WHERE player = ? AND guild_id = ?", (primario, guild_id))
+                row_p_bl = await c_p_bl.fetchone()
+                if row_p_bl:
+                    combined_notes = f"{row_p_bl[1]} | [De {secundario}]: {old_note}"
+                    await db.execute("UPDATE blacklist SET notes = ? WHERE id = ?", (combined_notes, row_p_bl[0]))
+                else:
+                    new_note = f"[Heredado de {secundario}]: {old_note}"
+                    await db.execute("UPDATE blacklist SET player = ?, notes = ? WHERE player = ? AND guild_id = ?", (primario, new_note, secundario, guild_id))
+            
+            await db.execute("DELETE FROM blacklist WHERE player = ? AND guild_id = ?", (secundario, guild_id))
+            
+            # Eliminar duplicados en tribe_characters en caso de que ambos tuviesen ya los mismos in-games asignados
+            await db.execute("""
+                DELETE FROM tribe_characters 
+                WHERE rowid NOT IN (
+                    SELECT max(rowid) FROM tribe_characters GROUP BY player_name, character_name, guild_id
+                )
+            """)
+            
+            await db.commit()
+            
+        # Mensaje de confirmación detallado
+        embed = discord.Embed(
+            title="✅ Identidades Fusionadas",
+            description=f"El perfil histórico de **{secundario}** ha sido traspasado y fusionado de manera perpetua a **{primario}**.",
+            color=discord.Color.brand_green()
+        )
+        embed.set_footer(text="A partir de ahora, el bot convertirá automáticamente a este jugador si se conecta usando su viejo nombre de Steam.")
+        
+        await interaction.followup.send(embed=embed)
+
 
 async def setup(bot):
     await bot.add_cog(Management(bot))
