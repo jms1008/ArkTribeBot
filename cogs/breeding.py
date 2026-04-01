@@ -511,7 +511,6 @@ async def update_breeding_dashboards(bot, guild_id: int, specific_message_id=Non
             
             lines.append(f"### 🦖 {row['especie']}")
             lines.append(f"> ╰ {stats_text}")
-            lines.append("")
         
         embed.description = "\n".join(lines).strip()
 

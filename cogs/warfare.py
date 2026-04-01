@@ -496,6 +496,15 @@ async def build_player_detail_embed(
                 embed.color = discord.Color.light_grey()
 
             notes_str = bl_row["notes"] if bl_row["notes"] else "Ninguna"
+            if "Pasaporte registrado (K4Ultra)" in notes_str and len(notes_str) > 35:
+                # Limpiar texto autogenerado si hay notas escritas manualmente por el jugador
+                notes_str = notes_str.replace("Pasaporte registrado (K4Ultra) | ", "")
+                notes_str = notes_str.replace("Pasaporte registrado (K4Ultra)", "").strip()
+                if notes_str.startswith("|"): 
+                    notes_str = notes_str[1:].strip()
+                if notes_str.startswith("["): 
+                    # El delimitador manual de notas a veces es | [De Alias]:
+                    pass
             embed.add_field(
                 name="🏠 Tribu", value=bl_row["tribe"] or "Desconocida", inline=True
             )

@@ -243,15 +243,23 @@ class ClaimTaskModal(discord.ui.Modal, title="Reclamar Tarea"):
             
             actual_assignee = row["asignado_a"]
             actual_assignee_str = str(actual_assignee) if actual_assignee else ""
+            user_mention = f"<@{interaction.user.id}>"
             user_name = interaction.user.display_name
-            if not actual_assignee_str:
-                new_assignee = user_name
-            else:
-                # Comprobar si ya está asignado
-                assignees = [a.strip() for a in actual_assignee_str.split(",")]
-                if user_name not in assignees:
-                    assignees.append(user_name)
-                new_assignee = ", ".join(assignees)
+            
+            assignees = [a.strip() for a in actual_assignee_str.split(",") if a.strip()]
+            
+            # Buscar coincidencia (ya sea por nombre viejo o mención nueva) para hacer TOGGLE (quitar si ya está)
+            encontrado = False
+            for a in assignees:
+                if a == user_mention or a.lower() == user_name.lower():
+                    assignees.remove(a)
+                    encontrado = True
+                    break
+                    
+            if not encontrado:
+                assignees.append(user_mention)
+                
+            new_assignee = ", ".join(assignees)
 
             await db.execute(
                 "UPDATE todos SET asignado_a = ?, estado = 'En Progreso' WHERE id = ? AND guild_id = ?",
