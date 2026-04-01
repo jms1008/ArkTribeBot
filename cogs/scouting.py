@@ -169,14 +169,19 @@ async def build_scout_embed_view(bot, rows: list, map_filter: str, page: int = 0
     chunk = rows[start : start + page_size]
 
     embed = discord.Embed(
-        title=f"📡 Scouting: {map_filter}", color=discord.Color.red()
+        title=f"🛰️ SCOUTING: {map_filter.upper()}", color=discord.Color.from_rgb(200, 50, 50)
     )
 
     if not rows:
-        embed.description = "No hay registros.\n💡 Usa `/scout_add` para añadir uno."
+        embed.description = "No hay reportes de bases enemigas.\n💡 Usa `/scout_add` para registrar una."
     else:
+        lines = []
+        lines.append(f"📊 `{total}` bases registradas")
+        lines.append("")
+        
         for row in chunk:
-            amenaza_str = "⭐" * row["nivel_amenaza"]
+            threat = row["nivel_amenaza"]
+            threat_bar = "🔴" * threat + "⚫" * (5 - threat)
             prefix = f"**[{row['mapa']}]** " if map_filter == "Global" else ""
             
             link_img = ""
@@ -198,23 +203,24 @@ async def build_scout_embed_view(bot, rows: list, map_filter: str, page: int = 0
                         if thread:
                             backup_msg = await thread.fetch_message(msg_id)
                             if backup_msg.attachments:
-                                link_img = f" [[📷 Ver Imagen]({backup_msg.attachments[0].url})]"
+                                link_img = f" [📷]({backup_msg.attachments[0].url})"
                     else:
-                        link_img = f" [[📷 Ver Imagen]({row['url_imagen']})]"
+                        link_img = f" [📷]({row['url_imagen']})"
                 except Exception as e:
                     logging.getLogger("ArkTribeBot").warning(
                         f"No se pudo recuperar imagen fresca para scout {row['id']}: {e}"
                     )
-
-            value_text = f"📍 {row['coordenadas']} | ⚠️ {amenaza_str}\n📝 {row['notas']}{link_img}\n🆔 **ID: {row['id']}**"
             
-            embed.add_field(
-                name=f"{prefix}{row['tribu_enemiga']}",
-                value=value_text,
-                inline=False,
-            )
+            notas = row['notas'] or ""
+            notas_txt = f"\n>  ╰ 📝 *{notas[:50]}{'...' if len(notas) > 50 else ''}*" if notas else ""
+            
+            lines.append(f"> `#{row['id']}` {prefix}**{row['tribu_enemiga']}**{link_img}")
+            lines.append(f">  📍 `{row['coordenadas']}` · {threat_bar}{notas_txt}")
+            lines.append("")
+
+        embed.description = "\n".join(lines).strip()
         embed.set_footer(
-            text=f"Página {page + 1}/{total_pages} • {total} bases registradas | 💡 Usa /scout_add_image [id] [imagen] para foto"
+            text=f"Página {page + 1}/{total_pages} • /scout_add_image [id] para foto"
         )
 
     view = ScoutView(bot, map_filter, page=page, total_rows=total)

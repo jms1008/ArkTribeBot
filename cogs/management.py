@@ -101,16 +101,30 @@ def build_todo_embed_view(bot, rows: list, page: int = 0):
     start = page * page_size
     chunk = rows[start : start + page_size]
 
-    embed = discord.Embed(title="📝 Lista de Tareas", color=discord.Color.orange())
+    embed = discord.Embed(title="📋 LISTA DE TAREAS", color=discord.Color.from_rgb(255, 165, 0))
     if not rows:
-        embed.description = "No hay tareas pendientes. ¡Buen trabajo! 🎉"
+        embed.description = "¡Sin tareas pendientes! La tribu está al día. 🎉"
     else:
-        text = ""
+        n_pending = sum(1 for r in rows if r["estado"] == "Pendiente")
+        n_progress = total - n_pending
+        
+        lines = []
+        lines.append(f"⏳ `{n_pending}` Pendientes  ·  🔨 `{n_progress}` En Progreso  ·  📊 `{total}` Total")
+        lines.append("")
+        
         for row in chunk:
-            asignado = f"<@{row['asignado_a']}>" if row["asignado_a"] else "Nadie"
-            estado_icon = "⏳" if row["estado"] == "Pendiente" else "🔨"
-            text += f"**#{row['id']}** {estado_icon} - {row['tarea']}\n   Estado: {row['estado']} | Asignado: {asignado}\n\n"
-        embed.description = text.strip()
+            asignado = f"<@{row['asignado_a']}>" if row["asignado_a"] else "*Sin asignar*"
+            if row["estado"] == "Pendiente":
+                icon = "⏳"
+                lines.append(f"> `#{row['id']}` {icon} **{row['tarea']}**")
+                lines.append(f">  ╰ 👤 {asignado}")
+            else:
+                icon = "🔨"
+                lines.append(f"> `#{row['id']}` {icon} **{row['tarea']}**")
+                lines.append(f">  ╰ 👤 {asignado}")
+            lines.append("")
+        
+        embed.description = "\n".join(lines).strip()
         embed.set_footer(text=f"Página {page + 1}/{total_pages} • {total} tareas en total")
 
     view = TodoView(bot, page=page, total_rows=total)

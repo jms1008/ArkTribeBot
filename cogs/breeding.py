@@ -475,10 +475,14 @@ async def update_breeding_dashboards(bot, guild_id: int, specific_message_id=Non
         rows_to_display = rows[start_idx:end_idx]
         
         embed = discord.Embed(
-            title="🧬 Líneas de Crianza (Top Stats)", color=discord.Color.gold()
+            title="🧬 LÍNEAS DE CRIANZA (Top Stats)", color=discord.Color.from_rgb(255, 215, 0)
         )
+        
+        lines = []
+        lines.append(f"📊 `{total_rows}` especies registradas · Página `{page}/{total_pages}`")
+        lines.append("")
+        
         for row in rows_to_display:
-            # Formateo de valores (asignando 0 si es None)
             hp = row["hp"] or 0
             stam = row["stam"] or 0
             weight = row["weight"] or 0
@@ -489,29 +493,30 @@ async def update_breeding_dashboards(bot, guild_id: int, specific_message_id=Non
 
             stats_list = []
             if hp > 0:
-                stats_list.append(f"❤️ HP: **{hp}**")
+                stats_list.append(f"❤️ **{hp}**")
             if stam > 0:
-                stats_list.append(f"⚡ Stam: **{stam}**")
+                stats_list.append(f"⚡ **{stam}**")
             if weight > 0:
-                stats_list.append(f"⚖️ Peso: **{weight}**")
+                stats_list.append(f"⚖️ **{weight}**")
             if melee > 0:
-                stats_list.append(f"⚔️ Melee: **{melee}**")
+                stats_list.append(f"⚔️ **{melee}**")
             if oxy > 0:
-                stats_list.append(f"🫧 Oxy: **{oxy}**")
+                stats_list.append(f"🫧 **{oxy}**")
             if food > 0:
-                stats_list.append(f"🍖 Food: **{food}**")
+                stats_list.append(f"🍖 **{food}**")
             if speed > 0:
-                stats_list.append(f"💨 Speed: **{speed}**")
+                stats_list.append(f"💨 **{speed}**")
 
-            stats_text = (
-                " | ".join(stats_list) if stats_list else "Sin stats registradas."
-            )
-            stats_text += "\n────────────────────────────"
-
-            embed.add_field(name=f"🦖 {row['especie']}", value=stats_text, inline=False)
+            stats_text = " | ".join(stats_list) if stats_list else "*Sin stats*"
+            
+            lines.append(f"> 🦖 **{row['especie']}**")
+            lines.append(f">  {stats_text}")
+            lines.append("")
+        
+        embed.description = "\n".join(lines).strip()
 
         embed.set_footer(
-            text=f"Página {page}/{total_pages} • {total_rows} dinos total | 💡 Usa /linea_add para añadir nuevo dino."
+            text="💡 /linea_add para registrar · /linea_mod para actualizar"
         )
 
     messages_to_remove = []

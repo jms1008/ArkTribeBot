@@ -53,20 +53,25 @@ def build_blacklist_embed(rows: list, page: int = 0) -> discord.Embed:
                 lines.append("## ⚪ REGISTROS (NEUTRALES)")
                 current_section = "Neutrales"
 
-            nota_corta = (
-                (row["notes"][:35] + "...")
-                if row["notes"] and len(row["notes"]) > 35
-                else (row["notes"] or "Sin notas")
-            )
+            # Ocultar notas genéricas de K4Ultra que son repetitivas
+            raw_note = row["notes"] or ""
+            is_k4_default = raw_note.lower().startswith("auto-detectado") or raw_note.lower().startswith("pasaporte registrado")
+            
+            nota_corta = ""
+            if raw_note and not is_k4_default:
+                nota_corta = (raw_note[:35] + "...") if len(raw_note) > 35 else raw_note
+            
             tribe_txt = row["tribe"] or "???"
             map_txt = row["map"] or "???"
 
             if is_enemy == 1:
                 lines.append(f"> `#{row['id']}` 🔴 **{row['player']}** · {tribe_txt} · {map_txt}")
-                lines.append(f">  ╰ 📝 *{nota_corta}*")
+                if nota_corta:
+                    lines.append(f">  ╰ 📝 *{nota_corta}*")
             else:
                 lines.append(f"> `#{row['id']}` ⚪ **{row['player']}** · {tribe_txt} · {map_txt}")
-                lines.append(f">  ╰ 📝 *{nota_corta}*")
+                if nota_corta:
+                    lines.append(f">  ╰ 📝 *{nota_corta}*")
 
         embed.description = "\n".join(lines).strip()
         embed.set_footer(

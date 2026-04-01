@@ -1076,8 +1076,8 @@ class K4Ultra(commands.Cog):
                 active_players = {s["player_name"] for s in active_sessions}
 
                 page1 = discord.Embed(
-                    title="🌐 Tracker K4Ultra — Radar en Vivo",
-                    color=discord.Color.purple(),
+                    title="🌐 TRACKER K4ULTRA — Radar en Vivo",
+                    color=discord.Color.from_rgb(128, 0, 255),
                 )
                 if active_sessions:
                     online_lines = []
@@ -1145,8 +1145,8 @@ class K4Ultra(commands.Cog):
                     
                     for idx, chunk in enumerate(chunks[1:]):
                         p_next = discord.Embed(
-                            title="🌐 Tracker K4Ultra — Radar en Vivo",
-                            color=discord.Color.purple(),
+                            title="🌐 TRACKER K4ULTRA — Radar en Vivo",
+                            color=discord.Color.from_rgb(128, 0, 255),
                         )
                         p_next.add_field(name="🏆 Top Jugadores (Cont.)", value=chunk, inline=False)
                         pages.append(p_next)
@@ -1156,8 +1156,8 @@ class K4Ultra(commands.Cog):
 
             elif mode == "tribus":
                 page_t = discord.Embed(
-                    title="🌐 Tracker K4Ultra — Tribus y Grupos",
-                    color=discord.Color.dark_purple(),
+                    title="🌐 TRACKER K4ULTRA — Tribus y Grupos",
+                    color=discord.Color.from_rgb(90, 0, 180),
                 )
 
                 cursor = await db.execute("SELECT name, members_json, is_own FROM k4ultra_fixed_tribes WHERE guild_id = ?", (guild_id,))
