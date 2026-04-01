@@ -68,10 +68,14 @@ class AlarmDismissView(discord.ui.View):
 
 async def build_alarmas_embed(bot, guild_id: int, user_id: int) -> discord.Embed:
     embed = discord.Embed(
-        title="🔔 Panel de Alarmas Activas",
-        description="Selecciona un mapa en el menú de abajo para encender o apagar la alarma contra intrusos.",
-        color=discord.Color.gold()
+        title="🔔 PANEL DE ALARMAS ACTIVAS",
+        color=discord.Color.from_rgb(255, 100, 0)
     )
+    
+    lines = []
+    lines.append("Selecciona un mapa en el menú inferior para controlar su alarma.")
+    lines.append("")
+    
     async with aiosqlite.connect(bot.db_name) as db:
         c = await db.execute(
             "SELECT map_name FROM map_alarms WHERE guild_id = ? AND user_id = ?",
@@ -80,12 +84,15 @@ async def build_alarmas_embed(bot, guild_id: int, user_id: int) -> discord.Embed
         rows = await c.fetchall()
         
     if not rows:
-        embed.add_field(name="Estado", value="💤 No tienes ninguna alarma activada ahora.", inline=False)
+        lines.append("## 💤 Estado Actual")
+        lines.append("> No tienes ninguna alarma activada ahora.")
     else:
         mapas = [r[0] for r in rows]
-        lista_str = "\n".join([f"• **{m}**" for m in mapas])
-        embed.add_field(name="👀 Mapas Vigilados:", value=lista_str, inline=False)
-        
+        lines.append("## 👀 Mapas Vigilados")
+        for m in mapas:
+            lines.append(f"> • **{m}**")
+            
+    embed.description = "\n".join(lines).strip()
     return embed
 
 class AlarmasPanelView(discord.ui.View):

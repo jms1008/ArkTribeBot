@@ -493,24 +493,24 @@ async def update_breeding_dashboards(bot, guild_id: int, specific_message_id=Non
 
             stats_list = []
             if hp > 0:
-                stats_list.append(f"❤️ **{hp}**")
+                stats_list.append(f"❤️ `{hp}`")
             if stam > 0:
-                stats_list.append(f"⚡ **{stam}**")
+                stats_list.append(f"⚡ `{stam}`")
             if weight > 0:
-                stats_list.append(f"⚖️ **{weight}**")
+                stats_list.append(f"⚖️ `{weight}`")
             if melee > 0:
-                stats_list.append(f"⚔️ **{melee}**")
+                stats_list.append(f"⚔️ `{melee}`")
             if oxy > 0:
-                stats_list.append(f"🫧 **{oxy}**")
+                stats_list.append(f"🫧 `{oxy}`")
             if food > 0:
-                stats_list.append(f"🍖 **{food}**")
+                stats_list.append(f"🍖 `{food}`")
             if speed > 0:
-                stats_list.append(f"💨 **{speed}**")
+                stats_list.append(f"💨 `{speed}`")
 
-            stats_text = " | ".join(stats_list) if stats_list else "*Sin stats*"
+            stats_text = " ".join(stats_list) if stats_list else "*Stats base*"
             
-            lines.append(f"> 🦖 **{row['especie']}**")
-            lines.append(f">  {stats_text}")
+            lines.append(f"### 🦖 {row['especie']}")
+            lines.append(f"> ╰ {stats_text}")
             lines.append("")
         
         embed.description = "\n".join(lines).strip()

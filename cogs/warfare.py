@@ -65,11 +65,11 @@ def build_blacklist_embed(rows: list, page: int = 0) -> discord.Embed:
             map_txt = row["map"] or "???"
 
             if is_enemy == 1:
-                lines.append(f"> `#{row['id']}` 🔴 **{row['player']}** · {tribe_txt} · {map_txt}")
+                lines.append(f"> `#{str(row['id']).zfill(3)}` 🔴 **{row['player']}** · {tribe_txt} · {map_txt}")
                 if nota_corta:
                     lines.append(f">  ╰ 📝 *{nota_corta}*")
             else:
-                lines.append(f"> `#{row['id']}` ⚪ **{row['player']}** · {tribe_txt} · {map_txt}")
+                lines.append(f"> `#{str(row['id']).zfill(3)}` ⚪ **{row['player']}** · {tribe_txt} · {map_txt}")
                 if nota_corta:
                     lines.append(f">  ╰ 📝 *{nota_corta}*")
 

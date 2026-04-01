@@ -66,13 +66,82 @@ class AddScoutModal(discord.ui.Modal, title="Añadir Scout"):
         await update_scout_dashboards(self.bot, interaction.guild_id, mapa)
 
 
+class ScoutSelect(discord.ui.Select):
+    def __init__(self, bot, chunk):
+        self.bot = bot
+        options = []
+        for row in chunk:
+            options.append(discord.SelectOption(
+                label=f"#{row['id']} {row['tribu_enemiga'][:80]}",
+                description=f"{row['mapa']} | {row['coordenadas']}",
+                value=str(row['id']),
+                emoji="📍"
+            ))
+        if not options:
+            options.append(discord.SelectOption(label="Sin scouts", value="none"))
+        
+        super().__init__(
+            placeholder="Selecciona para ver los detalles completos...",
+            min_values=1, max_values=1, options=options[:25],
+            custom_id="scout_selectView"
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        if self.values[0] == "none":
+            await interaction.response.defer()
+            return
+            
+        scout_id = int(self.values[0])
+        async with aiosqlite.connect(self.bot.db_name) as db:
+            db.row_factory = aiosqlite.Row
+            c = await db.execute("SELECT * FROM scouts WHERE id = ?", (scout_id,))
+            row = await c.fetchone()
+            
+        if not row:
+            await interaction.response.send_message("❌ Scout no encontrado.", ephemeral=True)
+            return
+            
+        embed = discord.Embed(title=f"🔎 SCOUT DETALLE: {row['tribu_enemiga']}", color=discord.Color.from_rgb(200, 50, 50))
+        embed.add_field(name="📍 Mapa / Coords", value=f"{row['mapa']} | `{row['coordenadas']}`")
+        embed.add_field(name="⚠️ Nivel de Amenaza", value="🔴" * row["nivel_amenaza"] + "⚫" * (5-row["nivel_amenaza"]))
+        embed.add_field(name="📝 Notas Completas", value=row["notas"] or "*Sin notas adicionales*", inline=False)
+        
+        img_url = None
+        if row["url_imagen"] and row["url_imagen"] != "N/A":
+            try:
+                if str(row["url_imagen"]).strip().isdigit():
+                    msg_id = int(str(row["url_imagen"]).strip())
+                    async with aiosqlite.connect(self.bot.db_name) as _db:
+                        c = await _db.execute("SELECT upload_channel_id FROM guild_config WHERE guild_id = ?", (row["guild_id"],))
+                        cfg_row = await c.fetchone()
+                        upload_id = cfg_row[0] if cfg_row else None
+                    if upload_id:
+                        ch = self.bot.get_channel(upload_id) or await self.bot.fetch_channel(upload_id)
+                        if ch:
+                            backup_msg = await ch.fetch_message(msg_id)
+                            if backup_msg.attachments:
+                                img_url = backup_msg.attachments[0].url
+                else:
+                    img_url = row["url_imagen"]
+            except Exception:
+                pass
+                
+        if img_url:
+            embed.set_image(url=img_url)
+            
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
 class ScoutView(discord.ui.View):
-    def __init__(self, bot, map_filter, page: int = 0, total_rows: int = 0):
+    def __init__(self, bot, map_filter, chunk=None, page: int = 0, total_rows: int = 0):
         super().__init__(timeout=None)
         self.bot = bot
         self.map_filter = map_filter
         self.page = page
         self.total_rows = total_rows
+        
+        if chunk:
+            self.add_item(ScoutSelect(bot, chunk))
         
         total_pages = max(1, (self.total_rows + 10 - 1) // 10)
         self.prev_btn.disabled = self.page == 0
@@ -223,7 +292,7 @@ async def build_scout_embed_view(bot, rows: list, map_filter: str, page: int = 0
             text=f"Página {page + 1}/{total_pages} • /scout_add_image [id] para foto"
         )
 
-    view = ScoutView(bot, map_filter, page=page, total_rows=total)
+    view = ScoutView(bot, map_filter, chunk, page=page, total_rows=total)
     return embed, page, view
 
 

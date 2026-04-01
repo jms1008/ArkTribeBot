@@ -250,7 +250,7 @@ class ServerStatus(commands.Cog):
     async def get_global_status_embed(self, servers: dict):
         """Genera un Embed unificado para todos los servidores del Guild, ordenado por jugadores."""
         embed = discord.Embed(
-            title="🌐 Estado Global de Servidores de ARK", color=discord.Color.blue()
+            title="🌐 ESTADO GLOBAL DE SERVIDORES", color=discord.Color.from_rgb(0, 120, 255)
         )
 
         if not servers:
@@ -326,37 +326,31 @@ class ServerStatus(commands.Cog):
         populated_servers.sort(key=lambda x: x["players"], reverse=True)
 
         # 1. Servidores Poblados (Prioridad de visualización con detalle completo)
+        # Construcción visual por líneas sin add_fields
+        lines = []
+        lines.append(f"👥 **Total de jugadores en la red:** `{total_players}/{total_max}`")
+        lines.append("")
+
+        # 1. Servidores Poblados
         for s in populated_servers:
-            embed.add_field(
-                name=f"🟢 {s['name']} - {s['players']}/{s['max_players']} Jugadores | 📶 {s['ping']}ms",
-                value=f"```{s['list']}```",
-                inline=False,
-            )
+            lines.append(f"🟢 **{s['name']}** — `{s['players']}/{s['max_players']}` Jugadores | 📶 `{s['ping']}ms`")
+            lines.append(f"```{s['list']}```")
 
-        # 2. Servidores Vacíos (Agrupación para condensación de espacio)
+        # 2. Servidores Vacíos
         if empty_servers:
-            empty_list_str = "\n".join(
-                [f"🔸 **{s['name']}** - `{s['ping']}ms`" for s in empty_servers]
-            )
-            embed.add_field(
-                name="🟡 Servidores Vacíos (Online)", value=empty_list_str, inline=False
-            )
+            lines.append("## 🟡 Servidores Vacíos (Online)")
+            for s in empty_servers:
+                lines.append(f"> 🔸 **{s['name']}** — `{s['ping']}ms`")
+            lines.append("")
 
-        # 3. Servidores Inactivos (Offline/Timeout)
+        # 3. Servidores Inactivos
         if offline_servers:
-            # Mostramos el nombre junto con el error abreviado (si es timeout o conexión)
-            offline_list_str = "\n".join(
-                [f"❌ **{s['name']}** - `{s['error']}`" for s in offline_servers]
-            )
-            embed.add_field(
-                name="🔴 Servidores Offline / Timeout",
-                value=offline_list_str,
-                inline=False,
-            )
+            lines.append("## 🔴 Servidores Offline / Timeout")
+            for s in offline_servers:
+                lines.append(f"> ❌ **{s['name']}** — *{s['error']}*")
+            lines.append("")
 
-        embed.description = (
-            f"**Total de jugadores en la red:** {total_players}/{total_max}"
-        )
+        embed.description = "\n".join(lines).strip()
         embed.set_footer(text="Actualizado automáticamente cada 2 minutos.")
 
         return embed

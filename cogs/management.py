@@ -113,7 +113,7 @@ def build_todo_embed_view(bot, rows: list, page: int = 0):
         lines.append("")
         
         for row in chunk:
-            asignado = f"<@{row['asignado_a']}>" if row["asignado_a"] else "*Sin asignar*"
+            asignado = row['asignado_a'] if row["asignado_a"] else "*Sin asignar*"
             if row["estado"] == "Pendiente":
                 icon = "⏳"
                 lines.append(f"> `#{row['id']}` {icon} **{row['tarea']}**")
@@ -223,21 +223,34 @@ class ClaimTaskModal(discord.ui.Modal, title="Reclamar Tarea"):
             return
 
         async with aiosqlite.connect(self.bot.db_name) as db:
-            # Verificar si la tarea existe y pertenece al servidor
+            db.row_factory = aiosqlite.Row
+            # Verificar si la tarea existe y recuperar datos actuales
             cursor = await db.execute(
-                "SELECT id FROM todos WHERE id = ? AND guild_id = ?",
+                "SELECT asignado_a FROM todos WHERE id = ? AND guild_id = ?",
                 (tid_int, interaction.guild_id),
             )
-            if not await cursor.fetchone():
+            row = await cursor.fetchone()
+            if not row:
                 await interaction.response.send_message(
                     f"❌ La tarea **#{tid_int}** no existe en este servidor.",
                     ephemeral=True,
                 )
                 return
+            
+            actual_assignee = row["asignado_a"]
+            user_name = interaction.user.display_name
+            if not actual_assignee:
+                new_assignee = user_name
+            else:
+                # Comprobar si ya está asignado
+                assignees = [a.strip() for a in actual_assignee.split(",")]
+                if user_name not in assignees:
+                    assignees.append(user_name)
+                new_assignee = ", ".join(assignees)
 
             await db.execute(
                 "UPDATE todos SET asignado_a = ?, estado = 'En Progreso' WHERE id = ? AND guild_id = ?",
-                (interaction.user.name, tid_int, interaction.guild_id),
+                (new_assignee, tid_int, interaction.guild_id),
             )
             await db.commit()
 
