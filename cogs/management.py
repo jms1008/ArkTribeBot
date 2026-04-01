@@ -728,6 +728,9 @@ class Management(commands.Cog):
         embed.set_footer(text="A partir de ahora, el bot convertirá automáticamente a este jugador si se conecta usando su viejo nombre de Steam.")
         
         await interaction.followup.send(embed=embed)
+        
+        from cogs.warfare import update_blacklist_dashboards
+        await update_blacklist_dashboards(self.bot, guild_id)
 
 
 async def setup(bot):
