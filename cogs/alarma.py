@@ -220,7 +220,7 @@ class Alarma(commands.Cog):
                     )
                     await db.commit()
                     await interaction.followup.send(
-                        f"🚨 El chupapingas de **{interaction.user.display_name}** tiene miedo en **{mapa}**, le mantendremos avisado. 🔔",
+                        f"🚨 **¡ALERTA DE INTRUSO!** Hay un ratón en **{mapa}**, a ver quién lo caza. Mantenemos vigilancia activa. 🔔",
                         ephemeral=True,
                     )
         except Exception as e:
