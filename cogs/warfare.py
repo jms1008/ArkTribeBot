@@ -165,14 +165,23 @@ async def update_kda_dashboards(bot, guild_id: int):
         except Exception:
             pass  # Tabla puede no existir aún
 
-    # Resolver apodos de Discord
-    guild = bot.get_guild(guild_id)
+        # Obtener aliases de K4Ultra para nombres legibles
+        alias_map = {}
+        try:
+            c_alias = await db.execute(
+                "SELECT player_name, alias FROM k4ultra_aliases WHERE guild_id = ?",
+                (guild_id,),
+            )
+            for a_row in await c_alias.fetchall():
+                alias_map[a_row["player_name"]] = a_row["alias"]
+        except Exception:
+            pass
+
     def resolve_display_name(player_name):
-        if not guild:
-            return player_name
-        for member in guild.members:
-            if member.display_name == player_name or member.name == player_name:
-                return member.display_name
+        """Usa el alias de K4Ultra si existe, si no devuelve el nombre tal cual."""
+        alias = alias_map.get(player_name)
+        if alias:
+            return alias
         return player_name
 
     if not rows:
