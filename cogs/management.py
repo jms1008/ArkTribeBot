@@ -410,10 +410,30 @@ K4Ultra monitoriza de forma pasiva las redes para calcular el comportamiento y s
 
 ### :clipboard: Espionaje Localizado (Menú Desplegable)
 Selecciona a un jugador del menú inferior de K4Ultra para ver su expediente:
-- **:green_circle: Actividad Inmediata:** Estado Online / Offline.
-- **:crossed_swords: K/D/A y Letalidad:** Historial PVP en el servidor.
-- **:people_holding_hands: Nombres Ingame y Alias:** Descubre quién se esconde detrás de nombres falsos como "123" usando la protección `duration_score` y los alias globales.
-- **:stopwatch: Patrones:** Analítica de sus horarios más frecuentes."""
+1. **Últimas Bajas:** Muestra el historial de sus 10 mapas más visitados.
+2. **Sessions:** Tiempos de conexión exactos.
+3. **Horas Totales:** Suma acumulada de tiempo por mapa.""",
+
+    "ranking": """# ☠️ EL SALÓN DE LA INFAMIA (Mortality Hub)
+
+El sistema de mortalidad rastrea quién es el miembro más "manco" de la tribu basándose en las muertes registradas en los logs.
+
+### 📉 Funcionamiento del Ránking
+
+- **Detección Automática:** El bot lee los logs de la tribu en tiempo real. Si un miembro muere (por un enemigo, un dino, hambre o caída), el contador sube.
+- **Vinculación Requerida:** Para que tus muertes cuenten, debes vincular tu nombre de personaje de ARK con tu usuario de Discord.
+  - *Comando:* `/ranking_char_add jugador:@Usuario personaje:TuNombreEnARK`
+- **/ranking**: Genera o refresca el Dashboard de mortalidad.
+
+### 🏅 Rangos de "Mancura"
+
+El sistema te asigna un grado basado en tu historial:
+1. **Pienso de Dodo 🥚**: (0-10 muertes) Todavía tienes dignidad.
+2. **Ceviche de Raptor Rex 🦖**: (11-50 muertes) Empiezas a ser comida fácil.
+3. **Saco de Dormir Humano 🛌**: (51-120 muertes) Tu utilidad principal es reaparecer.
+4. **ALPHA MANCO SUPREMO 👑**: (>120 muertes) Eres una leyenda del feed.
+
+> 💡 **Tip:** El ránking se ordena de **MAYOR a MENOR** número de muertes. ¡El #1 es el que más veces ha besado el suelo!"""
 }
 
 class Management(commands.Cog):
@@ -493,6 +513,7 @@ class Management(commands.Cog):
             app_commands.Choice(name="🛰️ Scouting", value="scouting"),
             app_commands.Choice(name="🟢 Status Servidores", value="status"),
             app_commands.Choice(name="👁️ K4Ultra Radar", value="k4ultra"),
+            app_commands.Choice(name="☠️ Ránking de Muertes", value="ranking"),
         ]
     )
     async def info(self, interaction: discord.Interaction, modulo: app_commands.Choice[str]):

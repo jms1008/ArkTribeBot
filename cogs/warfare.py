@@ -128,54 +128,74 @@ async def update_kda_dashboards(bot, guild_id: int):
     if not dashboards:
         return
 
-    # Generación del Leaderboard con cálculo dinámico de K/D
+    # Generación del Leaderboard de Mortalidad
     async with aiosqlite.connect(bot.db_name) as db:
         db.row_factory = aiosqlite.Row
-        # Ordenación ascendente por K/D (Peor ratio = "El Más Manco").
-        # Prevención de división por cero tratando muertes=0 como 1 lógicamente en la consulta.
+        # Ordenación por muertes DESC (Más muertes = Rank 1).
         cursor = await db.execute(
             """
-            SELECT player_name, kills, deaths,
-                   CAST(kills AS FLOAT) / CASE WHEN deaths = 0 THEN 1 ELSE deaths END as kd_ratio
+            SELECT player_name, kills, deaths
             FROM tribe_kda
             WHERE guild_id = ?
-            ORDER BY kd_ratio ASC, deaths DESC
+            ORDER BY deaths DESC, kills DESC
         """,
             (guild_id,),
         )
         rows = await cursor.fetchall()
+        
+        # Calcular total de muertes de la tribu para las barras
+        total_tribe_deaths = sum(row["deaths"] for row in rows) if rows else 0
 
     if not rows:
         embed = discord.Embed(
-            title="☠️ Ranking de El Más Manco",
-            description="Todavía no hay bajas registradas en la tribu.",
-            color=discord.Color.dark_red(),
+            title="☠️ El Salón de la Infamia",
+            description="Todavía no hay registros de mortalidad en la tribu. ¡Seguid así! 🛡️",
+            color=discord.Color.from_rgb(43, 45, 49),
         )
-        embed.set_footer(text="💡 Añade personajes con /ranking_char_add")
+        embed.set_footer(text="💡 Los personajes se vinculan con /ranking_char_add")
     else:
         embed = discord.Embed(
-            title="☠️ Ranking de El Más Manco (K/D/A)",
-            description="La tabla de la vergüenza. Ordenado de **PEOR a MEJOR** Ratio K/D.",
-            color=discord.Color.red(),
+            title="☠️ EL SALÓN DE LA INFAMIA (Mortality Hub)",
+            description=f"La mayor concentración de mancos del servidor.\nMuertes totales del clan: **{total_tribe_deaths}** 📉",
+            color=discord.Color.from_rgb(139, 0, 0), # Rojo oscuro premium
         )
 
-        medallas = ["🥇", "🥈", "🥉", "💀", "💀", "💀", "💀", "💀", "💀", "💀"]
+        def get_mortality_rank(d):
+            if d <= 10:
+                return "Pienso de Dodo 🥚"
+            if d <= 50:
+                return "Ceviche de Raptor 🦖"
+            if d <= 120:
+                return "Saco de Dormir Humano 🛌"
+            return "ALPHA MANCO SUPREMO 👑"
 
-        for idx, row in enumerate(rows):
-            medalla = medallas[idx] if idx < len(medallas) else "🪦"
+        def get_progress_bar(d, total):
+            if total == 0:
+                return "░" * 10
+            filled = round((d / total) * 10)
+            return "█" * filled + "░" * (10 - filled)
 
-            kd_ratio = row["kd_ratio"]
-            kills = row["kills"]
+        for idx, row in enumerate(rows[:15]): # Top 15 para no saturar
             deaths = row["deaths"]
-
+            player = row["player_name"]
+            
+            rank_title = get_mortality_rank(deaths)
+            bar = get_progress_bar(deaths, total_tribe_deaths)
+            
+            medalla = "🥇" if idx == 0 else "🥈" if idx == 1 else "🥉" if idx == 2 else "💀"
+            
             embed.add_field(
-                name=f"{medalla} #{idx + 1} | {row['player_name']}",
-                value=f"**K/D Ratio:** `{kd_ratio:.2f}`\n⚔️ **Kills:** {kills} | ☠️ **Muertes:** {deaths}",
-                inline=False,
+                name=f"{medalla} #{idx + 1} | {player}",
+                value=(
+                    f"**Grado:** `{rank_title}`\n"
+                    f"`{bar}` **{deaths}** muertes\n"
+                    f"*Aportación al feed:* `{(deaths/total_tribe_deaths*100 if total_tribe_deaths > 0 else 0):.1f}%`"
+                ),
+                inline=False
             )
 
         embed.set_footer(
-            text="💡 El Bot se actualiza en vivo leyendo los logs del servidor."
+            text="💡 Morir es de guapos, y nosotros somos modelos. Actualizado en vivo."
         )
 
     messages_to_remove = []
