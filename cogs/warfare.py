@@ -22,46 +22,55 @@ def build_blacklist_embed(rows: list, page: int = 0) -> discord.Embed:
     start = page * PAGE_SIZE
     chunk = rows[start : start + PAGE_SIZE]
 
+    # Contar enemigos y neutrales para la cabecera
+    n_enemies = sum(1 for r in rows if (r["is_enemy"] if "is_enemy" in r.keys() else 1) == 1)
+    n_neutrals = total - n_enemies
+
     embed = discord.Embed(
-        title="☠️ Blacklist de Tribu",
-        color=discord.Color.dark_grey(),
+        title="☠️ BLACKLIST DE TRIBU",
+        color=discord.Color.from_rgb(40, 40, 40),
     )
 
     if not rows:
-        embed.description = "No hay jugadores en la lista negra.\n💡 Usa el botón **Añadir** para registrar uno."
+        embed.description = "La lista está limpia. No hay jugadores registrados.\n💡 Usa el botón **Añadir** para registrar el primero."
     else:
         lines = []
         current_section = None
 
+        # Cabecera con estadísticas
+        lines.append(f"🔴 `{n_enemies}` Enemigos  ·  ⚪ `{n_neutrals}` Neutrales  ·  📊 `{total}` Total")
+        lines.append("")
+
         for row in chunk:
-            # Safely check if 'is_enemy' column exists in this row, default to 1 if missing in old schema
             is_enemy = row["is_enemy"] if "is_enemy" in row.keys() else 1
 
-            # Separador de secciones
+            # Separadores de sección
             if is_enemy == 1 and current_section != "Enemigos":
-                lines.append("\n🔴 **ENEMIGOS** 🔴")
-                lines.append("────────────────")
+                lines.append("## 🔴 ENEMIGOS (KOS)")
                 current_section = "Enemigos"
             elif is_enemy == 0 and current_section != "Neutrales":
-                lines.append("\n⚪ **REGISTROS K4ULTRA (NEUTRALES)** ⚪")
-                lines.append("────────────────")
+                lines.append("")
+                lines.append("## ⚪ REGISTROS (NEUTRALES)")
                 current_section = "Neutrales"
 
             nota_corta = (
-                (row["notes"][:30] + "...")
-                if row["notes"] and len(row["notes"]) > 30
-                else (row["notes"] or "")
+                (row["notes"][:35] + "...")
+                if row["notes"] and len(row["notes"]) > 35
+                else (row["notes"] or "Sin notas")
             )
+            tribe_txt = row["tribe"] or "???"
+            map_txt = row["map"] or "???"
 
-            emoji = "🔴" if is_enemy == 1 else "⚪"
-            lines.append(
-                f"`#{row['id']}` {emoji} **{row['player']}** | {row['tribe']} | {row['map']}\n"
-                f"    📝 {nota_corta}"
-            )
+            if is_enemy == 1:
+                lines.append(f"> `#{row['id']}` 🔴 **{row['player']}** · {tribe_txt} · {map_txt}")
+                lines.append(f">  ╰ 📝 *{nota_corta}*")
+            else:
+                lines.append(f"> `#{row['id']}` ⚪ **{row['player']}** · {tribe_txt} · {map_txt}")
+                lines.append(f">  ╰ 📝 *{nota_corta}*")
 
         embed.description = "\n".join(lines).strip()
         embed.set_footer(
-            text=f"Página {page + 1}/{total_pages} • {total} entradas totales"
+            text=f"Página {page + 1}/{total_pages} • {total} entradas totales • /bl_editar para modificar"
         )
 
     return embed, page, total_pages
@@ -462,7 +471,7 @@ async def build_player_detail_embed(
 
         # --- 1. Datos de Blacklist ---
         cursor = await db.execute(
-            "SELECT tribe, map, notes, created_at, last_seen, total_hours FROM blacklist WHERE player = ? AND guild_id = ? LIMIT 1",
+            "SELECT tribe, map, notes, created_at, last_seen, total_hours, is_enemy FROM blacklist WHERE player = ? AND guild_id = ? LIMIT 1",
             (
                 player_name,
                 guild_id,
@@ -472,8 +481,14 @@ async def build_player_detail_embed(
 
         status_msg = "⚪ Registro Pasivo (K4Ultra)"
         if bl_row:
-            status_msg = "🔴 Marcado en Blacklist (Enemigo)"
-            embed.color = discord.Color.red()
+            # Comprobar si es enemigo o neutral
+            is_enemy_val = bl_row["is_enemy"] if "is_enemy" in bl_row.keys() else 1
+            if is_enemy_val == 1:
+                status_msg = "🔴 Marcado en Blacklist (Enemigo)"
+                embed.color = discord.Color.red()
+            else:
+                status_msg = "⚪ Marcado en Blacklist (Neutral)"
+                embed.color = discord.Color.light_grey()
 
             notes_str = bl_row["notes"] if bl_row["notes"] else "Ninguna"
             embed.add_field(
