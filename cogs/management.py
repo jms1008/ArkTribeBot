@@ -112,8 +112,12 @@ def build_todo_embed_view(bot, rows: list, page: int = 0):
         lines.append(f"⏳ `{n_pending}` Pendientes  ·  🔨 `{n_progress}` En Progreso  ·  📊 `{total}` Total")
         lines.append("")
         
+        import re
         for row in chunk:
-            asignado = row['asignado_a'] if row["asignado_a"] else "*Sin asignar*"
+            raw_asignado = str(row['asignado_a']) if row["asignado_a"] else "*Sin asignar*"
+            # Formatear IDs numéricos antiguos como menciones de discord y limpiar si alguien metió <@nombre> manual
+            asignado = re.sub(r'\b(\d{17,20})\b', r'<@\1>', raw_asignado)
+            asignado = asignado.replace("<@", "@").replace("@>", "") if not re.search(r'<@\d+>', asignado) else asignado
             if row["estado"] == "Pendiente":
                 icon = "⏳"
                 lines.append(f"> `#{row['id']}` {icon} **{row['tarea']}**")
@@ -238,12 +242,13 @@ class ClaimTaskModal(discord.ui.Modal, title="Reclamar Tarea"):
                 return
             
             actual_assignee = row["asignado_a"]
+            actual_assignee_str = str(actual_assignee) if actual_assignee else ""
             user_name = interaction.user.display_name
-            if not actual_assignee:
+            if not actual_assignee_str:
                 new_assignee = user_name
             else:
                 # Comprobar si ya está asignado
-                assignees = [a.strip() for a in actual_assignee.split(",")]
+                assignees = [a.strip() for a in actual_assignee_str.split(",")]
                 if user_name not in assignees:
                     assignees.append(user_name)
                 new_assignee = ", ".join(assignees)
@@ -637,7 +642,7 @@ class Management(commands.Cog):
             if personaje is not None:
                 try:
                     cursor = await db.execute(
-                        "SELECT id FROM tribe_characters WHERE player_name = ? AND character_name = ? AND guild_id = ?",
+                        "SELECT character_name FROM tribe_characters WHERE player_name = ? AND character_name = ? AND guild_id = ?",
                         (jugador, personaje, interaction.guild_id),
                     )
                     if not await cursor.fetchone():
