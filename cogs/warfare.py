@@ -169,49 +169,45 @@ async def update_kda_dashboards(bot, guild_id: int):
                 return ("Leyenda del Respawn", "⚰️")
             return ("ALPHA MANCO SUPREMO", "👑")
 
-        def get_skull_bar(d, total, length=12):
+        def get_bar(d, total, length=10):
             if total == 0:
                 return "░" * length
             filled = round((d / total) * length)
             filled = max(0, min(filled, length))
-            return "💀" * filled + "░" * (length - filled)
+            return "▓" * filled + "░" * (length - filled)
 
         # Cabecera del Top 1 especial
         top1 = rows[0]
         top1_rank, top1_emoji = get_mortality_rank(top1["deaths"])
+        top1_pct = (top1["deaths"] / total_tribe_deaths * 100) if total_tribe_deaths > 0 else 0
         
-        header = (
-            f"## 🏆 Rey de los Mancos: **{top1['player_name']}**\n"
-            f"Con **{top1['deaths']}** muertes ostenta el trono de la vergüenza.\n"
-            f"Rango: **{top1_rank}** {top1_emoji}\n"
-            f"───────────────────────\n"
-            f"Muertes totales de la tribu: **{total_tribe_deaths}** 📉"
-        )
+        lines = []
+        lines.append(f"## 🏆 Rey de los Mancos: **{top1['player_name']}**")
+        lines.append(f"> Con **{top1['deaths']}** muertes ostenta el trono de la vergüenza.")
+        lines.append(f"> {top1_emoji} Rango: **{top1_rank}** — `{get_bar(top1['deaths'], total_tribe_deaths)}` {top1_pct:.0f}%")
+        lines.append("")
+        lines.append(f"Muertes totales de la tribu: **{total_tribe_deaths}** 📉")
+        lines.append("─────────────────────────────")
         
-        embed = discord.Embed(
-            title="☠️ EL SALÓN DE LA INFAMIA",
-            description=header,
-            color=discord.Color.from_rgb(139, 0, 0),
-        )
-
-        # Empezamos desde el #2 ya que el #1 está en la cabecera
+        # Resto de jugadores en texto compacto
         for idx, row in enumerate(rows[1:15], start=2):
             deaths = row["deaths"]
             player = row["player_name"]
             rank_title, rank_emoji = get_mortality_rank(deaths)
-            bar = get_skull_bar(deaths, total_tribe_deaths)
+            bar = get_bar(deaths, total_tribe_deaths)
             pct = (deaths / total_tribe_deaths * 100) if total_tribe_deaths > 0 else 0
             
-            medalla = "🥈" if idx == 2 else "🥉" if idx == 3 else "▫️"
+            medalla = "🥈" if idx == 2 else "🥉" if idx == 3 else "☠️"
             
-            embed.add_field(
-                name=f"{medalla} #{idx} {player}",
-                value=(
-                    f"{rank_emoji} *{rank_title}*\n"
-                    f"{bar} **{deaths}** ({pct:.0f}%)"
-                ),
-                inline=False
-            )
+            lines.append(f"**{medalla} #{idx} {player}**")
+            lines.append(f"  {rank_emoji} *{rank_title}*  ·  `{bar}` **{deaths}** ({pct:.0f}%)")
+            lines.append("")      
+
+        embed = discord.Embed(
+            title="☠️ EL SALÓN DE LA INFAMIA",
+            description="\n".join(lines),
+            color=discord.Color.from_rgb(139, 0, 0),
+        )
 
         footer_frases = [
             "Morir es de guapos, y nosotros somos modelos.",

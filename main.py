@@ -567,6 +567,43 @@ class ArkTribeBot(commands.Bot):
         await self.change_presence(
             activity=discord.CustomActivity(name="ARK | By @K4NEKIs")
         )
+        
+        # Refrescar todos los dashboards que se actualizan por acción (no periódicos)
+        # para que reflejen el estado real de la DB al arrancar.
+        try:
+            async with aiosqlite.connect(self.db_name) as db:
+                c = await db.execute("SELECT guild_id FROM guild_config")
+                guilds = await c.fetchall()
+            
+            for (guild_id,) in guilds:
+                try:
+                    from cogs.warfare import update_blacklist_dashboards, update_kda_dashboards
+                    await update_blacklist_dashboards(self, guild_id)
+                    await update_kda_dashboards(self, guild_id)
+                except Exception as e:
+                    logger.error(f"[Startup] Error refrescando blacklist/kda guild {guild_id}: {e}")
+                
+                try:
+                    from cogs.scouting import update_scout_dashboards
+                    await update_scout_dashboards(self, guild_id)
+                except Exception as e:
+                    logger.error(f"[Startup] Error refrescando scouting guild {guild_id}: {e}")
+                
+                try:
+                    from cogs.management import update_all_dashboards
+                    await update_all_dashboards(self, guild_id)
+                except Exception as e:
+                    logger.error(f"[Startup] Error refrescando todo-list guild {guild_id}: {e}")
+                
+                try:
+                    from cogs.breeding import update_breeding_dashboards
+                    await update_breeding_dashboards(self, guild_id)
+                except Exception as e:
+                    logger.error(f"[Startup] Error refrescando breeding guild {guild_id}: {e}")
+
+            logger.info("[Startup] Todos los dashboards refrescados correctamente.")
+        except Exception as e:
+            logger.error(f"[Startup] Error general refrescando dashboards: {e}")
 
     async def init_db(self):
         """Inicializa la base de datos y crea las tablas estructurales si no existen."""
