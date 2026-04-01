@@ -154,48 +154,76 @@ async def update_kda_dashboards(bot, guild_id: int):
         )
         embed.set_footer(text="💡 Los personajes se vinculan con /ranking_char_add")
     else:
-        embed = discord.Embed(
-            title="☠️ EL SALÓN DE LA INFAMIA (Mortality Hub)",
-            description=f"La mayor concentración de mancos del servidor.\nMuertes totales del clan: **{total_tribe_deaths}** 📉",
-            color=discord.Color.from_rgb(139, 0, 0), # Rojo oscuro premium
-        )
+        import random as _rng
 
         def get_mortality_rank(d):
-            if d <= 10:
-                return "Pienso de Dodo 🥚"
-            if d <= 50:
-                return "Ceviche de Raptor 🦖"
-            if d <= 120:
-                return "Saco de Dormir Humano 🛌"
-            return "ALPHA MANCO SUPREMO 👑"
+            if d <= 5:
+                return ("Novato Inocente", "🐣")
+            if d <= 15:
+                return ("Pienso de Dodo", "🥚")
+            if d <= 40:
+                return ("Ceviche de Raptor", "🦖")
+            if d <= 80:
+                return ("Saco de Dormir Humano", "🛌")
+            if d <= 150:
+                return ("Leyenda del Respawn", "⚰️")
+            return ("ALPHA MANCO SUPREMO", "👑")
 
-        def get_progress_bar(d, total):
+        def get_skull_bar(d, total, length=12):
             if total == 0:
-                return "░" * 10
-            filled = round((d / total) * 10)
-            return "█" * filled + "░" * (10 - filled)
+                return "░" * length
+            filled = round((d / total) * length)
+            filled = max(0, min(filled, length))
+            return "💀" * filled + "░" * (length - filled)
 
-        for idx, row in enumerate(rows[:15]): # Top 15 para no saturar
+        # Cabecera del Top 1 especial
+        top1 = rows[0]
+        top1_rank, top1_emoji = get_mortality_rank(top1["deaths"])
+        
+        header = (
+            f"## 🏆 Rey de los Mancos: **{top1['player_name']}**\n"
+            f"Con **{top1['deaths']}** muertes ostenta el trono de la vergüenza.\n"
+            f"Rango: **{top1_rank}** {top1_emoji}\n"
+            f"───────────────────────\n"
+            f"Muertes totales de la tribu: **{total_tribe_deaths}** 📉"
+        )
+        
+        embed = discord.Embed(
+            title="☠️ EL SALÓN DE LA INFAMIA",
+            description=header,
+            color=discord.Color.from_rgb(139, 0, 0),
+        )
+
+        # Empezamos desde el #2 ya que el #1 está en la cabecera
+        for idx, row in enumerate(rows[1:15], start=2):
             deaths = row["deaths"]
             player = row["player_name"]
+            rank_title, rank_emoji = get_mortality_rank(deaths)
+            bar = get_skull_bar(deaths, total_tribe_deaths)
+            pct = (deaths / total_tribe_deaths * 100) if total_tribe_deaths > 0 else 0
             
-            rank_title = get_mortality_rank(deaths)
-            bar = get_progress_bar(deaths, total_tribe_deaths)
-            
-            medalla = "🥇" if idx == 0 else "🥈" if idx == 1 else "🥉" if idx == 2 else "💀"
+            medalla = "🥈" if idx == 2 else "🥉" if idx == 3 else "▫️"
             
             embed.add_field(
-                name=f"{medalla} #{idx + 1} | {player}",
+                name=f"{medalla} #{idx} {player}",
                 value=(
-                    f"**Grado:** `{rank_title}`\n"
-                    f"`{bar}` **{deaths}** muertes\n"
-                    f"*Aportación al feed:* `{(deaths/total_tribe_deaths*100 if total_tribe_deaths > 0 else 0):.1f}%`"
+                    f"{rank_emoji} *{rank_title}*\n"
+                    f"{bar} **{deaths}** ({pct:.0f}%)"
                 ),
                 inline=False
             )
 
+        footer_frases = [
+            "Morir es de guapos, y nosotros somos modelos.",
+            "¿Para qué farmear si puedes donar tu loot al suelo?",
+            "El verdadero endgame es el respawn.",
+            "No estamos muriendo, estamos practicando.",
+            "Cada muerte nos hace más fuertes... mentalmente.",
+            "Tribu líder en donación involuntaria de inventario.",
+            "Respawneamos más rápido que los dinos salvajes.",
+        ]
         embed.set_footer(
-            text="💡 Morir es de guapos, y nosotros somos modelos. Actualizado en vivo."
+            text=f"💡 {_rng.choice(footer_frases)} • Actualizado en vivo"
         )
 
     messages_to_remove = []
