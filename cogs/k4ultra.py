@@ -1512,33 +1512,133 @@ class K4Ultra(commands.Cog):
             ephemeral=True,
         )
 
-    @app_commands.command(
+    tribu_propia_group = app_commands.Group(
         name="tribu_propia",
-        description="[Admin] Marca una tribu ya fijada como la tribu principal/dueña del servidor.",
+        description="Gestión de la tribu principal del servidor.",
     )
-    @app_commands.describe(nombre="Fija la tribu que el bot debe destacar al principio de la página.")
-    async def tribu_propia(self, interaction: discord.Interaction, nombre: str):
+
+    @tribu_propia_group.command(
+        name="crear",
+        description="[Admin] Crea y establece la tribu propia predeterminada.",
+    )
+    @app_commands.describe(
+        nombre="Nombre de tu Tribu",
+        jugadores="Jugadores de tu tribu (separados por comas)",
+    )
+    async def tribu_propia_crear(self, interaction: discord.Interaction, nombre: str, jugadores: str):
         if not await interaction.client.is_authorized_admin(interaction):
+            await interaction.response.send_message("❌ Acceso denegado.", ephemeral=True)
+            return
+
+        nombre = nombre.strip().strip("'\"")
+        miembros = [m.strip().strip("'\"") for m in jugadores.split(",") if m.strip().strip("'\"")]
+
+        if len(miembros) < 2:
             await interaction.response.send_message(
-                "❌ Acceso denegado.", ephemeral=True
+                "❌ Debes especificar al menos 2 jugadores válidos separados por comas.", ephemeral=True
             )
             return
 
-        nombre = nombre.strip()
         async with aiosqlite.connect(self.bot.db_name) as db:
-            cursor = await db.execute("SELECT 1 FROM k4ultra_fixed_tribes WHERE name = ? AND guild_id = ?", (nombre, interaction.guild_id))
-            if not await cursor.fetchone():
-                await interaction.response.send_message(f"❌ La tribu **{nombre}** no está fijada. Usa /fijar_tribu primero.", ephemeral=True)
-                return
-
+            import json
+            # Desmarcar las anteriores para evitar conflictos
             await db.execute("UPDATE k4ultra_fixed_tribes SET is_own = 0 WHERE guild_id = ?", (interaction.guild_id,))
-            await db.execute("UPDATE k4ultra_fixed_tribes SET is_own = 1 WHERE name = ? AND guild_id = ?", (nombre, interaction.guild_id))
+            
+            # Buscamos si existía una con el mismo nombre para sobrescribirla limpiamente
+            await db.execute("DELETE FROM k4ultra_fixed_tribes WHERE name = ? AND guild_id = ?", (nombre, interaction.guild_id))
+            
+            await db.execute(
+                "INSERT INTO k4ultra_fixed_tribes (guild_id, name, members_json, is_own) VALUES (?, ?, ?, 1)",
+                (interaction.guild_id, nombre, json.dumps(miembros)),
+            )
             await db.commit()
 
         await interaction.response.send_message(
-            f"✅ La tribu **{nombre}** ha sido marcada como la tribu propia del servidor. Ahora aparecerá destacada en el Tracker.",
+            f"✅ Se ha configurado **{nombre}** como tribu propia con los jugadores: {', '.join(miembros)}.",
             ephemeral=True,
         )
+
+    @tribu_propia_group.command(
+        name="modificar", description="[Admin] Modifica parámetros de la tribu propia."
+    )
+    @app_commands.describe(
+        opcion="Qué tipo de modificación deseas aplicar",
+        valor="El nuevo nombre o el miembro a alterar",
+    )
+    @app_commands.choices(
+        opcion=[
+            app_commands.Choice(name="Cambiar Nombre de Tribu", value="nombre"),
+            app_commands.Choice(name="Añadir Miembro", value="add"),
+            app_commands.Choice(name="Eliminar Miembro", value="remove"),
+        ]
+    )
+    async def tribu_propia_modificar(
+        self, interaction: discord.Interaction, opcion: app_commands.Choice[str], valor: str
+    ):
+        if not await interaction.client.is_authorized_admin(interaction):
+            await interaction.response.send_message("❌ Acceso denegado.", ephemeral=True)
+            return
+
+        valor = valor.strip().strip("'\"")
+
+        async with aiosqlite.connect(self.bot.db_name) as db:
+            import json
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute("SELECT id, name, members_json FROM k4ultra_fixed_tribes WHERE is_own = 1 AND guild_id = ?", (interaction.guild_id,))
+            row = await cursor.fetchone()
+
+            if not row:
+                await interaction.response.send_message("❌ No hay tribu propia configurada. Usa `/tribu_propia crear` primero.", ephemeral=True)
+                return
+
+            if opcion.value == "nombre":
+                await db.execute("UPDATE k4ultra_fixed_tribes SET name = ? WHERE id = ?", (valor, row["id"]))
+                await db.commit()
+                await interaction.response.send_message(f"✅ Se cambió el nombre de la tribu propia a **{valor}**.", ephemeral=True)
+                return
+            
+            miembros: list = json.loads(row["members_json"])
+            
+            if opcion.value == "add":
+                if [m.lower() for m in miembros].count(valor.lower()) > 0:
+                    await interaction.response.send_message(f"⚠️ **{valor}** ya está en la tribu propia (**{row['name']}**).", ephemeral=True)
+                    return
+                miembros.append(valor)
+                await db.execute("UPDATE k4ultra_fixed_tribes SET members_json = ? WHERE id = ?", (json.dumps(miembros), row["id"]))
+                await db.commit()
+                await interaction.response.send_message(f"✅ Se añadió a **{valor}** a la tribu propia (**{row['name']}**).", ephemeral=True)
+
+            elif opcion.value == "remove":
+                original_len = len(miembros)
+                miembros = [m for m in miembros if m.lower() != valor.lower()]
+                if len(miembros) == original_len:
+                    await interaction.response.send_message(f"❌ **{valor}** no fue encontrado en la tribu propia (**{row['name']}**).", ephemeral=True)
+                    return
+                await db.execute("UPDATE k4ultra_fixed_tribes SET members_json = ? WHERE id = ?", (json.dumps(miembros), row["id"]))
+                await db.commit()
+                await interaction.response.send_message(f"✅ Se eliminó a **{valor}** de la tribu propia (**{row['name']}**).", ephemeral=True)
+
+    @tribu_propia_group.command(
+        name="borrar", description="[Admin] Elimina la tribu propia del registro."
+    )
+    @app_commands.describe(seguro="True si estás seguro de que deseas borrarla por completo.")
+    async def tribu_propia_borrar(self, interaction: discord.Interaction, seguro: bool):
+        if not await interaction.client.is_authorized_admin(interaction):
+            await interaction.response.send_message("❌ Acceso denegado.", ephemeral=True)
+            return
+
+        if not seguro:
+            await interaction.response.send_message("❌ Debes seleccionar `seguro: True` para borrar la tribu propia definitivamente.", ephemeral=True)
+            return
+
+        async with aiosqlite.connect(self.bot.db_name) as db:
+            cursor = await db.execute("DELETE FROM k4ultra_fixed_tribes WHERE is_own = 1 AND guild_id = ?", (interaction.guild_id,))
+            if cursor.rowcount == 0:
+                await interaction.response.send_message("❌ No hay tribu propia registrada actualmente.", ephemeral=True)
+                return
+            await db.commit()
+
+        await interaction.response.send_message("✅ Has borrado permanentemente la tribu propia del servidor.", ephemeral=True)
 
 
     @app_commands.command(
