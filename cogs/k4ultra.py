@@ -642,71 +642,68 @@ class K4Ultra(commands.Cog):
                 # El auto-blacklist ahora se gestiona por gremio correctamente
                 for guild_id in [gr[0] for gr in guild_rows]:
                     cursor = await db.execute(
-                        "SELECT members_json FROM k4ultra_fixed_tribes WHERE name = 'UNNAMED' AND guild_id = ?",
+                        "SELECT members_json FROM k4ultra_fixed_tribes WHERE is_own = 1 AND guild_id = ?",
                         (guild_id,)
                     )
                     unnamed_row = await cursor.fetchone()
-                if unnamed_row:
-                    import json
+                    
+                    if unnamed_row:
+                        import json
+                        import datetime as dt
 
-                    unnamed_members = set(json.loads(unnamed_row["members_json"]))
+                        unnamed_members = {m.lower() for m in json.loads(unnamed_row["members_json"])}
 
-                    blacklisted = set()
-                    try:
-                        cursor = await db.execute("SELECT player FROM blacklist WHERE guild_id = ?", (guild_id,))
-                        blacklisted = {r["player"] for r in await cursor.fetchall()}
-                    except aiosqlite.OperationalError:
-                        pass
-
-                    new_blacklist_count = 0
-                    import datetime as dt
-
-                    created_at = dt.date.today().isoformat()
-
-                    for sid in seen_identities:
-                        if sid in active_pool_dict:
-                            s_info = active_pool_dict[sid]
-                            if s_info["guild_id"] != guild_id:
-                                continue
-                                
-                            t_name = s_info["player_name"]
-                            t_map = s_info["map_name"]
-
-                            if (
-                                t_name not in unnamed_members
-                                and t_name not in blacklisted
-                            ):
-                                try:
-                                    await db.execute(
-                                        "INSERT INTO blacklist (guild_id, player, tribe, map, notes, created_at, is_enemy) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                                        (
-                                            guild_id,
-                                            t_name,
-                                            "Desconocido",
-                                            t_map,
-                                            "Pasaporte registrado (K4Ultra)",
-                                            created_at,
-                                            0,
-                                        ),
-                                    )
-                                    blacklisted.add(t_name)
-                                    new_blacklist_count += 1
-                                except aiosqlite.OperationalError:
-                                    pass  # Continuamos (posible ignorado)
-
-                    if new_blacklist_count > 0:
-                        await db.commit()
+                        blacklisted = set()
                         try:
-                            from cogs.warfare import update_blacklist_dashboards
-                            # Actualizamos los dashboards de todos los gremios afectados
-                            cursor = await db.execute("SELECT DISTINCT guild_id FROM guild_config")
-                            guild_rows = await cursor.fetchall()
-                            for g_row in guild_rows:
-                                await update_blacklist_dashboards(self.bot, g_row["guild_id"])
-                        except Exception as e:
-                            logger.error(
-                                f"[K4Ultra] Error updating blacklist dashboards: {e}"
-                            )
+                            cursor = await db.execute("SELECT player FROM blacklist WHERE guild_id = ?", (guild_id,))
+                            blacklisted = {r["player"].lower() for r in await cursor.fetchall()}
+                        except aiosqlite.OperationalError:
+                            pass
+
+                        new_blacklist_count = 0
+                        created_at = dt.date.today().isoformat()
+
+                        for sid in seen_identities:
+                            if sid in active_pool_dict:
+                                s_info = active_pool_dict[sid]
+                                if s_info["guild_id"] != guild_id:
+                                    continue
+                                    
+                                t_name = s_info["player_name"]
+                                t_map = s_info["map_name"]
+
+                                if (
+                                    t_name.lower() not in unnamed_members
+                                    and t_name.lower() not in blacklisted
+                                ):
+                                    try:
+                                        await db.execute(
+                                            "INSERT INTO blacklist (guild_id, player, tribe, map, notes, created_at, is_enemy) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                                            (
+                                                guild_id,
+                                                t_name,
+                                                "Desconocido",
+                                                t_map,
+                                                "Pasaporte registrado (K4Ultra)",
+                                                created_at,
+                                                0,
+                                            ),
+                                        )
+                                        blacklisted.add(t_name.lower())
+                                        new_blacklist_count += 1
+                                    except aiosqlite.OperationalError:
+                                        pass  # Continuamos (posible ignorado)
+
+                        if new_blacklist_count > 0:
+                            await db.commit()
+                            try:
+                                from cogs.warfare import update_blacklist_dashboards
+                                # Actualizamos SÓLO el dashboard del gremio afectado
+                                await update_blacklist_dashboards(self.bot, guild_id)
+                            except Exception as e:
+                                logger.error(
+                                    f"[K4Ultra] Error updating blacklist dashboards: {e}"
+                                )
             except Exception as e:
                 logger.error(f"[K4Ultra] Auto-blacklist check failed: {e}")
 

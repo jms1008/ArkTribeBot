@@ -229,16 +229,26 @@ class BreedingDinoSelectMenu(discord.ui.Select):
 
 
 class BreedingDashboardView(discord.ui.View):
-    def __init__(self, bot, current_dinos=None):
+    def __init__(self, bot, rows=None, page: int = 0):
         super().__init__(timeout=None)
         self.bot = bot
+        self.rows = rows or []
+        self.page = page
         
-        # Inyectamos el menú desplegable si hay dinos
-        if current_dinos is not None:
-            self.add_item(BreedingDinoSelectMenu(bot, current_dinos))
-        else:
-            # Requerido para persistencia de la vista base
-            self.add_item(BreedingDinoSelectMenu(bot, []))
+        items_per_page = 10
+        total_rows = len(self.rows)
+        import math
+        total_pages = math.ceil(total_rows / items_per_page) if total_rows > 0 else 1
+
+        # Select de Dinos para esta página
+        start = page * items_per_page
+        chunk = self.rows[start : start + items_per_page]
+        current_dinos = [r["especie"] for r in chunk]
+        self.add_item(BreedingDinoSelectMenu(bot, current_dinos))
+
+        # Deshabilitar botones de navegación si es necesario
+        self.prev_btn.disabled = page <= 0
+        self.next_btn.disabled = page >= total_pages - 1
 
     @discord.ui.button(
         label="Nueva muta",
@@ -376,26 +386,9 @@ class BreedingDashboardView(discord.ui.View):
     async def prev_btn(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
-        if not interaction.message.embeds:
-            await interaction.response.defer()
-            return
-
-        embed = interaction.message.embeds[0]
-        footer_text = embed.footer.text if embed.footer else ""
-        
-        import re
-        match = re.search(r"Página (\d+)/(\d+)", footer_text)
-        if match:
-            current_page = int(match.group(1))
-            
-            if current_page > 1:
-                new_page = current_page - 1
-                await update_breeding_dashboards(self.bot, interaction.guild_id, interaction.message.id, new_page)
-                await interaction.response.defer()
-            else:
-                await interaction.response.defer()
-        else:
-            await interaction.response.defer()
+        """Página anterior de líneas."""
+        new_page = max(0, self.page - 1)
+        await self._update_page(interaction, new_page)
 
     @discord.ui.button(
         style=discord.ButtonStyle.secondary,
@@ -406,31 +399,73 @@ class BreedingDashboardView(discord.ui.View):
     async def next_btn(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
-        if not interaction.message.embeds:
-            await interaction.response.defer()
-            return
+        """Página siguiente de líneas."""
+        items_per_page = 10
+        total_pages = max(1, (len(self.rows) + items_per_page - 1) // items_per_page)
+        new_page = min(total_pages - 1, self.page + 1)
+        await self._update_page(interaction, new_page)
 
-        embed = interaction.message.embeds[0]
-        footer_text = embed.footer.text if embed.footer else ""
+    async def _update_page(self, interaction: discord.Interaction, new_page: int):
+        """Recarga datos y edita el mensaje con la nueva página."""
+        async with aiosqlite.connect(self.bot.db_name) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute(
+                "SELECT * FROM dinos WHERE guild_id = ? ORDER BY especie ASC",
+                (interaction.guild_id,),
+            )
+            rows = await cursor.fetchall()
+
+        embed, _, _, _ = build_breeding_embed(rows, new_page)
+        new_view = BreedingDashboardView(self.bot, rows, new_page)
+        await interaction.response.edit_message(embed=embed, view=new_view)
+
+
+def build_breeding_embed(rows, page=0):
+    """Construye el embed del dashboard de breeding de forma consistente."""
+    items_per_page = 10
+    total_rows = len(rows)
+    import math
+    total_pages = math.ceil(total_rows / items_per_page) if total_rows > 0 else 1
+    
+    if page < 0: page = 0
+    if page >= total_pages: page = total_pages - 1
+    
+    start_idx = page * items_per_page
+    end_idx = start_idx + items_per_page
+    display_rows = rows[start_idx:end_idx]
+    
+    embed = discord.Embed(
+        title="🧬 LÍNEAS DE CRIANZA (Top Stats)", 
+        color=discord.Color.from_rgb(255, 215, 0)
+    )
+    
+    if not rows:
+        embed.description = "No hay líneas registradas aún.\n💡 Usa `/linea_add` para empezar."
+        return embed, [], page, total_pages
+
+    lines = [f"📊 `{total_rows}` especies registradas · Página `{page + 1}/{total_pages}`", ""]
+    for row in display_rows:
+        stats = []
+        if row["hp"]: stats.append(f"❤️ `{row['hp']}`")
+        if row["stam"]: stats.append(f"⚡ `{row['stam']}`")
+        if row["weight"]: stats.append(f"⚖️ `{row['weight']}`")
+        if row["melee"]: stats.append(f"⚔️ `{row['melee']}`")
+        if row["oxy"]: stats.append(f"🫧 `{row['oxy']}`")
+        if row["food"]: stats.append(f"🍖 `{row['food']}`")
+        if row["speed"]: stats.append(f"💨 `{row['speed']}`")
         
-        import re
-        match = re.search(r"Página (\d+)/(\d+)", footer_text)
-        if match:
-            current_page = int(match.group(1))
-            total_pages = int(match.group(2))
-            
-            if current_page < total_pages:
-                new_page = current_page + 1
-                await update_breeding_dashboards(self.bot, interaction.guild_id, interaction.message.id, new_page)
-                await interaction.response.defer()
-            else:
-                await interaction.response.defer()
+        stats_text = " ".join(stats) if stats else "*Stats base*"
+        lines.append(f"### 🦖 {row['especie']}")
+        lines.append(f"> ╰ {stats_text}")
+    
+    embed.description = "\n".join(lines).strip()
+    embed.set_footer(text=f"Página {page + 1}/{total_pages} • {total_rows} total | 💡 /linea_add")
+    return embed, [r["especie"] for r in display_rows], page, total_pages
 
 
-async def update_breeding_dashboards(bot, guild_id: int, specific_message_id=None, page=1):
-    """Actualiza todos los mensajes de lista de líneas (dashboards)."""
+async def update_breeding_dashboards(bot, guild_id: int, specific_message_id=None, page=None):
+    """Actualiza los mensajes de lista de líneas (dashboards)."""
 
-    # Extracción de dashboards activos
     async with aiosqlite.connect(bot.db_name) as db:
         db.row_factory = aiosqlite.Row
         if specific_message_id:
@@ -442,168 +477,39 @@ async def update_breeding_dashboards(bot, guild_id: int, specific_message_id=Non
     if not dashboards:
         return
 
-    # Consulta de especies registradas
     async with aiosqlite.connect(bot.db_name) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute("SELECT * FROM dinos WHERE guild_id = ? ORDER BY especie ASC", (guild_id,))
         rows = await cursor.fetchall()
 
-    # Construcción de Embed
-    if not rows:
-        embed = discord.Embed(
-            title="🧬 Líneas de Crianza",
-            description="No hay líneas registradas aún.",
-            color=discord.Color.gold(),
-        )
-        embed.set_footer(
-            text="💡 Usa /linea_add para registrar o /linea_mod para actualizar."
-        )
-    else:
-        import math
-        items_per_page = 10
-        total_rows = len(rows)
-        total_pages = math.ceil(total_rows / items_per_page)
-        
-        # Validación de página límite
-        if page < 1:
-            page = 1
-        elif page > total_pages and total_pages > 0:
-            page = total_pages
-            
-        start_idx = (page - 1) * items_per_page
-        end_idx = start_idx + items_per_page
-        rows_to_display = rows[start_idx:end_idx]
-        
-        embed = discord.Embed(
-            title="🧬 LÍNEAS DE CRIANZA (Top Stats)", color=discord.Color.from_rgb(255, 215, 0)
-        )
-        
-        lines = []
-        lines.append(f"📊 `{total_rows}` especies registradas · Página `{page}/{total_pages}`")
-        lines.append("")
-        
-        for row in rows_to_display:
-            hp = row["hp"] or 0
-            stam = row["stam"] or 0
-            weight = row["weight"] or 0
-            melee = row["melee"] or 0
-            oxy = row["oxy"] or 0
-            food = row["food"] or 0
-            speed = row["speed"] or 0
-
-            stats_list = []
-            if hp > 0:
-                stats_list.append(f"❤️ `{hp}`")
-            if stam > 0:
-                stats_list.append(f"⚡ `{stam}`")
-            if weight > 0:
-                stats_list.append(f"⚖️ `{weight}`")
-            if melee > 0:
-                stats_list.append(f"⚔️ `{melee}`")
-            if oxy > 0:
-                stats_list.append(f"🫧 `{oxy}`")
-            if food > 0:
-                stats_list.append(f"🍖 `{food}`")
-            if speed > 0:
-                stats_list.append(f"💨 `{speed}`")
-
-            stats_text = " ".join(stats_list) if stats_list else "*Stats base*"
-            
-            lines.append(f"### 🦖 {row['especie']}")
-            lines.append(f"> ╰ {stats_text}")
-        
-        embed.description = "\n".join(lines).strip()
-
-        embed.set_footer(
-            text="💡 /linea_add para registrar · /linea_mod para actualizar"
-        )
-
     messages_to_remove = []
-
     for dash in dashboards:
         try:
-            channel = bot.get_channel(dash["channel_id"]) or await bot.fetch_channel(
-                dash["channel_id"]
-            )
-            if channel:
-                message = await channel.fetch_message(dash["message_id"])
-                
-                # Si estamos en modo update masivo (no specific), mantenemos la página en la que estuviera
-                current_page = 1
-                if not specific_message_id and message.embeds:
-                    footer_text = message.embeds[0].footer.text if message.embeds[0].footer else ""
-                    import re
-                    match = re.search(r"Página (\d+)/(\d+)", footer_text)
-                    if match:
-                        current_page = int(match.group(1))
-                        # Tenemos que regenerar el embed para su página guardada
-                        if current_page != page:
-                            if current_page < 1: 
-                                current_page = 1
-                            if current_page > total_pages: 
-                                current_page = total_pages
-                            local_start = (current_page - 1) * items_per_page
-                            local_end = local_start + items_per_page
-                            local_rows = rows[local_start:local_end]
-                            
-                            local_embed = discord.Embed(
-                                title="🧬 Líneas de Crianza (Top Stats)", color=discord.Color.gold()
-                            )
-                            for l_row in local_rows:
-                                l_hp = l_row["hp"] or 0
-                                l_stam = l_row["stam"] or 0
-                                l_weight = l_row["weight"] or 0
-                                l_melee = l_row["melee"] or 0
-                                l_oxy = l_row["oxy"] or 0
-                                l_food = l_row["food"] or 0
-                                l_speed = l_row["speed"] or 0
-
-                                l_stats_list = []
-                                if l_hp > 0: 
-                                    l_stats_list.append(f"❤️ HP: **{l_hp}**")
-                                if l_stam > 0: 
-                                    l_stats_list.append(f"⚡ Stam: **{l_stam}**")
-                                if l_weight > 0: 
-                                    l_stats_list.append(f"⚖️ Peso: **{l_weight}**")
-                                if l_melee > 0: 
-                                    l_stats_list.append(f"⚔️ Melee: **{l_melee}**")
-                                if l_oxy > 0: 
-                                    l_stats_list.append(f"🫧 Oxy: **{l_oxy}**")
-                                if l_food > 0: 
-                                    l_stats_list.append(f"🍖 Food: **{l_food}**")
-                                if l_speed > 0: 
-                                    l_stats_list.append(f"💨 Speed: **{l_speed}**")
-
-                                l_stats_text = " | ".join(l_stats_list) if l_stats_list else "Sin stats registradas."
-                                l_stats_text += "\n────────────────────────────"
-                                local_embed.add_field(name=f"🦖 {l_row['especie']}", value=l_stats_text, inline=False)
-                                
-                            local_embed.set_footer(
-                                text=f"Página {current_page}/{total_pages} • {total_rows} dinos total | 💡 Usa /linea_add para añadir nuevo dino."
-                            )
-                            target_embed = local_embed
-                            
-                            current_dinos = [r["especie"] for r in local_rows]
-                        else:
-                            target_embed = embed
-                            current_dinos = [r["especie"] for r in rows_to_display]
-                    else:
-                        target_embed = embed
-                        current_dinos = [r["especie"] for r in rows_to_display]
-                else:
-                    target_embed = embed
-                    current_dinos = [r["especie"] for r in rows_to_display] if rows else []
-
-                view = BreedingDashboardView(bot, current_dinos)
-                await message.edit(embed=target_embed, view=view)
-            else:
+            channel = bot.get_channel(dash["channel_id"]) or await bot.fetch_channel(dash["channel_id"])
+            if not channel:
                 messages_to_remove.append(dash["id"])
+                continue
+                
+            message = await channel.fetch_message(dash["message_id"])
+            
+            # Determinar qué página mostrar para este mensaje concreto
+            target_page = page
+            if target_page is None:
+                target_page = 0
+                if message.embeds and message.embeds[0].footer and message.embeds[0].footer.text:
+                    import re
+                    m = re.search(r"Página (\d+)/(\d+)", message.embeds[0].footer.text)
+                    if m: target_page = int(m.group(1)) - 1 # Convertir a 0-indexed
+
+            new_embed, _, current_page, _ = build_breeding_embed(rows, target_page)
+            new_view = BreedingDashboardView(bot, rows, current_page)
+            await message.edit(embed=new_embed, view=new_view)
+            
         except (discord.NotFound, discord.Forbidden):
             messages_to_remove.append(dash["id"])
         except Exception as e:
             print(f"Error updating breeding dash {dash['id']}: {e}")
 
-    # Limpieza de dashboards inactivos o rotos
     if messages_to_remove:
         async with aiosqlite.connect(bot.db_name) as db:
             for mid in messages_to_remove:
@@ -830,66 +736,15 @@ class Breeding(commands.Cog):
         description="Muestra el panel de líneas de crianza (Auto-actualizable).",
     )
     async def lineas(self, interaction: discord.Interaction):
-        # Generación de contenido inicial
+        # Generación de contenido inicial usando la lógica centralizada
         async with aiosqlite.connect(self.bot.db_name) as db:
             db.row_factory = aiosqlite.Row
             cursor = await db.execute("SELECT * FROM dinos WHERE guild_id = ? ORDER BY especie ASC", (interaction.guild_id,))
             rows = await cursor.fetchall()
 
-        if not rows:
-            embed = discord.Embed(
-                title="🧬 Líneas de Crianza",
-                description="No hay líneas registradas aún.",
-                color=discord.Color.gold(),
-            )
-            embed.set_footer(
-                text="💡 Usa /linea_add para registrar o /linea_mod para actualizar."
-            )
-        else:
-            embed = discord.Embed(
-                title="🧬 Líneas de Crianza (Top Stats)", color=discord.Color.gold()
-            )
-            for row in rows:
-                hp = row["hp"] or 0
-                stam = row["stam"] or 0
-                weight = row["weight"] or 0
-                melee = row["melee"] or 0
-                oxy = row["oxy"] or 0
-                food = row["food"] or 0
-                speed = row["speed"] or 0
-
-                stats_list = []
-                if hp > 0:
-                    stats_list.append(f"❤️ HP: **{hp}**")
-                if stam > 0:
-                    stats_list.append(f"⚡ Stam: **{stam}**")
-                if weight > 0:
-                    stats_list.append(f"⚖️ Peso: **{weight}**")
-                if melee > 0:
-                    stats_list.append(f"⚔️ Melee: **{melee}**")
-                if oxy > 0:
-                    stats_list.append(f"🫧 Oxy: **{oxy}**")
-                if food > 0:
-                    stats_list.append(f"🍖 Food: **{food}**")
-                if speed > 0:
-                    stats_list.append(f"💨 Speed: **{speed}**")
-
-                stats_text = (
-                    " | ".join(stats_list) if stats_list else "Sin stats registradas."
-                )
-                stats_text += "\n────────────────────────────"
-
-                embed.add_field(
-                    name=f"🦖 {row['especie']}", value=stats_text, inline=False
-                )
-
-            embed.set_footer(
-                text="💡 Usa /linea_add para añadir nuevo dino | /linea_mod para modificar stats."
-            )
-
-        # Pasamos las especies para el menú desplegable (máximo las primeras 10 visualizadas)
-        current_dinos = [r["especie"] for r in rows[:10]] if rows else []
-        view = BreedingDashboardView(self.bot, current_dinos)
+        embed, _, page, total_pages = build_breeding_embed(rows, 0)
+        view = BreedingDashboardView(self.bot, rows, page)
+        
         await interaction.response.send_message(embed=embed, view=view)
         message = await interaction.original_response()
 

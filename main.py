@@ -388,14 +388,33 @@ class ArkTribeBot(commands.Bot):
                             victima_char = generic_death_match.group(1).strip()
 
                         async with aiosqlite.connect(self.db_name) as db:
-                            # Mapeo de personajes in-game a jugadores reales (Insensible a mayúsculas)
+                            # 1. Obtener miembros de la tribu propia para identificación automática
+                            c_own = await db.execute("SELECT members_json FROM k4ultra_fixed_tribes WHERE is_own = 1 AND guild_id = ?", (guild_id,))
+                            own_row = await c_own.fetchone()
+                            own_members = []
+                            if own_row:
+                                try:
+                                    import json
+                                    own_members = json.loads(own_row[0])
+                                except Exception:
+                                    pass
+
+                            # 2. Mapeo de víctima (personaje in-game -> jugador real)
                             c1 = await db.execute(
                                 "SELECT player_name FROM tribe_characters WHERE LOWER(character_name) = LOWER(?) AND guild_id = ?",
                                 (victima_char, guild_id),
                             )
                             victima_res = await c1.fetchone()
                             victima_player = victima_res[0] if victima_res else None
+                            
+                            # Fallback: si no hay vínculo, mirar si el nombre coincide con un miembro de la tribu propia
+                            if not victima_player:
+                                for m in own_members:
+                                    if m.lower() == victima_char.lower():
+                                        victima_player = m
+                                        break
 
+                            # 3. Mapeo de asesino
                             asesino_player = None
                             if asesino_char:
                                 c2 = await db.execute(
@@ -404,6 +423,13 @@ class ArkTribeBot(commands.Bot):
                                 )
                                 asesino_res = await c2.fetchone()
                                 asesino_player = asesino_res[0] if asesino_res else None
+                                
+                                # Fallback para el asesino
+                                if not asesino_player:
+                                    for m in own_members:
+                                        if m.lower() == asesino_char.lower():
+                                            asesino_player = m
+                                            break
 
                             # Solo procesamos muertes de miembros registrados
                             if victima_player:
@@ -496,19 +522,15 @@ class ArkTribeBot(commands.Bot):
                                 )
                                 await db.commit()
                                 guild_log.info(f"[KDA] +1 Kill para {asesino_player}")
-                                # Actualización de dashboards K/D/A
+
+                            # Actualización global de dashboards si hubo algún cambio
+                            if victima_player or (asesino_player and not victima_player):
                                 try:
                                     warfare_cog = self.get_cog("Warfare")
-                                    if warfare_cog and hasattr(
-                                        warfare_cog, "update_kda_dashboards"
-                                    ):
-                                        await warfare_cog.update_kda_dashboards(
-                                            guild_id=guild_id
-                                        )
+                                    if warfare_cog and hasattr(warfare_cog, "update_kda_dashboards"):
+                                        await warfare_cog.update_kda_dashboards(guild_id=guild_id)
                                 except Exception as e:
-                                    logger.error(
-                                        f"[KDA] Error recargando dashboards: {e}"
-                                    )
+                                    logger.error(f"[KDA] Error recargando dashboards: {e}")
 
                 except Exception as e:
                     logger.error(f"[KDA] Error parseando kill log: {e}")

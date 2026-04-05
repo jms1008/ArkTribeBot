@@ -457,6 +457,19 @@ async def build_player_detail_embed(
     async with aiosqlite.connect(bot.db_name) as db:
         db.row_factory = aiosqlite.Row
 
+        # --- Check si es Miembro de la Tribu Propia ---
+        c_own = await db.execute("SELECT members_json FROM k4ultra_fixed_tribes WHERE guild_id = ? AND is_own = 1", (guild_id,))
+        own_row = await c_own.fetchone()
+        is_tribe_member = False
+        if own_row:
+            import json
+            try:
+                own_members = {m.lower() for m in json.loads(own_row["members_json"])}
+                if player_name.lower() in own_members:
+                    is_tribe_member = True
+            except Exception:
+                pass
+
         # --- 0. Alias y Identidad ---
         cursor = await db.execute(
             "SELECT alias FROM k4ultra_aliases WHERE player_name = ? AND guild_id = ?",
@@ -485,7 +498,10 @@ async def build_player_detail_embed(
         bl_row = await cursor.fetchone()
 
         status_msg = "⚪ Registro Pasivo (K4Ultra)"
-        if bl_row:
+        if is_tribe_member:
+            status_msg = "🟢 Miembro de la Tribu"
+            embed.color = discord.Color.green()
+        elif bl_row:
             # Comprobar si es enemigo o neutral
             is_enemy_val = bl_row["is_enemy"] if "is_enemy" in bl_row.keys() else 1
             if is_enemy_val == 1:
