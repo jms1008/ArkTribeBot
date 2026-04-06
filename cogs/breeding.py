@@ -427,8 +427,10 @@ def build_breeding_embed(rows, page=0):
     import math
     total_pages = math.ceil(total_rows / items_per_page) if total_rows > 0 else 1
     
-    if page < 0: page = 0
-    if page >= total_pages: page = total_pages - 1
+    if page < 0:
+        page = 0
+    if page >= total_pages:
+        page = total_pages - 1
     
     start_idx = page * items_per_page
     end_idx = start_idx + items_per_page
@@ -446,13 +448,20 @@ def build_breeding_embed(rows, page=0):
     lines = [f"📊 `{total_rows}` especies registradas · Página `{page + 1}/{total_pages}`", ""]
     for row in display_rows:
         stats = []
-        if row["hp"]: stats.append(f"❤️ `{row['hp']}`")
-        if row["stam"]: stats.append(f"⚡ `{row['stam']}`")
-        if row["weight"]: stats.append(f"⚖️ `{row['weight']}`")
-        if row["melee"]: stats.append(f"⚔️ `{row['melee']}`")
-        if row["oxy"]: stats.append(f"🫧 `{row['oxy']}`")
-        if row["food"]: stats.append(f"🍖 `{row['food']}`")
-        if row["speed"]: stats.append(f"💨 `{row['speed']}`")
+        if row["hp"]:
+            stats.append(f"❤️ `{row['hp']}`")
+        if row["stam"]:
+            stats.append(f"⚡ `{row['stam']}`")
+        if row["weight"]:
+            stats.append(f"⚖️ `{row['weight']}`")
+        if row["melee"]:
+            stats.append(f"⚔️ `{row['melee']}`")
+        if row["oxy"]:
+            stats.append(f"🫧 `{row['oxy']}`")
+        if row["food"]:
+            stats.append(f"🍖 `{row['food']}`")
+        if row["speed"]:
+            stats.append(f"💨 `{row['speed']}`")
         
         stats_text = " ".join(stats) if stats else "*Stats base*"
         lines.append(f"### 🦖 {row['especie']}")
@@ -499,7 +508,8 @@ async def update_breeding_dashboards(bot, guild_id: int, specific_message_id=Non
                 if message.embeds and message.embeds[0].footer and message.embeds[0].footer.text:
                     import re
                     m = re.search(r"Página (\d+)/(\d+)", message.embeds[0].footer.text)
-                    if m: target_page = int(m.group(1)) - 1 # Convertir a 0-indexed
+                    if m:
+                        target_page = int(m.group(1)) - 1 # Convertir a 0-indexed
 
             new_embed, _, current_page, _ = build_breeding_embed(rows, target_page)
             new_view = BreedingDashboardView(bot, rows, current_page)

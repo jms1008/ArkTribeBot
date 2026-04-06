@@ -286,8 +286,8 @@ class K4Ultra(commands.Cog):
                 valid_players.append({"name": p.name.strip(), "duration": p.duration})
             return guild_id, map_name, valid_players
         except Exception as e:
-            logger.debug(f"[K4Ultra] Error fetching from {map_name} (Guild {guild_id}): {e}")
-            return guild_id, map_name, []
+            logger.error(f"[K4Ultra] Error fetching from {map_name} (Guild {guild_id}): {e}")
+            return guild_id, map_name, None
 
     @tasks.loop(minutes=1)
     async def gather_player_data(self):
@@ -323,6 +323,12 @@ class K4Ultra(commands.Cog):
         ]
         results = await asyncio.gather(*tasks_list)
 
+        # Registro de qué servidores (guild, mapa) fueron consultados con éxito
+        successfully_queried = set()
+        for gid, map_n, res in results:
+            if res is not None:
+                successfully_queried.add((gid, map_n))
+
         now = datetime.now()
 
         # Diccionario para reemplazo en tiempo real (secondary -> primary)
@@ -336,6 +342,8 @@ class K4Ultra(commands.Cog):
 
         all_fetched = []
         for guild_id, map_name, players in results:
+            if players is None:
+                continue
             g_identities = identities.get(guild_id, {})
             for p in players:
                 raw_name = p["name"]
@@ -627,13 +635,18 @@ class K4Ultra(commands.Cog):
 
 
             # Marcado de inactividad de sesiones cerradas
+            # SOLO para servidores que han sido consultados con éxito en este ciclo
             for sid, s in active_pool_dict.items():
-                if sid not in seen_identities and sid in [
-                    a["id"] for a in active_pool
-                ]:  # Cierre exclusivo de sesiones previamente activas
-                    await db.execute(
-                        "UPDATE k4ultra_sessions SET is_active = 0 WHERE id = ?", (sid,)
-                    )
+                if sid not in seen_identities and sid in [a["id"] for a in active_pool]:
+                    if (s["guild_id"], s["map_name"]) in successfully_queried:
+                        # Margen de gracia: No cerrar si se vio por última vez hace menos de 10 min
+                        try:
+                            last_seen = datetime.strptime(s["end_time"], "%Y-%m-%d %H:%M:%S")
+                            if (now - last_seen).total_seconds() > 600:
+                                await db.execute("UPDATE k4ultra_sessions SET is_active = 0 WHERE id = ?", (sid,))
+                        except Exception:
+                            # Fallback si el tiempo está corrupto
+                            await db.execute("UPDATE k4ultra_sessions SET is_active = 0 WHERE id = ?", (sid,))
 
             await db.commit()
 

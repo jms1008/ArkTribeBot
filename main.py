@@ -558,7 +558,13 @@ class ArkTribeBot(commands.Bot):
             parse_options(interaction.data["options"])
 
         args_str = ", ".join(args_list) if args_list else "Sin argumentos"
-        logger.info(f"EJECUCIÓN: User='{user}' | Cmd='/{cmd_name}' | Args=[{args_str}]")
+        
+        # Redirigir log a la guild si existe
+        target_log = logger
+        if interaction.guild_id:
+            target_log = get_guild_logger(interaction.guild_id)
+            
+        target_log.info(f"EJECUCIÓN: User='{user}' | Cmd='/{cmd_name}' | Args=[{args_str}]")
 
     async def is_authorized_admin(self, interaction: discord.Interaction) -> bool:
         """Verifica si el usuario tiene permisos de administrador del bot en este servidor."""
