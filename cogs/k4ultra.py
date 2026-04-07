@@ -633,20 +633,33 @@ class K4Ultra(commands.Cog):
                 except Exception as e:
                     logger.error(f"[K4Ultra] Error enriqueciendo blacklist para {t_identity}: {e}")
 
+            # Identidades confirmadas como online en este ciclo (para detectar transfers)
+            identities_online_now = set(
+                (fp["guild_id"], fp["true_identity"]) 
+                for fp in all_fetched if fp.get("true_identity")
+            )
 
             # Marcado de inactividad de sesiones cerradas
             # SOLO para servidores que han sido consultados con éxito en este ciclo
             for sid, s in active_pool_dict.items():
                 if sid not in seen_identities and sid in [a["id"] for a in active_pool]:
                     if (s["guild_id"], s["map_name"]) in successfully_queried:
-                        # Margen de gracia: No cerrar si se vio por última vez hace menos de 10 min
-                        try:
-                            last_seen = datetime.strptime(s["end_time"], "%Y-%m-%d %H:%M:%S")
-                            if (now - last_seen).total_seconds() > 600:
-                                await db.execute("UPDATE k4ultra_sessions SET is_active = 0 WHERE id = ?", (sid,))
-                        except Exception:
-                            # Fallback si el tiempo está corrupto
+                        # Si el jugador ha sido visto en OTRO mapa este mismo ciclo (Transfer)
+                        # cerramos la sesión antigua inmediatamente sin margen de gracia.
+                        is_transfer = (s["guild_id"], s["player_name"]) in identities_online_now
+                        
+                        if is_transfer:
                             await db.execute("UPDATE k4ultra_sessions SET is_active = 0 WHERE id = ?", (sid,))
+                        else:
+                            # Margen de gracia: No cerrar si se vio por última vez hace menos de 10 min
+                            # Esto protege contra fallos de red o A2S temporalmente vacío.
+                            try:
+                                last_seen = datetime.strptime(s["end_time"], "%Y-%m-%d %H:%M:%S")
+                                if (now - last_seen).total_seconds() > 600:
+                                    await db.execute("UPDATE k4ultra_sessions SET is_active = 0 WHERE id = ?", (sid,))
+                            except Exception:
+                                # Fallback si el tiempo está corrupto
+                                await db.execute("UPDATE k4ultra_sessions SET is_active = 0 WHERE id = ?", (sid,))
 
             await db.commit()
 
