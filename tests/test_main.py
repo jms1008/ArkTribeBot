@@ -2,6 +2,7 @@ import pytest
 import discord
 
 from main import ArkTribeBot
+from cogs.log_processor import LogProcessor
 
 
 @pytest.mark.asyncio
@@ -13,23 +14,22 @@ async def test_bot_initialization():
 
 
 @pytest.mark.asyncio
-async def test_on_message_ignore_self(mocker):
-    """Test para asegurar que el bot ignora sus propios mensajes."""
-    bot = ArkTribeBot()
-
-    # Mockear user property
-    mock_user = discord.Object(id=123)
-    mocker.patch.object(
-        ArkTribeBot, "user", new_callable=mocker.PropertyMock, return_value=mock_user
-    )
+async def test_log_processor_ignore_self(mocker):
+    """Test para asegurar que el procesador de logs ignora mensajes del bot."""
+    # Mock bot
+    mock_bot = mocker.MagicMock()
+    mock_bot.user.id = 123
+    
+    processor = LogProcessor(mock_bot)
 
     mock_message = mocker.MagicMock(spec=discord.Message)
     mock_message.author.id = 123  # Mismo ID que el bot
+    
+    # Espiar si intenta acceder a la base de datos o guild config (si lo hace es que no ignoró)
+    mocker.patch("aiosqlite.connect")
+    
+    await processor.on_message(mock_message)
 
-    # Mockear process_commands para ver si se llama
-    bot.process_commands = mocker.AsyncMock()
-
-    await bot.on_message(mock_message)
-
-    # No se debería llamar a process_commands si el mensaje es del bot
-    bot.process_commands.assert_not_called()
+    # Si ignoró el mensaje, sqlite no se debe haber llamado (debería retornar rapido)
+    import aiosqlite
+    aiosqlite.connect.assert_not_called()

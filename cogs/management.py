@@ -450,44 +450,87 @@ Monitorea en tiempo real si los servidores están online, quién está conectado
 
     "k4ultra": """# :eye: Tracker de Inteligencia (K4Ultra)
 
-K4Ultra monitoriza de forma pasiva las redes para calcular el comportamiento y sesiones enemigas.
+K4Ultra monitoriza de forma pasiva las redes para calcular el comportamiento y sesiones enemigas basándose en conexiones en Battlemetrics.
 
 ### :satellite: Modos de Visualización (Paginados)
-- **/k4ultra**: Levanta el panel principal. Ahora dispone de un selector `modo=radar` o `modo=tribus`:
+- **/k4ultra**: Levanta el panel principal. Dispone de un selector interactivo.
   - **Radar (Ranking):** Muestra jugadores online y el top de horas jugado. Dividido automáticamente en varias páginas interactivas :arrow_backward: :arrow_forward: .
-  - **Tribus (Relaciones):** Mapa predictivo con los grupos de alianzas. Permite marcar nuestra base con `/tribu_propia` para fijarla arriba del todo.
+  - **Tribus (Relaciones):** Sistema de **Grafo de Alianzas** predictivo para saber con quién juegan los enemigos.
+  - **Identificación Propia:** Marca tu propia base con `/tribu_propia` para descartarla de los cálculos y no ensuciar el radar.
 
 ### :clipboard: Espionaje Localizado (Menú Desplegable)
-Selecciona a un jugador del menú inferior de K4Ultra para ver su expediente:
-1. **Últimas Bajas:** Muestra el historial de sus 10 mapas más visitados.
-2. **Sessions:** Tiempos de conexión exactos.
-3. **Horas Totales:** Suma acumulada de tiempo por mapa.""",
+Selecciona a un jugador del menú inferior de K4Ultra para ver su expediente interactivo sin tirar comandos:
+1. **Últimas Bajas:** Registros de mapas donde más pisa el enemigo.
+2. **Sessions:** Tiempos de conexión exactos y minutos jugados in-game.""",
 
-    "ranking": """# ☠️ EL SALÓN DE LA INFAMIA (Mortality Hub)
+    "ranking": """# ☠️ EL SALÓN DE LA INFAMIA (Rancómetro)
 
-El sistema de mortalidad rastrea quién es el miembro más "manco" de la tribu basándose en las muertes registradas en los logs.
+El bot usa un sofisticado **Log Processor** para escuchar 24/7 el canal de Logs del servidor y parsear cada vez que alguien lee la pantalla de muerte.
 
-### 📉 Funcionamiento del Ránking
+### 📉 Funcionamiento del Ránking & Perfiles
 
-- **Detección Automática:** El bot lee los logs de la tribu en tiempo real. Si un miembro muere (por un enemigo, un dino, hambre o caída), el contador sube.
-- **Vinculación Requerida:** Para que tus muertes cuenten, debes vincular tu nombre de personaje de ARK con tu usuario de Discord.
-  - *Comando:* `/ranking_char_add jugador:@Usuario personaje:TuNombreEnARK`
-- **/ranking**: Genera o refresca el Dashboard de mortalidad.
+- **Detección Automática:** Cada "fue 🔪" en los logs sube los contadores de muertes (Se ignoran las Kills, solo contamos muertes).
+- **Sarcasmos:** El Log Processor ríe a costa tuya mandando gifs sarcásticos en el chat al morir.
+- **Configuración de Tribu:** Obligatorio para todos los miembros, usa `/perfil_tribu` para registrar tu nombre in-game, Steam ID y Apodo en una sola vez.
+- **/ranking**: Dashboard de mortalidad puro (Death Counter activo).
+- **Sistema de Puntos Opcional:** Activado por el admin de la tribu, usa `/puntos_daily_suscribir` para recibir resumenes privados por MD cada día.""",
 
-### 🏅 Rangos de "Mancura"
+    "eventos": """# 📅 GESTIÓN DE EVENTOS LFG
 
-El sistema te asigna un grado basado en tu historial:
-1. **Pienso de Dodo 🥚**: (0-10 muertes) Todavía tienes dignidad.
-2. **Ceviche de Raptor Rex 🦖**: (11-50 muertes) Empiezas a ser comida fácil.
-3. **Saco de Dormir Humano 🛌**: (51-120 muertes) Tu utilidad principal es reaparecer.
-4. **ALPHA MANCO SUPREMO 👑**: (>120 muertes) Eres una leyenda del feed.
-
-> 💡 **Tip:** El ránking se ordena de **MAYOR a MENOR** número de muertes. ¡El #1 es el que más veces ha besado el suelo!"""
+Planifica asaltos, defensas o farmeos masivos con facilidad.
+Usa el comando `/evento_crear` indicando título y opciones.
+El sistema despliega botones para que la tribu se apunte, vote horas preferidas, y un administrador pueda notificar la alarma cuando el grupo esté listo."""
 }
 
-class Management(commands.Cog):
+class Management(commands.Cog, name="Management"):
     def __init__(self, bot):
         self.bot = bot
+
+    async def setup_dashboard(self, guild_id: int, channel: discord.TextChannel):
+        """Inicializa el dashboard del To-Do List y almacena su ID."""
+        import aiosqlite
+        import asyncio
+        
+        info_embed = discord.Embed(
+            description=INFO_TEXTS["todo_list"],
+            color=discord.Color.from_rgb(43, 45, 49),
+        )
+        await channel.send(embed=info_embed)
+
+        async with aiosqlite.connect(self.bot.db_name) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute(
+                "SELECT * FROM todos WHERE guild_id = ?",
+                (guild_id,),
+            )
+            rows = await cursor.fetchall()
+
+        todo_embed = discord.Embed(
+            title="📝 Lista de Tareas", color=discord.Color.orange()
+        )
+        if not rows:
+            todo_embed.description = "No hay tareas pendientes. ¡Buen trabajo! 🎉"
+        else:
+            text = ""
+            for row in rows:
+                asignado = f"<@{row['asignado_a']}>" if row["asignado_a"] else "Nadie"
+                estado_icon = "⏳" if row["estado"] == "Pendiente" else "🔨"
+                text += f"**#{row['id']}** {estado_icon} - {row['tarea']}\n   Estado: {row['estado']} | Asignado: {asignado}\n\n"
+                if len(text) > 3800:
+                    text += "... (lista truncada)"
+                    break
+            todo_embed.description = text
+
+        view = TodoView(self.bot)
+        msg = await channel.send(embed=todo_embed, view=view)
+        await asyncio.sleep(0.5)
+
+        async with aiosqlite.connect(self.bot.db_name) as db:
+            await db.execute(
+                "INSERT INTO todo_messages (guild_id, channel_id, message_id) VALUES (?, ?, ?)",
+                (guild_id, channel.id, msg.id),
+            )
+            await db.commit()
 
     @app_commands.command(
         name="todo_add", description="Añade una nueva tarea a la lista."
@@ -801,6 +844,136 @@ class Management(commands.Cog):
         
         from cogs.warfare import update_blacklist_dashboards
         await update_blacklist_dashboards(self.bot, guild_id)
+
+    @app_commands.command(
+        name="perfil_tribu",
+        description="Registra la ficha completa de un miembro de tribu (Discord, Personaje, Steam, Apodo).",
+    )
+    @app_commands.describe(
+        usuario="Usuario de Discord del jugador",
+        personaje="Nombre exacto in-game del personaje en ARK",
+        steam="ID o Nombre de Steam del jugador",
+        apodo="Apodo interno (Se usará de forma predeterminada si no se indica)",
+    )
+    async def perfil_tribu(
+        self, interaction: discord.Interaction, usuario: discord.Member, personaje: str, steam: str = None, apodo: str = None
+    ):
+        if not await interaction.client.is_authorized_admin(interaction):
+            await interaction.response.send_message("❌ Acceso denegado.", ephemeral=True)
+            return
+
+        jugador_nombre = usuario.display_name
+        apodo_final = apodo if apodo else jugador_nombre
+        steam_safe = steam if steam else "No Registrado"
+
+        async with aiosqlite.connect(self.bot.db_name) as db:
+            # 1. Tabla Unificada de Perfiles (para futura persistencia general de la tribu)
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS tribe_profiles (
+                    guild_id INTEGER,
+                    discord_id INTEGER,
+                    ark_character TEXT,
+                    steam_id TEXT,
+                    alias TEXT,
+                    UNIQUE(guild_id, discord_id)
+                )
+            """)
+            await db.execute("""
+                INSERT INTO tribe_profiles (guild_id, discord_id, ark_character, steam_id, alias)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(guild_id, discord_id) DO UPDATE SET 
+                    ark_character=excluded.ark_character,
+                    steam_id=excluded.steam_id,
+                    alias=excluded.alias
+            """, (interaction.guild_id, usuario.id, personaje, steam_safe, apodo_final))
+
+            # 2. Vínculo del Rancómetro (Warfare: tracker de muertes)
+            await db.execute(
+                """
+                INSERT INTO tribe_characters (guild_id, character_name, player_name)
+                VALUES (?, ?, ?)
+                ON CONFLICT(guild_id, character_name) DO UPDATE SET player_name = excluded.player_name
+                """,
+                (interaction.guild_id, personaje, jugador_nombre),
+            )
+            # Inicialización para el Rancómetro
+            await db.execute(
+                "INSERT OR IGNORE INTO tribe_kda (guild_id, player_name, kills, deaths) VALUES (?, ?, 0, 0)",
+                (interaction.guild_id, jugador_nombre),
+            )
+
+            # 3. K4Ultra Radar Alias (Si tiene un apodo y nombre característico)
+            await db.execute(
+                "INSERT INTO k4ultra_aliases (guild_id, player_name, alias) VALUES (?, ?, ?) ON CONFLICT(guild_id, player_name) DO UPDATE SET alias=excluded.alias",
+                (interaction.guild_id, personaje, apodo_final),
+            )
+            
+            await db.commit()
+
+        embed = discord.Embed(
+            title="✅ Perfil de Tribu Configurado",
+            description=f"El jugador {usuario.mention} ha sido registrado globalmente en la base de datos.",
+            color=discord.Color.green()
+        )
+        embed.add_field(name="📛 In-Game", value=f"`{personaje}`", inline=True)
+        embed.add_field(name="👤 Apodo", value=f"`{apodo_final}`", inline=True)
+        embed.add_field(name="🎮 Steam", value=f"`{steam_safe}`", inline=True)
+        embed.set_footer(text="Vinculado al Rancómetro y al Radar K4Ultra con éxito.")
+        
+        await interaction.response.send_message(embed=embed, ephemeral=False)
+        
+        # Puesto que actualizamos records, recargamos el dashboard de muertes.
+        try:
+            from cogs.warfare import update_kda_dashboards
+            await update_kda_dashboards(self.bot, interaction.guild_id)
+        except Exception:
+            pass
+
+    @app_commands.command(
+        name="guia",
+        description="Muestra la guía completa de uso y comandos del bot.",
+    )
+    async def guia(self, interaction: discord.Interaction):
+        """Muestra una guía interactiva con los textos de ayuda del bot."""
+        class GuiaView(discord.ui.View):
+            def __init__(self):
+                super().__init__(timeout=180)
+                options = [
+                    discord.SelectOption(label="Puntos Diarios", value="puntos", emoji="🪙"),
+                    discord.SelectOption(label="Configuración Tribu", value="config", emoji="⚙️"),
+                    discord.SelectOption(label="SOS y Policía", value="sos", emoji="📢"),
+                    discord.SelectOption(label="TO-DO List", value="todo_list", emoji="📝"),
+                    discord.SelectOption(label="Genética y Crianza", value="lineas", emoji="🧬"),
+                    discord.SelectOption(label="Blacklist (Enemigos)", value="blacklist", emoji="☠️"),
+                    discord.SelectOption(label="Scouting (Bases)", value="scouting", emoji="🔭"),
+                    discord.SelectOption(label="Estado Servidores", value="status", emoji="🟢"),
+                    discord.SelectOption(label="Radar K4Ultra", value="k4ultra", emoji="👁️"),
+                    discord.SelectOption(label="Rancómetro", value="ranking", emoji="💀"),
+                    discord.SelectOption(label="Gestión LFG Eventos", value="eventos", emoji="📅"),
+                ]
+                self.select = discord.ui.Select(
+                    placeholder="Selecciona una sección de la guía...",
+                    options=[opt for opt in options if opt.value in INFO_TEXTS]
+                )
+                self.select.callback = self.select_callback
+                self.add_item(self.select)
+
+            async def select_callback(self, i: discord.Interaction):
+                val = self.select.values[0]
+                text = INFO_TEXTS.get(val, "Sección en construcción.")
+                emb = discord.Embed(
+                    description=text,
+                    color=discord.Color.blurple()
+                )
+                await i.response.edit_message(embed=emb, view=self)
+
+        embed_inicial = discord.Embed(
+            title="📚 Manual de Usuario - ArkTribeBot",
+            description="Selecciona una de las categorías del menú inferior para conocer los comandos y funcionamiento de cada módulo.\n\nRecuerda usar `/perfil_tribu` si acabas de llegar para registrarte en el sistema de la red.",
+            color=discord.Color.blurple()
+        )
+        await interaction.response.send_message(embed=embed_inicial, view=GuiaView(), ephemeral=True)
+
 
 
 async def setup(bot):

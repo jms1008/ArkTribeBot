@@ -338,12 +338,8 @@ class Admin(commands.Cog):
             await interaction.followup.send("✅ Configuración guardada correctamente.")
 
         # ------------------- AUTO-SETUP DE CANALES OPCIONALES -------------------
-        from cogs.management import INFO_TEXTS, TodoView
-        from cogs.warfare import BlacklistView
-        from cogs.breeding import BreedingDashboardView
-        from cogs.scouting import ScoutView
-
         # Enviar info de SOS al canal SOS obligatorio
+        from cogs.management import INFO_TEXTS
         info_sos_embed = discord.Embed(
             description=INFO_TEXTS["sos"], color=discord.Color.from_rgb(43, 45, 49)
         )
@@ -353,292 +349,24 @@ class Admin(commands.Cog):
         except Exception as e:
             logger.error(f"Error enviando info SOS: {e}")
 
-        # Configuración To-Do List
-        if canal_todo:
-            try:
-                info_embed = discord.Embed(
-                    description=INFO_TEXTS["todo_list"],
-                    color=discord.Color.from_rgb(43, 45, 49),
-                )
-                await canal_todo.send(embed=info_embed)
-
-                async with aiosqlite.connect(self.bot.db_name) as db:
-                    db.row_factory = aiosqlite.Row
-                    cursor = await db.execute(
-                        "SELECT * FROM todos WHERE guild_id = ?",
-                        (interaction.guild_id,),
-                    )
-                    rows = await cursor.fetchall()
-
-                todo_embed = discord.Embed(
-                    title="📝 Lista de Tareas", color=discord.Color.orange()
-                )
-                if not rows:
-                    todo_embed.description = (
-                        "No hay tareas pendientes. ¡Buen trabajo! 🎉"
-                    )
-                else:
-                    text = ""
-                    for row in rows:
-                        asignado = (
-                            f"<@{row['asignado_a']}>" if row["asignado_a"] else "Nadie"
-                        )
-                        estado_icon = "⏳" if row["estado"] == "Pendiente" else "🔨"
-                        text += f"**#{row['id']}** {estado_icon} - {row['tarea']}\\n   Estado: {row['estado']} | Asignado: {asignado}\\n\\n"
-                        if len(text) > 3800:
-                            text += "... (lista truncada)"
-                            break
-                    todo_embed.description = text
-
-                view = TodoView(self.bot)
-                msg = await canal_todo.send(embed=todo_embed, view=view)
-                await asyncio.sleep(0.5)
-
-                async with aiosqlite.connect(self.bot.db_name) as db:
-                    await db.execute(
-                        "INSERT INTO todo_messages (guild_id, channel_id, message_id) VALUES (?, ?, ?)",
-                        (interaction.guild_id, canal_todo.id, msg.id),
-                    )
-                    await db.commit()
-            except Exception as e:
-                logger.error(f"Error auto-configurando ToDo: {e}")
-
-        # Configuración Crianza / Líneas
-        if canal_crianza:
-            try:
-                info_embed = discord.Embed(
-                    description=INFO_TEXTS["lineas"],
-                    color=discord.Color.from_rgb(43, 45, 49),
-                )
-                await canal_crianza.send(embed=info_embed)
-
-                async with aiosqlite.connect(self.bot.db_name) as db:
-                    db.row_factory = aiosqlite.Row
-                    cursor = await db.execute(
-                        "SELECT * FROM dinos WHERE guild_id = ? ORDER BY especie ASC",
-                        (interaction.guild_id,),
-                    )
-                    rows = await cursor.fetchall()
-
-                crianza_embed = discord.Embed(
-                    title="🧬 Líneas de Crianza y Genética Base",
-                    color=discord.Color.green(),
-                )
-                if not rows:
-                    crianza_embed.description = "No hay dinos registrados."
-                    crianza_view = BreedingDashboardView(self.bot, [])
-                else:
-                    page_size = 10
-                    dinos = [row[0] for row in rows]
-                    current_dinos = dinos[0:page_size]
-
-                    for row in rows[
-                        :15
-                    ]:  # Limit hardcoded for initial setup to avoid going over Discord 10 limit visually during setup, proper pagination resets via buttons anyway
-                        crianza_embed.add_field(
-                            name=f"🦖 {row['especie']}",
-                            value=f"❤️ {row['hp']} | ⚡ {row['stam']} | ⚖️ {row['weight']} | ⚔️ {row['melee']} | 🫧 {row['oxy']} | 🍖 {row['food']} | 💨 {row['speed']}",
-                            inline=False,
-                        )
-                    crianza_embed.set_footer(
-                        text="Página 1/1"
-                        if len(rows) <= page_size
-                        else f"Página 1/{(len(rows) + page_size - 1) // page_size}"
-                    )
-                    crianza_view = BreedingDashboardView(self.bot, current_dinos)
-
-                msg = await canal_crianza.send(embed=crianza_embed, view=crianza_view)
-                await asyncio.sleep(0.5)
-
-                async with aiosqlite.connect(self.bot.db_name) as db:
-                    await db.execute(
-                        "INSERT INTO breeding_messages (guild_id, channel_id, message_id) VALUES (?, ?, ?)",
-                        (interaction.guild_id, canal_crianza.id, msg.id),
-                    )
-                    await db.commit()
-            except Exception as e:
-                logger.error(f"Error auto-configurando Crianza: {e}")
-
-        # Configuración Blacklist
-        if canal_blacklist:
-            try:
-                info_embed = discord.Embed(
-                    description=INFO_TEXTS["blacklist"],
-                    color=discord.Color.from_rgb(43, 45, 49),
-                )
-                await canal_blacklist.send(embed=info_embed)
-
-                async with aiosqlite.connect(self.bot.db_name) as db:
-                    db.row_factory = aiosqlite.Row
-                    cursor = await db.execute(
-                        "SELECT * FROM blacklist WHERE guild_id = ? ORDER BY is_enemy DESC, id DESC",
-                        (interaction.guild_id,),
-                    )
-                    rows = await cursor.fetchall()
-
-                bl_embed = discord.Embed(
-                    title="☠️ Blacklist de Jugadores", color=discord.Color.dark_red()
-                )
-                if not rows:
-                    bl_embed.description = "La lista negra está vacía."
-                else:
-                    enemigos_text = ""
-                    neutrales_text = ""
-                    for row in rows:
-                        mapa_str = f" [{row['mapa']}]" if row["mapa"] else ""
-                        if row["is_enemy"] == 1:
-                            enemigos_text += f"> **#{row['id']}** 🔴 {row['nombre']} | Tribu: {row['tribu']}{mapa_str}\\n   Notas: {row['notas']}\\n\\n"
-                        else:
-                            neutrales_text += f"> **#{row['id']}** ⚪ {row['nombre']} | Tribu: {row['tribu']}{mapa_str}\\n   Notas: {row['notas']}\\n\\n"
-
-                    bl_embed.description = ""
-                    if enemigos_text:
-                        bl_embed.description += (
-                            f"**ENEMIGOS ACTIVOS**\\n{enemigos_text}\\n"
-                        )
-                    if neutrales_text:
-                        bl_embed.description += (
-                            f"**REGISTROS K4ULTRA (Neutrales)**\\n{neutrales_text}"
-                        )
-
-                    if len(bl_embed.description) > 3800:
-                        bl_embed.description = (
-                            bl_embed.description[:3800] + "...\\n(Lista truncada)"
-                        )
-
-                view = BlacklistView(self.bot, rows=rows, page=0)
-                msg = await canal_blacklist.send(embed=bl_embed, view=view)
-                await asyncio.sleep(0.5)
-
-                async with aiosqlite.connect(self.bot.db_name) as db:
-                    await db.execute(
-                        "INSERT INTO blacklist_messages (guild_id, channel_id, message_id) VALUES (?, ?, ?)",
-                        (interaction.guild_id, canal_blacklist.id, msg.id),
-                    )
-                    await db.commit()
-            except Exception as e:
-                logger.error(f"Error auto-configurando Blacklist: {e}")
-
-        # Configuración Scouting
-        if canal_scouting:
-            try:
-                info_embed = discord.Embed(
-                    description=INFO_TEXTS["scouting"],
-                    color=discord.Color.from_rgb(43, 45, 49),
-                )
-                await canal_scouting.send(embed=info_embed)
-
-                async with aiosqlite.connect(self.bot.db_name) as db:
-                    db.row_factory = aiosqlite.Row
-                    cursor = await db.execute(
-                        "SELECT * FROM scouts WHERE guild_id = ? ORDER BY nivel_amenaza DESC LIMIT 5",
-                        (interaction.guild_id,),
-                    )
-                    rows = await cursor.fetchall()
-
-                sc_embed = discord.Embed(
-                    title="🛰️ Reconocimiento Global: Bases Enemigas",
-                    color=discord.Color.dark_purple(),
-                )
-                if not rows:
-                    sc_embed.description = (
-                        "No hay bases enemigas reportadas en ningún mapa."
-                    )
-                else:
-                    for row in rows:
-                        threat_stars = "⭐" * row["nivel_amenaza"]
-                        notas = row["notas"] or "Sin notas adjuntas."
-                        amenaza_texto = (
-                            "Máxima/Alfa"
-                            if row["nivel_amenaza"] == 5
-                            else "Alta"
-                            if row["nivel_amenaza"] >= 4
-                            else "Media"
-                            if row["nivel_amenaza"] == 3
-                            else "Baja/FOB"
-                        )
-                        sc_embed.add_field(
-                            name=f"ID: #{row['id']} | Tribu: {row['tribu_enemiga']} {threat_stars}",
-                            value=f"**Mapa:** {row['mapa']} | **Lat/Lon:** {row['coordenadas']}\\n**Amenaza ({row['nivel_amenaza']}/5):** {amenaza_texto}\\n**Notas:** {notas}",
-                            inline=False,
-                        )
-                    sc_embed.set_footer(
-                        text="Mostrando primeros 5. Genera panel filtrado por mapa usando /scout_list mapa:X"
-                    )
-
-                view = ScoutView(
-                    self.bot,
-                    map_filter=None,
-                    page=0,
-                    total_rows=len(rows) if rows else 0,
-                )
-                msg = await canal_scouting.send(embed=sc_embed, view=view)
-                await asyncio.sleep(0.5)
-
-                async with aiosqlite.connect(self.bot.db_name) as db:
-                    await db.execute(
-                        "INSERT INTO scout_messages (guild_id, channel_id, message_id) VALUES (?, ?, ?)",
-                        (interaction.guild_id, canal_scouting.id, msg.id),
-                    )
-                    await db.commit()
-            except Exception as e:
-                logger.error(f"Error auto-configurando Scouting: {e}")
-
-        # Configuración K4Ultra
-        if canal_k4ultra:
-            try:
-                info_embed = discord.Embed(
-                    description=INFO_TEXTS["k4ultra"],
-                    color=discord.Color.from_rgb(43, 45, 49),
-                )
-                await canal_k4ultra.send(embed=info_embed)
-
-                k_cog = self.bot.get_cog("K4Ultra")
-                if k_cog:
-                    pages_k, top_players_k, k4_aliases_k = await k_cog.generate_k4ultra_embed(
-                        interaction.guild_id
-                    )
-                    view_k = __import__(
-                        "cogs.k4ultra", fromlist=["K4UltraView"]
-                    ).K4UltraView(self.bot, interaction.guild_id, top_players_k, k4_aliases_k)
-                    msg = await canal_k4ultra.send(embed=pages_k[0], view=view_k)
-                    await asyncio.sleep(0.5)
-
-                    async with aiosqlite.connect(self.bot.db_name) as db:
-                        await db.execute(
-                            "INSERT INTO k4ultra_messages (guild_id, channel_id, message_id) VALUES (?, ?, ?)",
-                            (interaction.guild_id, canal_k4ultra.id, msg.id),
-                        )
-                        await db.commit()
-            except Exception as e:
-                logger.error(f"Error auto-configurando K4Ultra: {e}")
-
-        # Configuración Server Status
-        if canal_status:
-            try:
-                info_embed = discord.Embed(
-                    description=INFO_TEXTS["status"],
-                    color=discord.Color.from_rgb(43, 45, 49),
-                )
-                await canal_status.send(embed=info_embed)
-
-                s_cog = self.bot.get_cog("ServerStatus")
-                if s_cog:
-                    from cogs.server_status import get_guild_servers
-
-                    servers = await get_guild_servers(self.bot, interaction.guild_id)
-                    embed_s = await s_cog.get_global_status_embed(servers)
-                    msg = await canal_status.send(embed=embed_s)
-                    await asyncio.sleep(0.5)
-
-                    async with aiosqlite.connect(self.bot.db_name) as db:
-                        await db.execute(
-                            "INSERT INTO status_online_messages (guild_id, channel_id, message_id) VALUES (?, ?, ?)",
-                            (interaction.guild_id, canal_status.id, msg.id),
-                        )
-                        await db.commit()
-            except Exception as e:
-                logger.error(f"Error auto-configurando Server Status: {e}")
+        # Delegación Desacoplada a Cogs
+        canales = {
+            "Management": canal_todo,
+            "Breeding": canal_crianza,
+            "Warfare": canal_blacklist,
+            "Scouting": canal_scouting,
+            "K4Ultra": canal_k4ultra,
+            "ServerStatus": canal_status,
+        }
+        
+        for cog_name, ch in canales.items():
+            if ch:
+                try:
+                    cog = self.bot.get_cog(cog_name)
+                    if cog and hasattr(cog, "setup_dashboard"):
+                        await cog.setup_dashboard(interaction.guild_id, ch)
+                except Exception as e:
+                    logger.error(f"Error inicializando dashboard de {cog_name}: {e}")
 
     @app_commands.command(
         name="wipe_db", description="☢️ BORRA TODOS LOS DATOS (Solo Admin)."

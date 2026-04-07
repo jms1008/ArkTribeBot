@@ -537,6 +537,38 @@ class Breeding(commands.Cog):
     def cog_unload(self):
         self.check_alarms.cancel()
 
+    async def setup_dashboard(self, guild_id: int, channel: discord.TextChannel):
+        """Inicializa el dashboard de Líneas Genéticas y almacena su ID."""
+        import aiosqlite
+        import asyncio
+        from cogs.management import INFO_TEXTS
+        
+        info_embed = discord.Embed(
+            description=INFO_TEXTS["lineas"],
+            color=discord.Color.from_rgb(43, 45, 49),
+        )
+        await channel.send(embed=info_embed)
+
+        async with aiosqlite.connect(self.bot.db_name) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute(
+                "SELECT * FROM dinos WHERE guild_id = ? ORDER BY especie ASC",
+                (guild_id,),
+            )
+            rows = await cursor.fetchall()
+            
+        embed, _, _, _ = build_breeding_embed(rows, 0)
+        view = BreedingDashboardView(self.bot, rows)
+        msg = await channel.send(embed=embed, view=view)
+        await asyncio.sleep(0.5)
+
+        async with aiosqlite.connect(self.bot.db_name) as db:
+            await db.execute(
+                "INSERT INTO breeding_messages (guild_id, channel_id, message_id) VALUES (?, ?, ?)",
+                (guild_id, channel.id, msg.id),
+            )
+            await db.commit()
+
     @tasks.loop(minutes=1)
     async def check_alarms(self):
         try:

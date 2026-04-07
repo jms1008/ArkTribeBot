@@ -55,6 +55,33 @@ async def get_guild_servers(bot, guild_id: int) -> dict:
 class ServerStatus(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+
+    async def setup_dashboard(self, guild_id: int, channel: discord.TextChannel):
+        """Inicializa el dashboard interactivo de Estado de Servidores."""
+        import aiosqlite
+        import asyncio
+        from cogs.management import INFO_TEXTS
+        
+        info_embed = discord.Embed(
+            description=INFO_TEXTS["status"],
+            color=discord.Color.from_rgb(43, 45, 49),
+        )
+        await channel.send(embed=info_embed)
+
+        embed = discord.Embed(
+            title="🔍 Monitorizando Servidores...",
+            description="El bot contactará con los servidores en el próximo ciclo de actualización.",
+            color=discord.Color.orange(),
+        )
+        msg = await channel.send(embed=embed)
+        await asyncio.sleep(0.5)
+
+        async with aiosqlite.connect(self.bot.db_name) as db:
+            await db.execute(
+                "INSERT INTO status_messages (guild_id, channel_id, message_id) VALUES (?, ?, ?)",
+                (guild_id, channel.id, msg.id),
+            )
+            await db.commit()
         # Inicio seguro de las tareas en segundo plano al cargar el Cog
         self.status_loop.start()
         self.global_status_loop.start()

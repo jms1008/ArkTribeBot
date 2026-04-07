@@ -61,10 +61,10 @@ def mock_bot():
 
                 # Tablas de Eventos
                 await db.execute(
-                    "CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, description TEXT, creator_id INTEGER, channel_id INTEGER, message_id INTEGER, status TEXT DEFAULT 'active', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+                    "CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id INTEGER NOT NULL, title TEXT, description TEXT, creator_id INTEGER, channel_id INTEGER, message_id INTEGER, status TEXT DEFAULT 'active', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
                 )
                 await db.execute(
-                    "CREATE TABLE IF NOT EXISTS event_options (id INTEGER PRIMARY KEY AUTOINCREMENT, event_id INTEGER, option_text TEXT, voter_ids TEXT DEFAULT '[]')"
+                    "CREATE TABLE IF NOT EXISTS event_options (id INTEGER PRIMARY KEY AUTOINCREMENT, event_id INTEGER, guild_id INTEGER NOT NULL, option_text TEXT, voter_ids TEXT DEFAULT '[]')"
                 )
 
                 await db.commit()
@@ -76,6 +76,8 @@ def mock_bot():
 def mock_interaction(mocker):
     """Mock para discord.Interaction."""
     interaction = mocker.MagicMock(spec=discord.Interaction)
+    interaction.guild_id = 1234567890
+    interaction.channel_id = 987654321
     interaction.user = mocker.MagicMock(spec=discord.Member)
     interaction.user.id = 123456789
     interaction.user.name = "TestUser"

@@ -131,7 +131,7 @@ async def update_blacklist_dashboards(bot, guild_id: int, page: int = 0):
 
 
 async def update_kda_dashboards(bot, guild_id: int):
-    """Actualiza todos los mensajes persistentes del Ranking KDA (El Más Manco)."""
+    """Actualiza todos los mensajes persistentes del Rancómetro (Cazador de Mancos)."""
     async with aiosqlite.connect(bot.db_name) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
@@ -147,10 +147,10 @@ async def update_kda_dashboards(bot, guild_id: int):
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
             """
-            SELECT player_name, kills, deaths
+            SELECT player_name, deaths
             FROM tribe_kda
             WHERE guild_id = ?
-            ORDER BY deaths DESC, kills DESC
+            ORDER BY deaths DESC
         """,
             (guild_id,),
         )
@@ -204,7 +204,7 @@ async def update_kda_dashboards(bot, guild_id: int):
             description="Todavía no hay registros de mortalidad en la tribu. ¡Seguid así! 🛡️",
             color=discord.Color.from_rgb(43, 45, 49),
         )
-        embed.set_footer(text="💡 Los personajes se vinculan con /ranking_char_add")
+        embed.set_footer(text="💡 Los perfiles se vinculan con /perfil_tribu")
     else:
         import random as _rng
 
@@ -662,15 +662,11 @@ async def build_player_detail_embed(
 
         # --- 5. PVP y Alts ---
         cursor = await db.execute(
-            "SELECT kills, deaths FROM tribe_kda WHERE player_name = ? AND guild_id = ?",
+            "SELECT deaths FROM tribe_kda WHERE player_name = ? AND guild_id = ?",
             (player_name, guild_id),
         )
-        kda_row = await cursor.fetchone()
-        kills, deaths, kda = 0, 0, 0.0
-        if kda_row:
-            kills = kda_row["kills"]
-            deaths = kda_row["deaths"]
-            kda = round(kills / deaths, 2) if deaths > 0 else float(kills)
+        death_row = await cursor.fetchone()
+        deaths = death_row["deaths"] if death_row else 0
 
         cursor = await db.execute(
             "SELECT character_name FROM tribe_characters WHERE player_name = ? AND guild_id = ?",
@@ -684,8 +680,8 @@ async def build_player_detail_embed(
         )
 
         embed.add_field(
-            name="⚔️ Estadísticas PVP",
-            value=f"**Kills:** {kills} | **Deaths:** {deaths} | **KDA:** {kda}",
+            name="⚔️ Ficha de Muertes",
+            value=f"**Deaths Totales (Rancómetro):** {deaths}",
             inline=False,
         )
         embed.add_field(name="🧑‍🤝‍🧑 Alts / Personajes", value=chars_str, inline=False)
@@ -694,11 +690,9 @@ async def build_player_detail_embed(
         threat = 1
         if total_hours > 50:
             threat += 1
-        if kda > 1.5:
-            threat += 1
         if bl_row:
             threat += 1
-        if kills > 10:
+        if deaths > 50:
             threat += 1
 
         threat_str = "💀" * threat + "▫️" * (5 - threat)
@@ -899,6 +893,37 @@ class BlacklistView(discord.ui.View):
 class Warfare(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+
+    async def setup_dashboard(self, guild_id: int, channel: discord.TextChannel):
+        """Inicializa el dashboard interactivo de Blacklist."""
+        import aiosqlite
+        from cogs.management import INFO_TEXTS
+        
+        info_embed = discord.Embed(
+            description=INFO_TEXTS["blacklist"],
+            color=discord.Color.from_rgb(43, 45, 49),
+        )
+        await channel.send(embed=info_embed)
+
+        async with aiosqlite.connect(self.bot.db_name) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute(
+                "SELECT * FROM blacklist WHERE guild_id = ? ORDER BY is_enemy DESC, id DESC",
+                (guild_id,),
+            )
+            rows = await cursor.fetchall()
+            
+        embed = build_blacklist_embed(rows, 0)
+        view = BlacklistView(self.bot, rows)
+        msg = await channel.send(embed=embed, view=view)
+        await asyncio.sleep(0.5)
+
+        async with aiosqlite.connect(self.bot.db_name) as db:
+            await db.execute(
+                "INSERT INTO blacklist_messages (guild_id, channel_id, message_id) VALUES (?, ?, ?)",
+                (guild_id, channel.id, msg.id),
+            )
+            await db.commit()
         # Rutina de seguridad para asegurar el esquema correcto (Migración legacy)
         asyncio.create_task(self.check_schema())
 
@@ -1072,7 +1097,7 @@ class Warfare(commands.Cog):
 
     @app_commands.command(
         name="ranking",
-        description="Muestra el panel en vivo del Ranking K/D/A (El Más Manco).",
+        description="Muestra el panel en vivo del Rancómetro (Contador de Muertes).",
     )
     async def ranking(self, interaction: discord.Interaction):
         await interaction.response.defer()
@@ -1092,93 +1117,6 @@ class Warfare(commands.Cog):
 
         await update_kda_dashboards(self.bot, interaction.guild_id)
 
-    @app_commands.command(
-        name="ranking_char_add",
-        description="Vincula un personaje In-Game a un jugador para contar sus kills/muertes.",
-    )
-    @app_commands.describe(
-        jugador="Nombre del jugador de Tribu",
-        personaje="Nombre exacto del personaje en ARK",
-    )
-    async def ranking_char_add(
-        self, interaction: discord.Interaction, jugador: str, personaje: str
-    ):
-        async with aiosqlite.connect(self.bot.db_name) as db:
-            # Upsert (Insert or Update) del vínculo Personaje-Jugador
-            await db.execute(
-                """
-                INSERT INTO tribe_characters (guild_id, character_name, player_name)
-                VALUES (?, ?, ?)
-                ON CONFLICT(guild_id, character_name) DO UPDATE SET player_name = excluded.player_name
-                """,
-                (interaction.guild_id, personaje, jugador),
-            )
-            # Inicialización segura del perfil del jugador en el Tracker KDA a 0
-            await db.execute(
-                "INSERT OR IGNORE INTO tribe_kda (guild_id, player_name, kills, deaths) VALUES (?, ?, 0, 0)",
-                (
-                    interaction.guild_id,
-                    jugador,
-                ),
-            )
-            await db.commit()
-
-        await interaction.response.send_message(
-            f"✅ Ahora el personaje in-game **{personaje}** registrará muertes y bajas para el jugador **{jugador}**.",
-            ephemeral=False,
-        )
-        await update_kda_dashboards(self.bot, interaction.guild_id)
-
-    @app_commands.command(
-        name="ranking_char_remove",
-        description="Desvincula un personaje del sistema de KDA.",
-    )
-    @app_commands.describe(personaje="Nombre exacto del personaje en ARK")
-    async def ranking_char_remove(
-        self, interaction: discord.Interaction, personaje: str
-    ):
-        async with aiosqlite.connect(self.bot.db_name) as db:
-            await db.execute(
-                "DELETE FROM tribe_characters WHERE character_name = ? AND guild_id = ?",
-                (
-                    personaje,
-                    interaction.guild_id,
-                ),
-            )
-            await db.commit()
-
-        await interaction.response.send_message(
-            f"🗑️ Personaje **{personaje}** eliminado del registro de logs KDA.",
-            ephemeral=False,
-        )
-
-    @app_commands.command(
-        name="ranking_remove",
-        description="¡ADMIN! Borra a un jugador entero del KDA Tracker.",
-    )
-    @app_commands.describe(jugador="Nombre del jugador a purgar")
-    async def ranking_remove(self, interaction: discord.Interaction, jugador: str):
-        async with aiosqlite.connect(self.bot.db_name) as db:
-            await db.execute(
-                "DELETE FROM tribe_kda WHERE player_name = ? AND guild_id = ?",
-                (
-                    jugador,
-                    interaction.guild_id,
-                ),
-            )
-            await db.execute(
-                "DELETE FROM tribe_characters WHERE player_name = ? AND guild_id = ?",
-                (
-                    jugador,
-                    interaction.guild_id,
-                ),
-            )
-            await db.commit()
-
-        await interaction.response.send_message(
-            f"🗑️ El jugador **{jugador}** ha sido borrado del Leaderboard (Kills y Muertes reseteadas).",
-            ephemeral=False,
-        )
         await update_kda_dashboards(self.bot, interaction.guild_id)
 
 

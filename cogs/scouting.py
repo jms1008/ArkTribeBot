@@ -531,6 +531,37 @@ class Scouting(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
+    async def setup_dashboard(self, guild_id: int, channel: discord.TextChannel):
+        """Inicializa el dashboard interactivo de Scouting."""
+        import aiosqlite
+        import asyncio
+        from cogs.management import INFO_TEXTS
+        
+        info_embed = discord.Embed(
+            description=INFO_TEXTS["scouting"],
+            color=discord.Color.from_rgb(43, 45, 49),
+        )
+        await channel.send(embed=info_embed)
+
+        async with aiosqlite.connect(self.bot.db_name) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute(
+                "SELECT * FROM scouts WHERE guild_id = ? ORDER BY id DESC",
+                (guild_id,),
+            )
+            rows = await cursor.fetchall()
+
+        embed, view, _, _ = await build_scout_embed_view(self.bot, rows, None, 0)
+        msg = await channel.send(embed=embed, view=view)
+        await asyncio.sleep(0.5)
+
+        async with aiosqlite.connect(self.bot.db_name) as db:
+            await db.execute(
+                "INSERT INTO scout_messages (guild_id, channel_id, message_id) VALUES (?, ?, ?)",
+                (guild_id, channel.id, msg.id),
+            )
+            await db.commit()
+
     async def scouting_mapa_autocomplete(
         self, interaction: discord.Interaction, current: str
     ) -> list[app_commands.Choice[str]]:
