@@ -852,7 +852,7 @@ class Management(commands.Cog, name="Management"):
     @app_commands.describe(
         usuario="Usuario de Discord del jugador",
         personaje="Nombre exacto in-game del personaje en ARK",
-        steam="ID o Nombre de Steam del jugador",
+        steam="Nombre de Steam (Como aparece en la lista de jugadores)",
         apodo="Apodo interno (Se usará de forma predeterminada si no se indica)",
     )
     async def perfil_tribu(
