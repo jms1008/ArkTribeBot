@@ -56,6 +56,10 @@ class ServerStatus(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
+    async def cog_load(self):
+        self.status_loop.start()
+        self.global_status_loop.start()
+
     async def setup_dashboard(self, guild_id: int, channel: discord.TextChannel):
         """Inicializa el dashboard interactivo de Estado de Servidores."""
         import aiosqlite
@@ -82,9 +86,6 @@ class ServerStatus(commands.Cog):
                 (guild_id, channel.id, msg.id),
             )
             await db.commit()
-        # Inicio seguro de las tareas en segundo plano al cargar el Cog
-        self.status_loop.start()
-        self.global_status_loop.start()
 
     def cog_unload(self):
         self.status_loop.cancel()

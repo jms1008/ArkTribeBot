@@ -21,7 +21,7 @@ if not os.path.exists(LOG_DIR):
     os.makedirs(LOG_DIR)
 
 timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-log_filename = os.path.join(LOG_DIR, f"session_{timestamp}.log")
+log_filename = os.path.join(LOG_DIR, f"bot_system_{timestamp}.log")
 
 logging.basicConfig(
     level=logging.INFO,
@@ -53,7 +53,7 @@ def get_guild_logger(guild_id: int) -> logging.Logger:
 
     # Añadir el FileHandler solo la primera vez que se pide
     if not guild_logger.handlers:
-        guild_log_file = os.path.join(guild_log_dir, f"session_{timestamp}.log")
+        guild_log_file = os.path.join(guild_log_dir, f"server_event_{timestamp}.log")
         handler = logging.FileHandler(guild_log_file, encoding="utf-8")
         handler.setFormatter(
             logging.Formatter(
