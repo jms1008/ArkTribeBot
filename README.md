@@ -4,7 +4,7 @@
 [![Version](https://img.shields.io/badge/version-2.0.0-blue?style=for-the-badge)](https://github.com/jms1008/ArkTribeBot/releases)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-red.svg?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
 
-**ArkTribeBot** es un sistema de gestión integral para **ARK: Survival Evolved**. Actúa como un centro de mando asíncrono que coordina las operaciones de guerra, crianza, espionaje y administración tribal a través de una interfaz interactiva en Discord.
+**ArkTribeBot** es un sistema de gestión integral para **ARK: Survival Evolved**. Actúa como un centro de mando asíncrono que coordina las operaciones de guerra, crianza, espionaje y administración de la tribu a través de una interfaz interactiva en Discord.
 
 ---
 
