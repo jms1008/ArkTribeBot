@@ -275,7 +275,7 @@ class ServerStatus(commands.Cog):
                     )
                 await db.commit()
 
-    async def get_global_status_embed(self, servers: dict):
+    async def get_global_status_embed(self, guild_id: int, servers: dict):
         """Genera un Embed unificado para todos los servidores del Guild, ordenado por jugadores."""
         embed = discord.Embed(
             title="🌐 ESTADO GLOBAL DE SERVIDORES", color=discord.Color.from_rgb(0, 120, 255)
@@ -317,6 +317,7 @@ class ServerStatus(commands.Cog):
 
                     return {
                         "name": name,
+                        "address": f"{ip}:{port}",
                         "players": p_count,
                         "max_players": info.max_players,
                         "list": player_list,
@@ -330,6 +331,21 @@ class ServerStatus(commands.Cog):
             fetch_server(name, ip, port) for name, (ip, port) in servers.items()
         ]
         results = await asyncio.gather(*fetch_tasks)
+
+        # Guardar en caché
+        try:
+            async with aiosqlite.connect(self.bot.db_name) as db:
+                for res in results:
+                    if not res.get("error"):
+                        await db.execute(
+                            '''INSERT OR REPLACE INTO server_status_cache 
+                               (guild_id, server_name, ip_port, ping, player_count, player_names, updated_at)
+                               VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)''',
+                            (guild_id, res["name"], res.get("address"), res.get("ping"), res.get("players"), res.get("list"))
+                        )
+                await db.commit()
+        except Exception as e:
+            logger.error(f"Error guardando caché de status: {e}")
 
         populated_servers = []
         empty_servers = []
@@ -397,7 +413,7 @@ class ServerStatus(commands.Cog):
         await interaction.response.defer()
 
         servers = await get_guild_servers(self.bot, interaction.guild_id)
-        embed = await self.get_global_status_embed(servers)
+        embed = await self.get_global_status_embed(interaction.guild_id, servers)
         message = await interaction.followup.send(embed=embed)
 
         async with aiosqlite.connect(self.bot.db_name) as db:
@@ -451,7 +467,7 @@ class ServerStatus(commands.Cog):
             guild_embeds = {}
             for guild_id in guilds_to_update:
                 servers = await get_guild_servers(self.bot, guild_id)
-                guild_embeds[guild_id] = await self.get_global_status_embed(servers)
+                guild_embeds[guild_id] = await self.get_global_status_embed(guild_id, servers)
 
             for row in active_rows:
                 row_id = row["id"]

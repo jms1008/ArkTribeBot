@@ -536,6 +536,20 @@ class ArkTribeBot(commands.Bot):
                 )
             """)
 
+            # Tabla caché del estado de servidores
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS server_status_cache (
+                    guild_id INTEGER NOT NULL,
+                    server_name TEXT NOT NULL,
+                    ip_port TEXT,
+                    ping INTEGER,
+                    player_count INTEGER,
+                    player_names TEXT,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY(guild_id, server_name)
+                )
+            """)
+
             # Tabla de Usuarios Suscritos a Puntos Diarios
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS daily_points_users (
