@@ -15,3 +15,6 @@ tribe_data.db
 *.log
 logs/
 .DS_Store
+
+# Contexto de desarrollo local
+CLAUDE.md
