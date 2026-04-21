@@ -15,6 +15,7 @@ logger = logging.getLogger("ArkTribeBot")
 class K4Ultra(commands.Cog, name="K4Ultra"):
     def __init__(self, bot):
         self.bot = bot
+        self._a2s_semaphore = asyncio.Semaphore(4)  # Limitar consultas A2S concurrentes
         self.gather_player_data.start()
 
     async def setup_dashboard(self, guild_id: int, channel: discord.TextChannel):
@@ -49,21 +50,22 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
 
     async def fetch_server_players(self, guild_id, map_name, ip, port):
         """Obtiene jugadores mediante A2S, devolviendo nombres válidos y duraciones de sesión."""
-        address = (ip, port)
-        valid_players = []
-        try:
-            players = await asyncio.wait_for(
-                asyncio.to_thread(a2s.players, address), timeout=5.0
-            )
-            for p in players:
-                # Omisión de jugadores sin nombre (perfiles ocultos Steam/Epic)
-                if not p.name:
-                    continue
-                valid_players.append({"name": p.name.strip(), "duration": p.duration})
-            return guild_id, map_name, valid_players
-        except Exception as e:
-            logger.error(f"[K4Ultra] Error fetching from {map_name} (Guild {guild_id}): {e}")
-            return guild_id, map_name, []
+        async with self._a2s_semaphore:
+            address = (ip, port)
+            valid_players = []
+            try:
+                players = await asyncio.wait_for(
+                    asyncio.to_thread(a2s.players, address), timeout=10.0
+                )
+                for p in players:
+                    # Omisión de jugadores sin nombre (perfiles ocultos Steam/Epic)
+                    if not p.name:
+                        continue
+                    valid_players.append({"name": p.name.strip(), "duration": p.duration})
+                return guild_id, map_name, valid_players
+            except Exception as e:
+                logger.error(f"[K4Ultra] Error fetching from {map_name} (Guild {guild_id}): {e}")
+                return guild_id, map_name, []
 
     @tasks.loop(minutes=1)
     async def gather_player_data(self):

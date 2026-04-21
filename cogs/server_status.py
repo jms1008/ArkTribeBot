@@ -102,10 +102,10 @@ class ServerStatus(commands.Cog):
         try:
             # Ejecución asíncrona de consultas A2S
             info = await asyncio.wait_for(
-                asyncio.to_thread(a2s.info, address), timeout=5.0
+                asyncio.to_thread(a2s.info, address), timeout=10.0
             )
             players = await asyncio.wait_for(
-                asyncio.to_thread(a2s.players, address), timeout=5.0
+                asyncio.to_thread(a2s.players, address), timeout=10.0
             )
 
             valid_players = [p.name for p in players if p.name]
