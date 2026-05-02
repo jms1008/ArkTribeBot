@@ -67,13 +67,14 @@ async def build_alarmas_embed(bot, guild_id: int, user_id: int) -> discord.Embed
 class AlarmasPanelView(discord.ui.View):
     """Vista del panel de alarmas. Cada usuario tiene su propia instancia."""
 
-    def __init__(self, bot, servers: list):
-        super().__init__(timeout=300)  # 5 min de timeout para evitar vistas huérfanas
+    def __init__(self, bot, servers: list = None):
+        super().__init__(timeout=None)
         self.bot = bot
 
         options = []
-        for s in servers[:25]:
-            options.append(discord.SelectOption(label=s, value=s))
+        if servers:
+            for s in servers[:25]:
+                options.append(discord.SelectOption(label=s, value=s))
 
         if not options:
             options.append(
@@ -84,6 +85,7 @@ class AlarmasPanelView(discord.ui.View):
 
     @discord.ui.select(
         placeholder="Selecciona un mapa del clúster...",
+        custom_id="alarm_panel_select_map"
     )
     async def select_mapa(
         self, interaction: discord.Interaction, select: discord.ui.Select
@@ -196,6 +198,7 @@ class Alarma(commands.Cog):
         self.bot = bot
 
     async def cog_load(self):
+        self.bot.add_view(AlarmasPanelView(self.bot))
         self.check_alarms_loop.start()
 
     def cog_unload(self):
