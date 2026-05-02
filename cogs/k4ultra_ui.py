@@ -25,21 +25,22 @@ class AddRelationshipModal(discord.ui.Modal, title="Añadir Relación"):
         if p1 > p2:
             p1, p2 = p2, p1
 
+        guild_id = interaction.guild_id
         async with aiosqlite.connect(self.bot.db_name) as db:
             # Verificación de existencia previa
             cursor = await db.execute(
-                "SELECT id FROM k4ultra_relationships WHERE player1 = ? AND player2 = ?",
-                (p1, p2),
+                "SELECT id FROM k4ultra_relationships WHERE player1 = ? AND player2 = ? AND guild_id = ?",
+                (p1, p2, guild_id),
             )
             if await cursor.fetchone():
                 await db.execute(
-                    "UPDATE k4ultra_relationships SET is_manual = 1, probability_score = 100 WHERE player1 = ? AND player2 = ?",
-                    (p1, p2),
+                    "UPDATE k4ultra_relationships SET is_manual = 1, probability_score = 100 WHERE player1 = ? AND player2 = ? AND guild_id = ?",
+                    (p1, p2, guild_id),
                 )
             else:
                 await db.execute(
-                    "INSERT INTO k4ultra_relationships (player1, player2, probability_score, is_manual) VALUES (?, ?, 100, 1)",
-                    (p1, p2),
+                    "INSERT INTO k4ultra_relationships (guild_id, player1, player2, probability_score, is_manual) VALUES (?, ?, ?, 100, 1)",
+                    (guild_id, p1, p2),
                 )
             await db.commit()
 
@@ -70,8 +71,8 @@ class RemoveRelationshipModal(discord.ui.Modal, title="Eliminar Relación"):
 
         async with aiosqlite.connect(self.bot.db_name) as db:
             await db.execute(
-                "DELETE FROM k4ultra_relationships WHERE player1 = ? AND player2 = ?",
-                (p1, p2),
+                "DELETE FROM k4ultra_relationships WHERE player1 = ? AND player2 = ? AND guild_id = ?",
+                (p1, p2, interaction.guild_id),
             )
             await db.commit()
 

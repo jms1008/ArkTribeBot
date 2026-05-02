@@ -4,45 +4,9 @@ from discord.ext import commands, tasks
 import aiosqlite
 import logging
 import json
+from cogs.server_status import get_guild_servers
 
 logger = logging.getLogger("ArkTribeBot")
-
-
-def parse_battlemetrics(bm_string: str) -> dict:
-    servers = {}
-    if not bm_string:
-        return servers
-    for entry in bm_string.split(","):
-        entry = entry.strip()
-        if "|" not in entry:
-            continue
-        parts = entry.split("|", 1)
-        if len(parts) != 2:
-            continue
-        map_name = parts[0].strip()
-        address_str = parts[1].strip()
-        if ":" not in address_str:
-            continue
-        addr_parts = address_str.rsplit(":", 1)
-        try:
-            ip = addr_parts[0].strip()
-            port = int(addr_parts[1].strip())
-            servers[map_name] = (ip, port)
-        except (ValueError, IndexError):
-            continue
-    return servers
-
-
-async def get_guild_servers(bot, guild_id: int) -> dict:
-    async with aiosqlite.connect(bot.db_name) as db:
-        c = await db.execute(
-            "SELECT battlemetrics_urls FROM guild_config WHERE guild_id = ?",
-            (guild_id,),
-        )
-        row = await c.fetchone()
-    if row and row[0]:
-        return parse_battlemetrics(row[0])
-    return {}
 
 
 class AlarmDismissView(discord.ui.View):
@@ -317,7 +281,7 @@ class Alarma(commands.Cog):
         view = AlarmasPanelView(self.bot, server_names)
 
         await interaction.response.send_message(
-            embed=embed, view=view, ephemeral=True
+            embed=embed, view=view, ephemeral=False
         )
 
     @tasks.loop(minutes=1)

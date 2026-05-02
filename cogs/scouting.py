@@ -551,7 +551,7 @@ class Scouting(commands.Cog):
             )
             rows = await cursor.fetchall()
 
-        embed, view, _, _ = await build_scout_embed_view(self.bot, rows, None, 0)
+        embed, _, view = await build_scout_embed_view(self.bot, rows, "Global", 0)
         msg = await channel.send(embed=embed, view=view)
         await asyncio.sleep(0.5)
 

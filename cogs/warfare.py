@@ -913,7 +913,7 @@ class Warfare(commands.Cog):
             )
             rows = await cursor.fetchall()
             
-        embed = build_blacklist_embed(rows, 0)
+        embed, _, _ = build_blacklist_embed(rows, 0)
         view = BlacklistView(self.bot, rows)
         msg = await channel.send(embed=embed, view=view)
         await asyncio.sleep(0.5)
@@ -1114,8 +1114,6 @@ class Warfare(commands.Cog):
                 (interaction.guild_id, interaction.channel_id, message.id),
             )
             await db.commit()
-
-        await update_kda_dashboards(self.bot, interaction.guild_id)
 
         await update_kda_dashboards(self.bot, interaction.guild_id)
 
