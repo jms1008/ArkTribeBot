@@ -107,7 +107,7 @@ class AlarmasPanelView(discord.ui.View):
             already_active = await c.fetchone() is not None
 
         # Vista efímera con acciones directas para ese mapa concreto
-        action_view = AlarmActionView(self.bot, selected, already_active)
+        action_view = AlarmActionView(self.bot, selected, already_active, interaction.message)
         status = "🟢 **Activa**" if already_active else "🔴 **Inactiva**"
         await interaction.response.send_message(
             f"📍 Mapa: **{selected}** — Estado: {status}\n"
@@ -122,15 +122,28 @@ class AlarmActionView(discord.ui.View):
     Contiene el mapa seleccionado directamente en la instancia,
     eliminando el bug de estado perdido."""
 
-    def __init__(self, bot, map_name: str, is_active: bool):
+    def __init__(self, bot, map_name: str, is_active: bool, parent_message: discord.Message = None):
         super().__init__(timeout=60)
         self.bot = bot
         self.map_name = map_name
+        self.parent_message = parent_message
         # Desactivar el botón que no aplica
         if is_active:
             self.btn_on.disabled = True
         else:
             self.btn_off.disabled = True
+
+    async def _refresh_parent(self, interaction: discord.Interaction):
+        """Actualiza el embed del panel principal para reflejar el cambio."""
+        if not self.parent_message:
+            return
+        try:
+            embed = await build_alarmas_embed(
+                self.bot, interaction.guild_id, interaction.user.id
+            )
+            await self.parent_message.edit(embed=embed)
+        except Exception as e:
+            logger.error(f"[Alarma] Error actualizando panel principal: {e}")
 
     @discord.ui.button(label="Encender 🔔", style=discord.ButtonStyle.success)
     async def btn_on(
@@ -153,6 +166,7 @@ class AlarmActionView(discord.ui.View):
             content=f"🚨 **Alarma activada** para `{self.map_name}`. Recibirás un ping en este canal cuando entre un intruso.",
             view=self,
         )
+        await self._refresh_parent(interaction)
 
     @discord.ui.button(label="Apagar 🔕", style=discord.ButtonStyle.danger)
     async def btn_off(
@@ -174,6 +188,7 @@ class AlarmActionView(discord.ui.View):
             content=f"🔕 **Alarma desactivada** para `{self.map_name}`.",
             view=self,
         )
+        await self._refresh_parent(interaction)
 
 
 class Alarma(commands.Cog):
