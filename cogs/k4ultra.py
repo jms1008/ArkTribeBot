@@ -1,7 +1,6 @@
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
-import a2s
 import asyncio
 import aiosqlite
 import logging
@@ -15,7 +14,6 @@ logger = logging.getLogger("ArkTribeBot")
 class K4Ultra(commands.Cog, name="K4Ultra"):
     def __init__(self, bot):
         self.bot = bot
-        self._a2s_semaphore = asyncio.Semaphore(4)  # Limitar consultas A2S concurrentes
         self.gather_player_data.start()
 
     async def setup_dashboard(self, guild_id: int, channel: discord.TextChannel):
@@ -48,25 +46,6 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
         self.gather_player_data.cancel()
         self.calculate_relationships.cancel()
 
-    async def fetch_server_players(self, guild_id, map_name, ip, port):
-        """Obtiene jugadores mediante A2S, devolviendo nombres válidos y duraciones de sesión."""
-        async with self._a2s_semaphore:
-            address = (ip, port)
-            valid_players = []
-            try:
-                players = await asyncio.wait_for(
-                    asyncio.to_thread(a2s.players, address), timeout=10.0
-                )
-                for p in players:
-                    # Omisión de jugadores sin nombre (perfiles ocultos Steam/Epic)
-                    if not p.name:
-                        continue
-                    valid_players.append({"name": p.name.strip(), "duration": p.duration})
-                return guild_id, map_name, valid_players
-            except Exception as e:
-                logger.error(f"[K4Ultra] Error fetching from {map_name} (Guild {guild_id}): {e}")
-                return guild_id, map_name, []
-
     @tasks.loop(minutes=1)
     async def gather_player_data(self):
         """Tarea en segundo plano que recopila datos de los jugadores en base a su update_interval configurado."""
@@ -76,36 +55,45 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
         current_minute = int(time.time() // 60)
 
         # Recorrido de los Guilds y sus intervalos
-        from cogs.server_status import get_guild_servers
+        from cogs.server_status import get_guild_servers, query_all_servers
 
         async with aiosqlite.connect(self.bot.db_name) as _cfg_db:
             cfg_cursor = await _cfg_db.execute("SELECT guild_id, update_interval FROM guild_config")
             guild_rows = await cfg_cursor.fetchall()
 
-        all_guild_servers = []
+        # Filtrar guilds que toca actualizar en este minuto
+        guilds_to_update = []
         for guild_id, interval in guild_rows:
             intrvl = interval if interval else 5
             if current_minute % intrvl != 0:
                 continue
-                
-            g_servers = await get_guild_servers(self.bot, guild_id)
-            for name, (ip, port) in g_servers.items():
-                all_guild_servers.append((guild_id, name, ip, port))
+            guilds_to_update.append(guild_id)
 
-        if not all_guild_servers:
+        if not guilds_to_update:
             return
 
-        tasks_list = [
-            self.fetch_server_players(gid, name, ip, port)
-            for gid, name, ip, port in all_guild_servers
-        ]
-        results = await asyncio.gather(*tasks_list)
+        # Consulta A2S centralizada (compartida con server_status via caché de 30s)
+        all_fetched_raw = []
+        all_guild_servers_set = []
+        for guild_id in guilds_to_update:
+            g_servers = await get_guild_servers(self.bot, guild_id)
+            if not g_servers:
+                continue
+            results = await query_all_servers(self.bot, guild_id, g_servers)
+            for map_name, data in results.items():
+                all_guild_servers_set.append((guild_id, map_name))
+                if data.get("error"):
+                    continue
+                for p in data["players"]:
+                    all_fetched_raw.append({
+                        "guild_id": guild_id,
+                        "map": map_name,
+                        "raw_name": p["name"],
+                        "duration": p["duration"],
+                    })
 
         # Registro de qué servidores (guild, mapa) fueron consultados con éxito
-        successfully_queried = set()
-        for gid, map_n, res in results:
-            if res is not None:
-                successfully_queried.add((gid, map_n))
+        successfully_queried = set(all_guild_servers_set)
 
         now = datetime.now()
 
@@ -113,29 +101,26 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
         async with aiosqlite.connect(self.bot.db_name) as db:
             db.row_factory = aiosqlite.Row
             identities = {}
-            for g_id in set([t[0] for t in all_guild_servers]):
+            for g_id in guilds_to_update:
                 c = await db.execute("SELECT secondary_name, primary_name FROM player_identities_link WHERE guild_id = ?", (g_id,))
                 rows = await c.fetchall()
                 identities[g_id] = {row["secondary_name"].lower(): row["primary_name"] for row in rows}
 
         all_fetched = []
-        for guild_id, map_name, players in results:
-            if players is None:
+        for fp in all_fetched_raw:
+            g_identities = identities.get(fp["guild_id"], {})
+            raw_name = fp["raw_name"]
+            if not raw_name:
                 continue
-            g_identities = identities.get(guild_id, {})
-            for p in players:
-                raw_name = p["name"]
-                if not raw_name:
-                    continue
-                # Verificamos si este nombre fue fusionado alguna vez a otra cuenta principal
-                true_name = g_identities.get(raw_name.lower(), raw_name)
-                
-                all_fetched.append({
-                    "guild_id": guild_id, 
-                    "map": map_name, 
-                    "raw_name": true_name, 
-                    "duration": p["duration"]
-                })
+            # Verificamos si este nombre fue fusionado alguna vez a otra cuenta principal
+            true_name = g_identities.get(raw_name.lower(), raw_name)
+            
+            all_fetched.append({
+                "guild_id": fp["guild_id"], 
+                "map": fp["map"], 
+                "raw_name": true_name, 
+                "duration": fp["duration"]
+            })
 
         async with aiosqlite.connect(self.bot.db_name) as db:
             db.row_factory = aiosqlite.Row

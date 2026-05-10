@@ -52,6 +52,79 @@ async def get_guild_servers(bot, guild_id: int) -> dict:
     return {}
 
 
+# --- CACHÉ COMPARTIDO DE CONSULTAS A2S ---
+# Evita consultas duplicadas cuando server_status y k4ultra sondean en el mismo ciclo.
+import time as _time
+
+_a2s_cache = {}  # {(guild_id, map_name): {"info": ..., "players": [...], "ts": float}}
+_A2S_CACHE_TTL = 30  # segundos
+
+_a2s_semaphore = asyncio.Semaphore(5)
+
+
+async def _fetch_single_server(name: str, ip: str, port: int):
+    """Consulta A2S de un solo servidor con semáforo global."""
+    async with _a2s_semaphore:
+        address = (ip, port)
+        info = await asyncio.wait_for(
+            asyncio.to_thread(a2s.info, address), timeout=10.0
+        )
+        players = await asyncio.wait_for(
+            asyncio.to_thread(a2s.players, address), timeout=10.0
+        )
+        return info, players
+
+
+async def query_all_servers(bot, guild_id: int, servers: dict = None) -> dict:
+    """Consulta A2S centralizada con caché de corta vida (30s).
+
+    Devuelve un dict {map_name: {"info": a2s.Info, "players": [{"name": str, "duration": float}], "error": str|None}}.
+    Si la consulta de un mapa está en caché y tiene menos de 30s, se reutiliza.
+    """
+    if servers is None:
+        servers = await get_guild_servers(bot, guild_id)
+
+    now = _time.time()
+    results = {}
+    to_fetch = {}
+
+    # 1. Comprobar caché para cada servidor
+    for name, (ip, port) in servers.items():
+        key = (guild_id, name)
+        cached = _a2s_cache.get(key)
+        if cached and (now - cached["ts"]) < _A2S_CACHE_TTL:
+            results[name] = cached["data"]
+        else:
+            to_fetch[name] = (ip, port)
+
+    # 2. Consultar solo los que no están en caché
+    if to_fetch:
+        async def _query_one(map_name, ip, port):
+            try:
+                info, players = await _fetch_single_server(map_name, ip, port)
+                valid = [{"name": p.name.strip(), "duration": p.duration} for p in players if p.name]
+                return map_name, {
+                    "info": info,
+                    "players": valid,
+                    "address": f"{ip}:{port}",
+                    "ping": int(info.ping * 1000),
+                    "player_count": len(valid),
+                    "max_players": info.max_players,
+                    "error": None,
+                }
+            except Exception as e:
+                return map_name, {"info": None, "players": [], "error": str(e), "address": f"{ip}:{port}"}
+
+        tasks = [_query_one(n, ip, port) for n, (ip, port) in to_fetch.items()]
+        fetched = await asyncio.gather(*tasks)
+
+        for map_name, data in fetched:
+            results[map_name] = data
+            _a2s_cache[(guild_id, map_name)] = {"data": data, "ts": _time.time()}
+
+    return results
+
+
 class ServerStatus(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -287,61 +360,22 @@ class ServerStatus(commands.Cog):
             )
             return embed
 
-        # Semáforo para limitar concurrencia de consultas A2S
-        semaphore = asyncio.Semaphore(5)
+        # Consulta A2S centralizada (compartida con K4Ultra)
+        raw_results = await query_all_servers(self.bot, guild_id, servers)
 
-        async def fetch_server(name, ip, port):
-            async with semaphore:
-                address = (ip, port)
-                try:
-                    # Límite de tiempo en la consulta A2S para prevenir bloqueos de la rutina
-                    info = await asyncio.wait_for(
-                        asyncio.to_thread(a2s.info, address), timeout=6.0
-                    )
-                    players = await asyncio.wait_for(
-                        asyncio.to_thread(a2s.players, address), timeout=6.0
-                    )
-
-                    valid_players = [p.name for p in players if p.name]
-                    p_count = len(valid_players)
-
-                    player_list = ", ".join(valid_players)
-                    ping_ms = int(info.ping * 1000)
-
-                    # Manejo de respuesta vacía (0 jugadores)
-                    if p_count == 0:
-                        player_list = "Nadie conectado."
-
-                    if len(player_list) > 1000:
-                        player_list = player_list[:1000] + "..."
-
-                    return {
-                        "name": name,
-                        "address": f"{ip}:{port}",
-                        "players": p_count,
-                        "max_players": info.max_players,
-                        "list": player_list,
-                        "ping": ping_ms,
-                        "error": None,
-                    }
-                except Exception as e:
-                    return {"name": name, "error": str(e)}
-
-        fetch_tasks = [
-            fetch_server(name, ip, port) for name, (ip, port) in servers.items()
-        ]
-        results = await asyncio.gather(*fetch_tasks)
-
-        # Guardar en caché
+        # Guardar en caché de DB
         try:
             async with aiosqlite.connect(self.bot.db_name) as db:
-                for res in results:
+                for name, res in raw_results.items():
                     if not res.get("error"):
+                        player_names = ", ".join([p["name"] for p in res["players"]])
+                        if not player_names:
+                            player_names = "Nadie conectado."
                         await db.execute(
                             '''INSERT OR REPLACE INTO server_status_cache 
                                (guild_id, server_name, ip_port, ping, player_count, player_names, updated_at)
                                VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)''',
-                            (guild_id, res["name"], res.get("address"), res.get("ping"), res.get("players"), res.get("list"))
+                            (guild_id, name, res.get("address"), res.get("ping"), res.get("player_count"), player_names)
                         )
                 await db.commit()
         except Exception as e:
@@ -354,22 +388,36 @@ class ServerStatus(commands.Cog):
         total_players = 0
         total_max = 0
 
-        for res in results:
+        for name, res in raw_results.items():
             if res.get("error"):
-                offline_servers.append(res)
+                offline_servers.append({"name": name, "error": res["error"]})
             else:
-                total_players += res.get("players", 0)
+                p_count = res.get("player_count", 0)
+                total_players += p_count
                 total_max += res.get("max_players", 0)
 
-                if res.get("players", 0) > 0:
-                    populated_servers.append(res)
+                player_list = ", ".join([p["name"] for p in res["players"]])
+                if not player_list:
+                    player_list = "Nadie conectado."
+                if len(player_list) > 1000:
+                    player_list = player_list[:1000] + "..."
+
+                entry = {
+                    "name": name,
+                    "players": p_count,
+                    "max_players": res.get("max_players", 0),
+                    "list": player_list,
+                    "ping": res.get("ping", 0),
+                }
+
+                if p_count > 0:
+                    populated_servers.append(entry)
                 else:
-                    empty_servers.append(res)
+                    empty_servers.append(entry)
 
         # Clasificación de servidores activos por afluencia de jugadores (Descendente)
         populated_servers.sort(key=lambda x: x["players"], reverse=True)
 
-        # 1. Servidores Poblados (Prioridad de visualización con detalle completo)
         # Construcción visual por líneas sin add_fields
         lines = []
         lines.append(f"👥 **Total de jugadores en la red:** `{total_players}/{total_max}`")

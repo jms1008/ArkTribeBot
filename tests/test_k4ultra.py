@@ -1,7 +1,8 @@
 import pytest
 import asyncio
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 from cogs.k4ultra import K4Ultra
+from cogs.server_status import query_all_servers, _a2s_cache
 
 # Setup del entorno asíncrono para pytest
 pytestmark = pytest.mark.asyncio
@@ -13,6 +14,13 @@ class MockA2SPlayer:
         self.duration = duration
 
 
+class MockA2SInfo:
+    def __init__(self, ping=0.15, max_players=70, map_name="Gen2"):
+        self.ping = ping
+        self.max_players = max_players
+        self.map_name = map_name
+
+
 @pytest.fixture
 async def k4ultra_cog(mock_bot):
     await mock_bot.init_mock_db()
@@ -22,44 +30,44 @@ async def k4ultra_cog(mock_bot):
     return cog
 
 
-async def test_fetch_server_players_success(k4ultra_cog):
-    """Prueba que el fetching de A2S sanitice correctamente los nombres."""
-    mapa_prueba = "Gen2"
+async def test_query_all_servers_success(mock_bot):
+    """Prueba que query_all_servers sanitice nombres y devuelva datos correctos."""
+    _a2s_cache.clear()
 
-    mock_response = [
-        MockA2SPlayer("R1OT ", 3600),  # Con espacio final (Bug original)
-        MockA2SPlayer("", 100),  # Jugador anónimo (Steam privado)
-        MockA2SPlayer("123", 200),  # Nombre normal
+    mock_players = [
+        MockA2SPlayer("R1OT ", 3600),  # Con espacio final
+        MockA2SPlayer("", 100),         # Jugador anónimo (descartado)
+        MockA2SPlayer("123", 200),      # Nombre normal
     ]
+    mock_info = MockA2SInfo()
 
-    with patch("cogs.k4ultra.a2s.players", return_value=mock_response):
-        # A2s players is synchronous but wrapped in to_thread, so we patch the sync function
-        gid, mapa, valid_players = await k4ultra_cog.fetch_server_players(
-            12345, mapa_prueba, "127.0.0.1", 21000
-        )
+    servers = {"Gen2": ("127.0.0.1", 21000)}
 
-        assert mapa == mapa_prueba
-        assert len(valid_players) == 2  # Uno anónimo descartado
-        assert valid_players[0]["name"] == "R1OT"  # Espacio final limpiado por .strip()
-        assert valid_players[1]["name"] == "123"
+    with patch("cogs.server_status.a2s.info", return_value=mock_info):
+        with patch("cogs.server_status.a2s.players", return_value=mock_players):
+            results = await query_all_servers(mock_bot, 12345, servers)
+
+    assert "Gen2" in results
+    data = results["Gen2"]
+    assert data["error"] is None
+    assert data["player_count"] == 2  # Uno anónimo descartado
+    assert data["players"][0]["name"] == "R1OT"  # Espacio limpiado
+    assert data["players"][1]["name"] == "123"
 
 
-async def test_fetch_server_players_timeout(k4ultra_cog):
+async def test_query_all_servers_timeout(mock_bot):
     """Prueba el comportamiento cuando el servidor no responde (timeout)."""
+    _a2s_cache.clear()
 
-    def mock_timeout_players(addr):
-        import time
+    servers = {"Aberration": ("127.0.0.1", 21000)}
 
-        time.sleep(6)  # Lógico timeout de 5s
-        return []
+    with patch("cogs.server_status.a2s.info", side_effect=asyncio.TimeoutError("Timeout")):
+        results = await query_all_servers(mock_bot, 12345, servers)
 
-    # We patch a2s.players to raise asyncio.TimeoutError directly since it is what wait_for does internally when blocked
-    with patch("cogs.k4ultra.a2s.players", side_effect=asyncio.TimeoutError("Timeout")):
-        gid, mapa, valid_players = await k4ultra_cog.fetch_server_players(
-            12345, "Aberration", "127.0.0.1", 21000
-        )
-        assert mapa == "Aberration"
-        assert len(valid_players) == 0  # No crashea, devuelve lista vacía
+    assert "Aberration" in results
+    data = results["Aberration"]
+    assert data["error"] is not None  # Error registrado, no crash
+    assert len(data["players"]) == 0
 
 
 async def test_generate_k4ultra_embed(k4ultra_cog, mock_bot, mocker):
