@@ -16,5 +16,8 @@ tribe_data.db
 logs/
 .DS_Store
 
+# Cache de pytest
+.pytest_cache/
+
 # Contexto de desarrollo local
 CLAUDE.md

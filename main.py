@@ -271,8 +271,6 @@ class ArkTribeBot(commands.Bot):
             finally:
                 self.is_syncing = False
 
-        import asyncio
-
         asyncio.create_task(_sync_guild())
 
     # El método on_message ha sido extraido al cog LogProcessor para mantener main.py limpio.
@@ -309,12 +307,14 @@ class ArkTribeBot(commands.Bot):
 
     async def is_authorized_admin(self, interaction: discord.Interaction) -> bool:
         """Verifica si el usuario tiene permisos de administrador del bot en este servidor."""
-        HARDCODED_OWNER_ID = (
-            290904414452056064  # Fallback para cuando no hay config de servidor
-        )
+        # Fallback global cuando no hay config de servidor. Configurable vía .env (BOT_OWNER_ID).
+        try:
+            hardcoded_owner_id = int(os.getenv("BOT_OWNER_ID", "0"))
+        except ValueError:
+            hardcoded_owner_id = 0
         if interaction.user.guild_permissions.administrator:
             return True
-        if interaction.user.id == HARDCODED_OWNER_ID:
+        if hardcoded_owner_id and interaction.user.id == hardcoded_owner_id:
             return True
         if interaction.guild_id:
             async with aiosqlite.connect(self.db_name) as db:
@@ -630,8 +630,8 @@ class ArkTribeBot(commands.Bot):
             """)
             try:
                 await db.execute("ALTER TABLE k4ultra_messages ADD COLUMN mode TEXT DEFAULT 'radar'")
-            except Exception:
-                pass
+            except aiosqlite.OperationalError:
+                pass  # La columna ya existe
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS k4ultra_sessions (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -646,8 +646,8 @@ class ArkTribeBot(commands.Bot):
             """)
             try:
                 await db.execute("ALTER TABLE k4ultra_sessions ADD COLUMN last_duration INTEGER DEFAULT 0")
-            except Exception:
-                pass
+            except aiosqlite.OperationalError:
+                pass  # La columna ya existe
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS k4ultra_tribe_names (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -668,8 +668,8 @@ class ArkTribeBot(commands.Bot):
             """)
             try:
                 await db.execute("ALTER TABLE k4ultra_fixed_tribes ADD COLUMN is_own INTEGER DEFAULT 0")
-            except Exception:
-                pass
+            except aiosqlite.OperationalError:
+                pass  # La columna ya existe
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS k4ultra_aliases (
                     player_name TEXT,

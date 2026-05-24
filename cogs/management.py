@@ -176,7 +176,7 @@ async def update_all_dashboards(bot, guild_id: int, page: int = 0):
                     row["id"]
                 )  # Inaccesible (borrado o sin permisos)
             except Exception as e:
-                print(f"Error actualizando dashboard {row['id']}: {e}")
+                logger.error(f"[Management] Error actualizando dashboard {row['id']}: {e}")
 
         # Limpieza de registros inactivos
         if messages_to_remove:
@@ -211,8 +211,8 @@ class AddTaskModal(discord.ui.Modal, title="Añadir Nueva Tarea"):
         try:
             msg = await interaction.original_response()
             await msg.delete()
-        except Exception:
-            pass
+        except (discord.NotFound, discord.Forbidden) as e:
+            logger.debug(f"[Management] Auto-delete falló (AddTaskModal): {e}")
 
 
 class ClaimTaskModal(discord.ui.Modal, title="Reclamar Tarea"):
@@ -289,8 +289,8 @@ class ClaimTaskModal(discord.ui.Modal, title="Reclamar Tarea"):
         try:
             msg = await interaction.original_response()
             await msg.delete()
-        except Exception:
-            pass
+        except (discord.NotFound, discord.Forbidden) as e:
+            logger.debug(f"[Management] Auto-delete falló (ClaimTaskModal): {e}")
 
 
 class DeleteTaskModal(discord.ui.Modal, title="Eliminar Tarea"):
@@ -338,8 +338,8 @@ class DeleteTaskModal(discord.ui.Modal, title="Eliminar Tarea"):
         try:
             msg = await interaction.original_response()
             await msg.delete()
-        except Exception:
-            pass
+        except (discord.NotFound, discord.Forbidden) as e:
+            logger.debug(f"[Management] Auto-delete falló (DeleteTaskModal): {e}")
 
 
 INFO_TEXTS = {
@@ -554,8 +554,8 @@ class Management(commands.Cog, name="Management"):
         try:
             msg = await interaction.original_response()
             await msg.delete()
-        except Exception:
-            pass
+        except (discord.NotFound, discord.Forbidden) as e:
+            logger.debug(f"[Management] Auto-delete falló (feedback): {e}")
 
     @app_commands.command(
         name="todo_list", description="Crea un panel de tareas auto-actualizable."
@@ -926,8 +926,8 @@ class Management(commands.Cog, name="Management"):
         try:
             from cogs.warfare import update_kda_dashboards
             await update_kda_dashboards(self.bot, interaction.guild_id)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.error(f"[Management] Error refrescando dashboard KDA: {e}")
 
     @app_commands.command(
         name="guia",

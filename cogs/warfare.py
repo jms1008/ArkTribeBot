@@ -176,8 +176,8 @@ async def update_kda_dashboards(bot, guild_id: int):
                 cnt = peak_row["cnt"]
                 if pname not in peak_dph_map or cnt > peak_dph_map[pname]:
                     peak_dph_map[pname] = cnt
-        except Exception:
-            pass  # Tabla puede no existir aún
+        except aiosqlite.OperationalError as e:
+            logger.debug(f"[Warfare] Tabla peak_dph no disponible aún: {e}")
 
         # Obtener aliases de K4Ultra para nombres legibles
         alias_map = {}
@@ -188,8 +188,8 @@ async def update_kda_dashboards(bot, guild_id: int):
             )
             for a_row in await c_alias.fetchall():
                 alias_map[a_row["player_name"]] = a_row["alias"]
-        except Exception:
-            pass
+        except aiosqlite.OperationalError as e:
+            logger.debug(f"[Warfare] Tabla k4ultra_aliases no disponible: {e}")
 
     def resolve_display_name(player_name):
         """Usa el alias de K4Ultra si existe, si no devuelve el nombre tal cual."""
@@ -467,8 +467,8 @@ async def build_player_detail_embed(
                 own_members = {m.lower() for m in json.loads(own_row["members_json"])}
                 if player_name.lower() in own_members:
                     is_tribe_member = True
-            except Exception:
-                pass
+            except (json.JSONDecodeError, TypeError) as e:
+                logger.warning(f"[Warfare] members_json inválido en tribu propia: {e}")
 
         # --- 0. Alias y Identidad ---
         cursor = await db.execute(

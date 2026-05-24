@@ -8,6 +8,8 @@ import logging
 
 from main import PoliciaSosView, get_guild_logger
 
+logger = logging.getLogger("ArkTribeBot")
+
 class LogProcessor(commands.Cog, name="LogProcessor"):
     """
     Cog encargado de procesar los mensajes en los canales de log.
@@ -137,8 +139,8 @@ class LogProcessor(commands.Cog, name="LogProcessor"):
                             if own_row:
                                 try:
                                     own_members = json.loads(own_row[0])
-                                except Exception:
-                                    pass
+                                except (json.JSONDecodeError, TypeError) as e:
+                                    logger.warning(f"[LogProcessor] members_json inválido en tribu propia: {e}")
 
                             # 2. Mapeo de víctima (personaje in-game -> jugador real)
                             c1 = await db.execute(
@@ -248,8 +250,8 @@ class LogProcessor(commands.Cog, name="LogProcessor"):
                                 try:
                                     emojis_muerte = ["💀", "🤡", "🪦", "🥚", "🍗", "🧻", "🗑️"]
                                     await sent_msg.add_reaction(random.choice(emojis_muerte))
-                                except Exception:
-                                    pass
+                                except (discord.Forbidden, discord.HTTPException) as e:
+                                    logger.debug(f"[LogProcessor] add_reaction falló: {e}")
                                 guild_log.info(
                                     f"[Sarcasmo] Muerte detectada: {victima_player} (#{num_muertes})"
                                 )

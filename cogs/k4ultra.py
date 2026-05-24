@@ -134,8 +134,8 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
             # Migración: añadir columna last_duration si no existe
             try:
                 await db.execute("ALTER TABLE k4ultra_sessions ADD COLUMN last_duration REAL DEFAULT 0")
-            except Exception:
-                pass
+            except aiosqlite.OperationalError:
+                pass  # La columna ya existe
 
             ten_mins_ago = (now - timedelta(minutes=10)).strftime("%Y-%m-%d %H:%M:%S")
             cursor = await db.execute(
@@ -582,8 +582,8 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
                 await db.execute(
                     "ALTER TABLE k4ultra_relationships ADD COLUMN shared_minutes INTEGER DEFAULT 0"
                 )
-            except Exception:
-                pass
+            except aiosqlite.OperationalError:
+                pass  # La columna ya existe
 
             # --- Decaimiento diario de relaciones (5% por día) ---
             # Aplicar ANTES de calcular nuevos puntos para que relaciones inactivas pierdan fuerza

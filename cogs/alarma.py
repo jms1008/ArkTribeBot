@@ -30,8 +30,8 @@ class AlarmDismissView(discord.ui.View):
                 await interaction.response.send_message(
                     "Alarma silenciada.", ephemeral=True
                 )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"[Alarma] Dismiss falló (mensaje ya eliminado o sin permisos): {e}")
 
 
 async def build_alarmas_embed(bot, guild_id: int, user_id: int) -> discord.Embed:
@@ -373,8 +373,8 @@ class Alarma(commands.Cog):
                                     m_list = json.loads(row_own["members_json"])
                                     for m in m_list:
                                         own_members.add(m.lower())
-                                except Exception:
-                                    pass
+                                except (json.JSONDecodeError, TypeError) as e:
+                                    logger.warning(f"[Alarma] members_json inválido en tribu propia: {e}")
 
                             intruders = []
                             for name in new_entries:

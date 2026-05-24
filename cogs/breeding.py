@@ -6,6 +6,8 @@ import logging
 import datetime
 from discord.ext import commands, tasks
 
+logger = logging.getLogger("ArkTribeBot")
+
 # Opciones del menú de estadísticas
 STAT_CHOICES = [
     app_commands.Choice(name="Vida (HP)", value="hp"),
@@ -352,7 +354,8 @@ class BreedingDashboardView(discord.ui.View):
                                                 f"⏰ `{timestamp}`: **Muta** 🧬 **{dino}** en **{stat}**",
                                             )
                                         )
-                                except Exception:
+                                except Exception as e:
+                                    logger.debug(f"[Breeding] Parseo de mutación falló, usando raw: {e}")
                                     mutations.append(
                                         (timestamp, f"`{timestamp}`: {content}")
                                     )
@@ -518,7 +521,7 @@ async def update_breeding_dashboards(bot, guild_id: int, specific_message_id=Non
         except (discord.NotFound, discord.Forbidden):
             messages_to_remove.append(dash["id"])
         except Exception as e:
-            print(f"Error updating breeding dash {dash['id']}: {e}")
+            logger.error(f"[Breeding] Error actualizando dashboard {dash['id']}: {e}")
 
     if messages_to_remove:
         async with aiosqlite.connect(bot.db_name) as db:
@@ -623,42 +626,41 @@ class Breeding(commands.Cog):
         async with aiosqlite.connect(self.bot.db_name) as db:
             try:
                 await db.execute("ALTER TABLE dinos ADD COLUMN oxy INTEGER")
-                print("Migración: Added oxy column")
+                logger.info("[Breeding] Migración: columna 'oxy' añadida")
                 await db.commit()
-            except Exception:
-                pass
+            except aiosqlite.OperationalError:
+                pass  # La columna ya existe
             try:
                 await db.execute("ALTER TABLE dinos ADD COLUMN food INTEGER")
-                print("Migración: Added food column")
+                logger.info("[Breeding] Migración: columna 'food' añadida")
                 await db.commit()
-            except Exception:
-                pass
+            except aiosqlite.OperationalError:
+                pass  # La columna ya existe
             try:
                 await db.execute("ALTER TABLE dinos ADD COLUMN speed INTEGER")
-                print("Migración: Added speed column")
+                logger.info("[Breeding] Migración: columna 'speed' añadida")
                 await db.commit()
-            except Exception:
-                pass
+            except aiosqlite.OperationalError:
+                pass  # La columna ya existe
 
     def log_mutation(self, guild_id: int, message: str):
         import os
-        import logging
 
-        logger = logging.getLogger(f"ArkTribeBot.guild.{guild_id}")
-        if not logger.handlers:
+        guild_logger = logging.getLogger(f"ArkTribeBot.guild.{guild_id}")
+        if not guild_logger.handlers:
             base_log_dir = os.path.dirname(self.bot.log_filename)
             timestamp_name = os.path.basename(self.bot.log_filename)
             guild_dir = os.path.join(base_log_dir, str(guild_id))
             if not os.path.exists(guild_dir):
                 os.makedirs(guild_dir)
-            
+
             handler = logging.FileHandler(os.path.join(guild_dir, timestamp_name), encoding="utf-8")
             handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S"))
-            logger.addHandler(handler)
-            logger.setLevel(logging.INFO)
-            logger.propagate = True
+            guild_logger.addHandler(handler)
+            guild_logger.setLevel(logging.INFO)
+            guild_logger.propagate = True
 
-        logger.info(message)
+        guild_logger.info(message)
 
     async def upsert_stat(self, dino, stat_col, puntos, guild_id):
         """Helper para Insertar o Actualizar una stat de una especie."""
@@ -724,8 +726,8 @@ class Breeding(commands.Cog):
         try:
             msg = await interaction.original_response()
             await msg.delete()
-        except Exception:
-            pass
+        except (discord.NotFound, discord.Forbidden) as e:
+            logger.debug(f"[Breeding] Auto-delete falló (mensaje ya borrado): {e}")
 
     async def dino_autocomplete(
         self, interaction: discord.Interaction, current: str
@@ -770,8 +772,8 @@ class Breeding(commands.Cog):
         try:
             msg = await interaction.original_response()
             await msg.delete()
-        except Exception:
-            pass
+        except (discord.NotFound, discord.Forbidden) as e:
+            logger.debug(f"[Breeding] Auto-delete falló (mensaje ya borrado): {e}")
 
     @app_commands.command(
         name="lineas",
@@ -893,7 +895,8 @@ class Breeding(commands.Cog):
                                                 f"⏰ `{timestamp}`: **Muta** 🧬 **{dino}** en **{stat}**",
                                             )
                                         )
-                                except Exception:
+                                except Exception as e:
+                                    logger.debug(f"[Breeding] Parseo de mutación falló, usando raw: {e}")
                                     mutations.append(
                                         (timestamp, f"`{timestamp}`: {content}")
                                     )

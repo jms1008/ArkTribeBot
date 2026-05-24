@@ -123,9 +123,9 @@ class ScoutSelect(discord.ui.Select):
                                 img_url = backup_msg.attachments[0].url
                 else:
                     img_url = row["url_imagen"]
-            except Exception:
-                pass
-                
+            except (discord.NotFound, discord.Forbidden, ValueError) as e:
+                logger.debug(f"[Scouting] No se pudo recuperar imagen de backup: {e}")
+
         if img_url:
             embed.set_image(url=img_url)
             
@@ -402,8 +402,8 @@ class DeleteScoutModal(discord.ui.Modal, title="Eliminar Scout"):
                                     int(url_img.strip())
                                 )
                                 await img_msg.delete()
-                            except Exception:
-                                pass  # Mensaje ya eliminado o inaccesible
+                            except (discord.NotFound, discord.Forbidden, ValueError) as e:
+                                logger.debug(f"[Scouting] Imagen de scout ya inaccesible: {e}")
                 except Exception as e:
                     logging.getLogger("ArkTribeBot").warning(
                         f"No se pudo eliminar imagen del scout #{sid}: {e}"
@@ -421,8 +421,8 @@ class DeleteScoutModal(discord.ui.Modal, title="Eliminar Scout"):
         try:
             msg = await interaction.original_response()
             await msg.delete()
-        except Exception:
-            pass
+        except (discord.NotFound, discord.Forbidden) as e:
+            logger.debug(f"[Scouting] Auto-delete falló: {e}")
 
 
 class ModifyScoutModal(discord.ui.Modal, title="Modificar Scout"):
@@ -523,8 +523,8 @@ class ModifyScoutModal(discord.ui.Modal, title="Modificar Scout"):
         try:
             msg = await interaction.original_response()
             await msg.delete()
-        except Exception:
-            pass
+        except (discord.NotFound, discord.Forbidden) as e:
+            logger.debug(f"[Scouting] Auto-delete falló: {e}")
 
 
 class Scouting(commands.Cog):
@@ -657,8 +657,8 @@ class Scouting(commands.Cog):
         try:
             msg = await interaction.original_response()
             await msg.delete()
-        except Exception:
-            pass
+        except (discord.NotFound, discord.Forbidden) as e:
+            logger.debug(f"[Scouting] Auto-delete falló: {e}")
 
     @app_commands.command(
         name="scout_add_image",
@@ -734,8 +734,8 @@ class Scouting(commands.Cog):
         try:
             msg = await interaction.original_response()
             await msg.delete()
-        except Exception:
-            pass
+        except (discord.NotFound, discord.Forbidden) as e:
+            logger.debug(f"[Scouting] Auto-delete falló: {e}")
 
     @app_commands.command(
         name="scout_delete", description="Elimina una entrada de scouting por ID."
@@ -766,8 +766,8 @@ class Scouting(commands.Cog):
         try:
             msg = await interaction.original_response()
             await msg.delete()
-        except Exception:
-            pass
+        except (discord.NotFound, discord.Forbidden) as e:
+            logger.debug(f"[Scouting] Auto-delete falló: {e}")
 
     @app_commands.command(
         name="scout_list",
