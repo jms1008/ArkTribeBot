@@ -6,37 +6,10 @@ import asyncio
 import aiosqlite
 import logging
 
+from utils.parsing import parse_battlemetrics
+
 # Configuración de Logging
 logger = logging.getLogger("ArkTribeBot")
-
-
-def parse_battlemetrics(bm_string: str) -> dict:
-    """Parsea el campo battlemetrics_urls del formato 'MapName|IP:PORT,Map2|IP:PORT2'.
-
-    Devuelve un diccionario {nombre_mapa: (ip, puerto)}.
-    """
-    servers = {}
-    if not bm_string:
-        return servers
-    for entry in bm_string.split(","):
-        entry = entry.strip()
-        if "|" not in entry:
-            continue
-        parts = entry.split("|", 1)
-        if len(parts) != 2:
-            continue
-        map_name = parts[0].strip()
-        address_str = parts[1].strip()
-        if ":" not in address_str:
-            continue
-        addr_parts = address_str.rsplit(":", 1)
-        try:
-            ip = addr_parts[0].strip()
-            port = int(addr_parts[1].strip())
-            servers[map_name] = (ip, port)
-        except (ValueError, IndexError):
-            continue
-    return servers
 
 
 async def get_guild_servers(bot, guild_id: int) -> dict:
@@ -57,7 +30,10 @@ async def get_guild_servers(bot, guild_id: int) -> dict:
 import time as _time
 
 _a2s_cache = {}  # {(guild_id, map_name): {"info": ..., "players": [...], "ts": float}}
-_A2S_CACHE_TTL = 30  # segundos
+# TTL: 90 s — algo menor que el ciclo de status_loop (120 s) y mayor que el de
+# k4ultra/global_status (60 s) para que el segundo loop del minuto reutilice el
+# resultado de red del primero sin volver a consultar A2S.
+_A2S_CACHE_TTL = 90  # segundos
 
 _a2s_semaphore = asyncio.Semaphore(5)
 

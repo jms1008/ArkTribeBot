@@ -1,8 +1,9 @@
-import pytest
-import discord
-from discord.ext import commands
-import sys
 import os
+import sys
+
+import discord
+import pytest
+from discord.ext import commands
 
 # Asegurar que el entorno puede importar desde la raíz del proyecto
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -10,13 +11,17 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 @pytest.fixture
 def mock_bot():
-    """Mock básico para representar al bot de discord."""
+    """Mock básico para representar al bot de Discord.
+
+    El esquema de la DB se carga desde ``db/schema.py`` para garantizar que los tests
+    siempre se ejecutan sobre el esquema real (no una copia divergente).
+    """
 
     class MockBot(commands.Bot):
         def __init__(self):
             intents = discord.Intents.default()
             super().__init__(command_prefix="!", intents=intents)
-            self.db_name = ":memory:"  # Usar base de datos en memoria para los tests
+            self.db_name = ":memory:"  # SQLite en memoria, aislado por test.
 
         @property
         def user(self):
@@ -25,48 +30,17 @@ def mock_bot():
             return u
 
         async def init_mock_db(self):
-            # Copia simplificada de main.py init_db para K4Ultra y el resto de cogs
+            """Crea el esquema real en la conexión :memory: del bot."""
             import aiosqlite
 
+            from db.schema import create_indexes, create_tables, run_migrations
+
+            # NOTA: para :memory: cada conexión es una BD nueva; en los tests que
+            # reabren el fichero la conexión persistente se gestiona dentro del cog.
             async with aiosqlite.connect(self.db_name) as db:
-                await db.execute(
-                    "CREATE TABLE IF NOT EXISTS k4ultra_sessions (id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id INTEGER, player_name TEXT, map_name TEXT, start_time DATETIME, end_time DATETIME, is_active INTEGER DEFAULT 1, last_duration INTEGER DEFAULT 0)"
-                )
-                await db.execute(
-                    "CREATE TABLE IF NOT EXISTS k4ultra_players_log (id INTEGER PRIMARY KEY AUTOINCREMENT, player_name TEXT, map_name TEXT, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)"
-                )
-                await db.execute(
-                    "CREATE TABLE IF NOT EXISTS k4ultra_playtime (id INTEGER PRIMARY KEY AUTOINCREMENT, player_name TEXT, map_name TEXT, total_minutes INTEGER DEFAULT 0, last_seen DATETIME)"
-                )
-                await db.execute(
-                    "CREATE TABLE IF NOT EXISTS k4ultra_relationships (id INTEGER PRIMARY KEY AUTOINCREMENT, player1 TEXT, player2 TEXT, probability_score INTEGER DEFAULT 0, is_manual INTEGER DEFAULT 0, UNIQUE(player1, player2))"
-                )
-
-                # Tablas adicionales requeridas por otros tests (Warfare, Admin, Scouting, etc.)
-                await db.execute(
-                    "CREATE TABLE IF NOT EXISTS blacklist (id INTEGER PRIMARY KEY, jugador TEXT, tribu TEXT, mapa TEXT, notas TEXT, added_by TEXT, added_at DATETIME)"
-                )
-                await db.execute(
-                    "CREATE TABLE IF NOT EXISTS scouts (id INTEGER PRIMARY KEY AUTOINCREMENT, tribu TEXT, server TEXT, coords TEXT, threat_level INTEGER, notas TEXT, image_url TEXT, added_by TEXT, added_at DATETIME)"
-                )
-                await db.execute(
-                    "CREATE TABLE IF NOT EXISTS point_subscriptions (user_id INTEGER PRIMARY KEY, hour INTEGER, timezone TEXT)"
-                )
-                await db.execute(
-                    "CREATE TABLE IF NOT EXISTS guild_config (guild_id INTEGER PRIMARY KEY, sos_channel_id INTEGER, log_channel_id INTEGER, upload_channel_id INTEGER, update_interval INTEGER DEFAULT 2, admin_role_id INTEGER, bot_owner_id INTEGER, battlemetrics_urls TEXT, daily_points_enabled INTEGER DEFAULT 1, vote_urls TEXT)"
-                )
-                await db.execute(
-                    "CREATE TABLE IF NOT EXISTS daily_points_users (user_id INTEGER PRIMARY KEY, alert_hour INTEGER, timezone TEXT, last_sent_date TEXT)"
-                )
-
-                # Tablas de Eventos
-                await db.execute(
-                    "CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id INTEGER NOT NULL, title TEXT, description TEXT, creator_id INTEGER, channel_id INTEGER, message_id INTEGER, status TEXT DEFAULT 'active', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
-                )
-                await db.execute(
-                    "CREATE TABLE IF NOT EXISTS event_options (id INTEGER PRIMARY KEY AUTOINCREMENT, event_id INTEGER, guild_id INTEGER NOT NULL, option_text TEXT, voter_ids TEXT DEFAULT '[]')"
-                )
-
+                await create_tables(db)
+                await run_migrations(db)
+                await create_indexes(db)
                 await db.commit()
 
     return MockBot()

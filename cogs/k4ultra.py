@@ -48,31 +48,60 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
 
     @tasks.loop(minutes=1)
     async def gather_player_data(self):
-        """Tarea en segundo plano que recopila datos de los jugadores en base a su update_interval configurado."""
-        await self.bot.wait_until_ready()
-        
-        import time
-        current_minute = int(time.time() // 60)
+        """Tarea en segundo plano que recopila datos de los jugadores en base a su update_interval configurado.
 
-        # Recorrido de los Guilds y sus intervalos
+        Programación basada en ``guild_loop_state.last_a2s_run`` (en lugar de
+        ``current_minute % interval``) para que un reinicio del bot no haga saltar
+        un ciclo entero por mala suerte de timing.
+        """
+        await self.bot.wait_until_ready()
+
+        from datetime import datetime, timedelta
+
         from cogs.server_status import get_guild_servers, query_all_servers
 
+        now = datetime.utcnow()
         async with aiosqlite.connect(self.bot.db_name) as _cfg_db:
-            cfg_cursor = await _cfg_db.execute("SELECT guild_id, update_interval FROM guild_config")
+            _cfg_db.row_factory = aiosqlite.Row
+            cfg_cursor = await _cfg_db.execute(
+                """
+                SELECT gc.guild_id, gc.update_interval, gls.last_a2s_run
+                FROM guild_config gc
+                LEFT JOIN guild_loop_state gls ON gls.guild_id = gc.guild_id
+                """
+            )
             guild_rows = await cfg_cursor.fetchall()
 
-        # Filtrar guilds que toca actualizar en este minuto
-        guilds_to_update = []
-        for guild_id, interval in guild_rows:
-            intrvl = interval if interval else 5
-            if current_minute % intrvl != 0:
-                continue
-            guilds_to_update.append(guild_id)
+            # Determinar qué guilds toca actualizar según el tiempo transcurrido.
+            guilds_to_update: list[int] = []
+            for row in guild_rows:
+                intrvl = row["update_interval"] if row["update_interval"] else 5
+                last_run_raw = row["last_a2s_run"]
+                if last_run_raw is None:
+                    guilds_to_update.append(row["guild_id"])
+                    continue
+                try:
+                    last_run = datetime.fromisoformat(last_run_raw)
+                except (TypeError, ValueError):
+                    guilds_to_update.append(row["guild_id"])
+                    continue
+                if now - last_run >= timedelta(minutes=intrvl):
+                    guilds_to_update.append(row["guild_id"])
 
-        if not guilds_to_update:
-            return
+            if not guilds_to_update:
+                return
 
-        # Consulta A2S centralizada (compartida con server_status via caché de 30s)
+            # Marcar antes de consultar para evitar dobles ejecuciones si el loop se solapa.
+            now_iso = now.isoformat(timespec="seconds")
+            for g_id in guilds_to_update:
+                await _cfg_db.execute(
+                    "INSERT INTO guild_loop_state (guild_id, last_a2s_run) VALUES (?, ?) "
+                    "ON CONFLICT(guild_id) DO UPDATE SET last_a2s_run = excluded.last_a2s_run",
+                    (g_id, now_iso),
+                )
+            await _cfg_db.commit()
+
+        # Consulta A2S centralizada (compartida con server_status via caché de 90s).
         all_fetched_raw = []
         all_guild_servers_set = []
         for guild_id in guilds_to_update:
@@ -131,11 +160,7 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
             )
             active_pool = [dict(s) for s in await cursor.fetchall()]
 
-            # Migración: añadir columna last_duration si no existe
-            try:
-                await db.execute("ALTER TABLE k4ultra_sessions ADD COLUMN last_duration REAL DEFAULT 0")
-            except aiosqlite.OperationalError:
-                pass  # La columna ya existe
+            # Migración de last_duration delegada a db/schema.py.
 
             ten_mins_ago = (now - timedelta(minutes=10)).strftime("%Y-%m-%d %H:%M:%S")
             cursor = await db.execute(
@@ -577,13 +602,7 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
         async with aiosqlite.connect(self.bot.db_name) as db:
             db.row_factory = aiosqlite.Row
 
-            # Preparación de la columna extra de minutos compartidos (Migración DB)
-            try:
-                await db.execute(
-                    "ALTER TABLE k4ultra_relationships ADD COLUMN shared_minutes INTEGER DEFAULT 0"
-                )
-            except aiosqlite.OperationalError:
-                pass  # La columna ya existe
+            # Migración de shared_minutes delegada a db/schema.py.
 
             # --- Decaimiento diario de relaciones (5% por día) ---
             # Aplicar ANTES de calcular nuevos puntos para que relaciones inactivas pierdan fuerza
@@ -1651,16 +1670,5 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
 
 
 async def setup(bot):
-    async with aiosqlite.connect(bot.db_name) as db:
-        await db.execute(
-            """
-            CREATE TABLE IF NOT EXISTS player_identities_link (
-                guild_id INTEGER NOT NULL,
-                secondary_name TEXT NOT NULL,
-                primary_name TEXT NOT NULL,
-                PRIMARY KEY (guild_id, secondary_name)
-            )
-            """
-        )
-        await db.commit()
+    # La tabla player_identities_link se crea en db/schema.py (init_db).
     await bot.add_cog(K4Ultra(bot))

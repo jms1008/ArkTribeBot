@@ -360,11 +360,15 @@ class ModifyBlacklistModal(discord.ui.Modal, title="Modificar entrada de Blackli
         self.bot = bot
 
     async def on_submit(self, interaction: discord.Interaction):
-        valid_fields = {"player", "tribe", "map", "notes", "is_enemy"}
+        from utils.parsing import ALLOWED_BLACKLIST_FIELDS
+
+        # Restringimos el modal a un subconjunto editable por el usuario final
+        # (last_seen/total_hours se mantienen sólo a través de procesos internos).
+        valid_fields = ALLOWED_BLACKLIST_FIELDS - {"last_seen", "total_hours"}
         campo = self.campo.value.strip().lower()
         if campo not in valid_fields:
             await interaction.response.send_message(
-                f"❌ Campo inválido. Usa: {', '.join(valid_fields)}", ephemeral=True
+                f"❌ Campo inválido. Usa: {', '.join(sorted(valid_fields))}", ephemeral=True
             )
             return
         try:

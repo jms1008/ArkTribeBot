@@ -61,14 +61,7 @@ class Admin(commands.Cog):
             return
 
         async with aiosqlite.connect(self.bot.db_name) as db:
-            await db.execute("""
-                CREATE TABLE IF NOT EXISTS k4ultra_messages (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    guild_id INTEGER,
-                    channel_id INTEGER,
-                    message_id INTEGER
-                )
-            """)
+            # La tabla k4ultra_messages se crea en db/schema.py (init_db).
             await db.execute(
                 "INSERT INTO k4ultra_messages (guild_id, channel_id, message_id) VALUES (?, ?, ?)",
                 (interaction.guild_id, ch_id_int, msg_id_int),

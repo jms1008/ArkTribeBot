@@ -690,13 +690,18 @@ class Management(commands.Cog, name="Management"):
                     updates["is_enemy"] = int(enemigo.value)
 
                 if updates:
-                    set_clause = ", ".join(f"{k} = ?" for k in updates.keys())
-                    values = list(updates.values()) + [bl_row["id"], interaction.guild_id]
-                    await db.execute(
-                        f"UPDATE blacklist SET {set_clause} WHERE id = ? AND guild_id = ?",
-                        values,
-                    )
-                    await db.commit()
+                    # Defensa en profundidad: verificar columnas contra whitelist antes de interpolar.
+                    from utils.parsing import ALLOWED_BLACKLIST_FIELDS
+
+                    safe_keys = [k for k in updates.keys() if k in ALLOWED_BLACKLIST_FIELDS]
+                    if safe_keys:
+                        set_clause = ", ".join(f"{k} = ?" for k in safe_keys)
+                        values = [updates[k] for k in safe_keys] + [bl_row["id"], interaction.guild_id]
+                        await db.execute(
+                            f"UPDATE blacklist SET {set_clause} WHERE id = ? AND guild_id = ?",
+                            values,
+                        )
+                        await db.commit()
 
             # Gestión del personaje (nombre in-game) en tribe_characters
             if personaje is not None:

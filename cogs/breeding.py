@@ -47,7 +47,15 @@ class StatSelectView(discord.ui.View):
         self.add_item(self.select)
 
     async def select_callback(self, interaction: discord.Interaction):
+        from utils.parsing import ALLOWED_DINO_STATS
+
         stat_selected = self.select.values[0]
+        # Defensa anti-inyección: stat_selected viene del Select, pero validamos por si acaso.
+        if stat_selected not in ALLOWED_DINO_STATS:
+            await interaction.response.send_message(
+                "❌ Estadística no permitida.", ephemeral=True
+            )
+            return
 
         async with aiosqlite.connect(self.bot.db_name) as db:
             db.row_factory = aiosqlite.Row
@@ -533,8 +541,7 @@ async def update_breeding_dashboards(bot, guild_id: int, specific_message_id=Non
 class Breeding(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        # Intento de migración de columnas por versión antigua de DB
-        asyncio.create_task(self.check_schema())
+        # Migraciones delegadas a db/schema.py.
         self.check_alarms.start()
 
     def cog_unload(self):
@@ -622,27 +629,6 @@ class Breeding(commands.Cog):
     async def before_check_alarms(self):
         await self.bot.wait_until_ready()
 
-    async def check_schema(self):
-        async with aiosqlite.connect(self.bot.db_name) as db:
-            try:
-                await db.execute("ALTER TABLE dinos ADD COLUMN oxy INTEGER")
-                logger.info("[Breeding] Migración: columna 'oxy' añadida")
-                await db.commit()
-            except aiosqlite.OperationalError:
-                pass  # La columna ya existe
-            try:
-                await db.execute("ALTER TABLE dinos ADD COLUMN food INTEGER")
-                logger.info("[Breeding] Migración: columna 'food' añadida")
-                await db.commit()
-            except aiosqlite.OperationalError:
-                pass  # La columna ya existe
-            try:
-                await db.execute("ALTER TABLE dinos ADD COLUMN speed INTEGER")
-                logger.info("[Breeding] Migración: columna 'speed' añadida")
-                await db.commit()
-            except aiosqlite.OperationalError:
-                pass  # La columna ya existe
-
     def log_mutation(self, guild_id: int, message: str):
         import os
 
@@ -664,6 +650,11 @@ class Breeding(commands.Cog):
 
     async def upsert_stat(self, dino, stat_col, puntos, guild_id):
         """Helper para Insertar o Actualizar una stat de una especie."""
+        from utils.parsing import ALLOWED_DINO_STATS
+
+        if stat_col not in ALLOWED_DINO_STATS:
+            raise ValueError(f"Stat no permitida: {stat_col!r}")
+
         async with aiosqlite.connect(self.bot.db_name) as db:
             # Verificación de existencia
             db.row_factory = aiosqlite.Row
