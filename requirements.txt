@@ -4,7 +4,7 @@ discord.py~=2.7
 aiosqlite~=0.22
 python-dotenv~=1.0
 python-a2s~=1.4
-tzdata>=2024.1
+tzdata>=2026.2
 
 # Testing
 pytest~=9.0
