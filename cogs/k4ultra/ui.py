@@ -26,23 +26,23 @@ class AddRelationshipModal(discord.ui.Modal, title="Añadir Relación"):
             p1, p2 = p2, p1
 
         guild_id = interaction.guild_id
-        async with aiosqlite.connect(self.bot.db_name) as db:
-            # Verificación de existencia previa
-            cursor = await db.execute(
-                "SELECT id FROM k4ultra_relationships WHERE player1 = ? AND player2 = ? AND guild_id = ?",
+        db = self.bot.db
+        # Verificación de existencia previa
+        existing = await db.fetchone(
+            "SELECT id FROM k4ultra_relationships WHERE player1 = ? AND player2 = ? AND guild_id = ?",
+            (p1, p2, guild_id),
+        )
+        if existing:
+            await db.execute(
+                "UPDATE k4ultra_relationships SET is_manual = 1, probability_score = 100 WHERE player1 = ? AND player2 = ? AND guild_id = ?",
                 (p1, p2, guild_id),
             )
-            if await cursor.fetchone():
-                await db.execute(
-                    "UPDATE k4ultra_relationships SET is_manual = 1, probability_score = 100 WHERE player1 = ? AND player2 = ? AND guild_id = ?",
-                    (p1, p2, guild_id),
-                )
-            else:
-                await db.execute(
-                    "INSERT INTO k4ultra_relationships (guild_id, player1, player2, probability_score, is_manual) VALUES (?, ?, ?, 100, 1)",
-                    (guild_id, p1, p2),
-                )
-            await db.commit()
+        else:
+            await db.execute(
+                "INSERT INTO k4ultra_relationships (guild_id, player1, player2, probability_score, is_manual) VALUES (?, ?, ?, 100, 1)",
+                (guild_id, p1, p2),
+            )
+        await db.commit()
 
         await interaction.response.send_message(
             f"✅ Relación manual añadida entre **{p1}** y **{p2}**.", ephemeral=True
@@ -69,12 +69,11 @@ class RemoveRelationshipModal(discord.ui.Modal, title="Eliminar Relación"):
         if p1 > p2:
             p1, p2 = p2, p1
 
-        async with aiosqlite.connect(self.bot.db_name) as db:
-            await db.execute(
-                "DELETE FROM k4ultra_relationships WHERE player1 = ? AND player2 = ? AND guild_id = ?",
-                (p1, p2, interaction.guild_id),
-            )
-            await db.commit()
+        await self.bot.db.execute(
+            "DELETE FROM k4ultra_relationships WHERE player1 = ? AND player2 = ? AND guild_id = ?",
+            (p1, p2, interaction.guild_id),
+        )
+        await self.bot.db.commit()
 
         await interaction.response.send_message(
             f"🗑️ Relación eliminada entre **{p1}** y **{p2}**.", ephemeral=True
@@ -99,23 +98,22 @@ class RenameTribeModal(discord.ui.Modal, title="Asignar Nombre a Tribu"):
         miembro = self.miembro_ref.value.strip()
         nuevo_nombre = self.nuevo_nombre.value.strip()
 
-        async with aiosqlite.connect(self.bot.db_name) as db:
-            db.row_factory = aiosqlite.Row
-            cursor = await db.execute(
-                "SELECT id FROM k4ultra_tribe_names WHERE tribe_signature = ? AND guild_id = ?",
-                (miembro, interaction.guild_id),
+        db = self.bot.db
+        existing = await db.fetchone(
+            "SELECT id FROM k4ultra_tribe_names WHERE tribe_signature = ? AND guild_id = ?",
+            (miembro, interaction.guild_id),
+        )
+        if existing:
+            await db.execute(
+                "UPDATE k4ultra_tribe_names SET custom_name = ? WHERE tribe_signature = ? AND guild_id = ?",
+                (nuevo_nombre, miembro, interaction.guild_id),
             )
-            if await cursor.fetchone():
-                await db.execute(
-                    "UPDATE k4ultra_tribe_names SET custom_name = ? WHERE tribe_signature = ? AND guild_id = ?",
-                    (nuevo_nombre, miembro, interaction.guild_id),
-                )
-            else:
-                await db.execute(
-                    "INSERT INTO k4ultra_tribe_names (guild_id, tribe_signature, custom_name) VALUES (?, ?, ?)",
-                    (interaction.guild_id, miembro, nuevo_nombre),
-                )
-            await db.commit()
+        else:
+            await db.execute(
+                "INSERT INTO k4ultra_tribe_names (guild_id, tribe_signature, custom_name) VALUES (?, ?, ?)",
+                (interaction.guild_id, miembro, nuevo_nombre),
+            )
+        await db.commit()
 
         await interaction.response.send_message(
             f"✅ Tribu de **{miembro}** renombrada a **{nuevo_nombre}**. Se aplicará en el próximo refresco.",

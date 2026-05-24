@@ -60,13 +60,12 @@ class Admin(commands.Cog):
             )
             return
 
-        async with aiosqlite.connect(self.bot.db_name) as db:
-            # La tabla k4ultra_messages se crea en db/schema.py (init_db).
-            await db.execute(
-                "INSERT INTO k4ultra_messages (guild_id, channel_id, message_id) VALUES (?, ?, ?)",
-                (interaction.guild_id, ch_id_int, msg_id_int),
-            )
-            await db.commit()
+        # La tabla k4ultra_messages se crea en db/schema.py (init_db).
+        await self.bot.db.execute(
+            "INSERT INTO k4ultra_messages (guild_id, channel_id, message_id) VALUES (?, ?, ?)",
+            (interaction.guild_id, ch_id_int, msg_id_int),
+        )
+        await self.bot.db.commit()
 
         # Generación del primer embed
         from cogs.k4ultra import K4UltraView
@@ -148,12 +147,12 @@ class Admin(commands.Cog):
             updates.append("daily_points_enabled = ?")
             params.append(1 if puntos_diarios else 0)
 
+        db = self.bot.db
         if updates:
             sql = f"UPDATE guild_config SET {', '.join(updates)} WHERE guild_id = ?"
             params.append(guild_id)
-            async with aiosqlite.connect(db_name) as db:
-                await db.execute(sql, tuple(params))
-                await db.commit()
+            await db.execute(sql, tuple(params))
+            await db.commit()
             await interaction.response.send_message(
                 "✅ **Configuración actualizada correctamente.**", ephemeral=True
             )
@@ -161,19 +160,15 @@ class Admin(commands.Cog):
             await interaction.response.defer(ephemeral=False)
 
         # Consultar configuración actual para el embed
-        async with aiosqlite.connect(db_name) as db:
-            db.row_factory = aiosqlite.Row
-            c = await db.execute(
-                "SELECT * FROM guild_config WHERE guild_id = ?", (guild_id,)
-            )
-            config = await c.fetchone()
+        config = await db.fetchone(
+            "SELECT * FROM guild_config WHERE guild_id = ?", (guild_id,)
+        )
 
-            # Miembros registrados
-            c2 = await db.execute(
-                "SELECT COUNT(*) FROM tribe_characters WHERE guild_id = ?", (guild_id,)
-            )
-            count_res = await c2.fetchone()
-            num_miembros = count_res[0] if count_res else 0
+        # Miembros registrados
+        count_res = await db.fetchone(
+            "SELECT COUNT(*) AS n FROM tribe_characters WHERE guild_id = ?", (guild_id,)
+        )
+        num_miembros = count_res["n"] if count_res else 0
 
         if not config:
             target = interaction.followup.send if not updates else interaction.edit_original_response
@@ -283,44 +278,43 @@ class Admin(commands.Cog):
         admin_role_id = rol_admin.id if rol_admin else None
         bot_owner_id = propietario_bot.id if propietario_bot else interaction.user.id
 
-        async with aiosqlite.connect(self.bot.db_name) as db:
-            await db.execute(
-                """
-                INSERT INTO guild_config (
-                    guild_id, sos_channel_id, log_channel_id, upload_channel_id,
-                    update_interval, admin_role_id, bot_owner_id, battlemetrics_urls
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(guild_id) DO UPDATE SET
-                    sos_channel_id = excluded.sos_channel_id,
-                    log_channel_id = excluded.log_channel_id,
-                    upload_channel_id = excluded.upload_channel_id,
-                    update_interval = excluded.update_interval,
-                    admin_role_id = excluded.admin_role_id,
-                    bot_owner_id = excluded.bot_owner_id,
-                    battlemetrics_urls = excluded.battlemetrics_urls
+        db = self.bot.db
+        await db.execute(
+            """
+            INSERT INTO guild_config (
+                guild_id, sos_channel_id, log_channel_id, upload_channel_id,
+                update_interval, admin_role_id, bot_owner_id, battlemetrics_urls
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(guild_id) DO UPDATE SET
+                sos_channel_id = excluded.sos_channel_id,
+                log_channel_id = excluded.log_channel_id,
+                upload_channel_id = excluded.upload_channel_id,
+                update_interval = excluded.update_interval,
+                admin_role_id = excluded.admin_role_id,
+                bot_owner_id = excluded.bot_owner_id,
+                battlemetrics_urls = excluded.battlemetrics_urls
             """,
-                (
-                    guild_id,
-                    canal_sos.id,
-                    canal_logs.id,
-                    canal_archivos.id,
-                    intervalo_act,
-                    admin_role_id,
-                    bot_owner_id,
-                    battlemetrics,
-                ),
-            )
-            await db.commit()
+            (
+                guild_id,
+                canal_sos.id,
+                canal_logs.id,
+                canal_archivos.id,
+                intervalo_act,
+                admin_role_id,
+                bot_owner_id,
+                battlemetrics,
+            ),
+        )
+        await db.commit()
 
         # Consultar configuración final para el embed (asegurar datos frescos)
-        async with aiosqlite.connect(self.bot.db_name) as db:
-            db.row_factory = aiosqlite.Row
-            c = await db.execute("SELECT * FROM guild_config WHERE guild_id = ?", (guild_id,))
-            config_fresh = await c.fetchone()
-            
-            c2 = await db.execute("SELECT COUNT(*) FROM tribe_characters WHERE guild_id = ?", (guild_id,))
-            count_res = await c2.fetchone()
-            num_miembros = count_res[0] if count_res else 0
+        config_fresh = await db.fetchone(
+            "SELECT * FROM guild_config WHERE guild_id = ?", (guild_id,)
+        )
+        count_res = await db.fetchone(
+            "SELECT COUNT(*) AS n FROM tribe_characters WHERE guild_id = ?", (guild_id,)
+        )
+        num_miembros = count_res["n"] if count_res else 0
 
         if config_fresh:
             embed = build_config_embed(config_fresh, num_miembros, guild_id)
@@ -380,30 +374,28 @@ class Admin(commands.Cog):
         await interaction.response.defer(thinking=True, ephemeral=True)
 
         try:
-            async with aiosqlite.connect(self.bot.db_name) as db:
-                # Borrado de datos (usando DELETE al no existir TRUNCATE en SQLite)
-                tables = [
-                    "scouts",
-                    "scout_messages",
-                    "todos",
-                    "todo_messages",
-                    "dinos",
-                    "breeding_messages",
-                    "blacklist",
-                    "blacklist_messages",
-                    "status_online_messages",
-                    "status_messages",
-                ]
+            # Borrado de datos (usando DELETE al no existir TRUNCATE en SQLite)
+            tables = [
+                "scouts",
+                "scout_messages",
+                "todos",
+                "todo_messages",
+                "dinos",
+                "breeding_messages",
+                "blacklist",
+                "blacklist_messages",
+                "status_online_messages",
+                "status_messages",
+            ]
 
-                guild_id = interaction.guild_id
-
-                for table in tables:
-                    await db.execute(
-                        f"DELETE FROM {table} WHERE guild_id = ?", (guild_id,)
-                    )
-                    # Exclusión explícita de `sqlite_sequence` para proteger el autoincremental de datos unificados
-
-                await db.commit()
+            guild_id = interaction.guild_id
+            db = self.bot.db
+            for table in tables:
+                await db.execute(
+                    f"DELETE FROM {table} WHERE guild_id = ?", (guild_id,)
+                )
+                # Exclusión explícita de `sqlite_sequence` para proteger el autoincremental de datos unificados.
+            await db.commit()
 
             await interaction.followup.send(
                 "✅ **BASE DE DATOS BORRADA.**\nTodos los registros han sido eliminados y los contadores reiniciados.",
@@ -433,26 +425,24 @@ class Admin(commands.Cog):
         await interaction.response.defer(thinking=True, ephemeral=True)
 
         try:
-            async with aiosqlite.connect(self.bot.db_name) as db:
-                # Borrado de tablas de mensajes (Dashboards)
-                tables = [
-                    "scout_messages",
-                    "todo_messages",
-                    "breeding_messages",
-                    "blacklist_messages",
-                    "status_online_messages",
-                    "status_messages",
-                ]
+            # Borrado de tablas de mensajes (Dashboards)
+            tables = [
+                "scout_messages",
+                "todo_messages",
+                "breeding_messages",
+                "blacklist_messages",
+                "status_online_messages",
+                "status_messages",
+            ]
 
-                guild_id = interaction.guild_id
-
-                for table in tables:
-                    await db.execute(
-                        f"DELETE FROM {table} WHERE guild_id = ?", (guild_id,)
-                    )
-                    # Vaciado estructural simple preservando el conteo incremental
-
-                await db.commit()
+            guild_id = interaction.guild_id
+            db = self.bot.db
+            for table in tables:
+                await db.execute(
+                    f"DELETE FROM {table} WHERE guild_id = ?", (guild_id,)
+                )
+                # Vaciado estructural simple preservando el conteo incremental.
+            await db.commit()
 
             await interaction.followup.send(
                 "✅ **DASHBOARDS LIMPIOS.** Si los mensajes viejos siguen existiendo en Discord, bórralos a mano.\nEl bot ya LOS HA OLVIDADO y no intentará editarlos más.",
