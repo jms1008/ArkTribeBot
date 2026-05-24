@@ -377,9 +377,12 @@ class ArkTribeBot(commands.Bot):
 
         Soporta tanto archivos sueltos (``cogs/admin.py``) como paquetes
         (``cogs/k4ultra/__init__.py``). Los módulos auxiliares sin ``setup``
-        (Views, helpers) se ignoran silenciosamente.
+        (Views, helpers) se ignoran silenciosamente vía ``NoEntryPointError``
+        — más robusto que una heurística por regex porque cubre ``def setup``
+        definido en el archivo Y ``setup`` re-exportado desde un submódulo
+        (caso del paquete ``cogs/k4ultra/__init__.py``).
         """
-        import importlib.util
+        from discord.ext.commands.errors import NoEntryPointError
 
         cogs_dir = os.path.join(BASE_DIR, "cogs")
         for entry in sorted(os.listdir(cogs_dir)):
@@ -389,35 +392,20 @@ class ArkTribeBot(commands.Bot):
 
             if os.path.isdir(full_path):
                 # Es un paquete si contiene __init__.py.
-                init_path = os.path.join(full_path, "__init__.py")
-                if not os.path.isfile(init_path):
+                if not os.path.isfile(os.path.join(full_path, "__init__.py")):
                     continue
                 module_name = f"cogs.{entry}"
-                source_path = init_path
             elif entry.endswith(".py") and entry != "__init__.py":
                 module_name = f"cogs.{entry[:-3]}"
-                # Resolver ruta del .py para inspección estática.
-                spec = importlib.util.find_spec(module_name)
-                if spec is None or spec.origin is None:
-                    continue
-                source_path = spec.origin
             else:
-                continue
-
-            # Inspección estática: ¿expone setup()? Evita ImportError ruidoso.
-            try:
-                with open(source_path, encoding="utf-8") as f:
-                    source = f.read()
-            except OSError as e:
-                logger.warning(f"No se pudo leer {display_name}: {e}")
-                continue
-            if "def setup(" not in source:
-                logger.debug(f"[Loader] {display_name} sin setup(), se ignora")
                 continue
 
             try:
                 await self.load_extension(module_name)
                 logger.info(f"Cog cargado: {display_name}")
+            except NoEntryPointError:
+                # Módulo sin función setup() — es un auxiliar (Views, helpers).
+                logger.debug(f"[Loader] {display_name} sin setup(), se ignora")
             except Exception as e:
                 logger.error(f"Error cargando {display_name}: {e}")
 
