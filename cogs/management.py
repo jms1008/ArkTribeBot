@@ -449,7 +449,14 @@ Los paneles persistentes refrescan automáticamente y cambian de aspecto según 
 - :red_circle: **Rojo** — servidor caído (timeout / sin respuesta A2S).
 
 ### :stopwatch: Detalle Técnico
-Las consultas A2S se centralizan con un caché compartido de 90 s, lo que permite que **Status**, **K4Ultra** y **Alarmas** reutilicen el mismo sondeo sin bombardear los servidores.""",
+Las consultas A2S se centralizan con un caché compartido de 90 s, lo que permite que **Status**, **K4Ultra** y **Alarmas** reutilicen el mismo sondeo sin bombardear los servidores.
+
+### :bell: Alarmas de Intrusos (resumen)
+- **/alarma mapa:Fjordur estado:on** activa la vigilancia de un mapa; **off** la desactiva.
+- **/alarmas** abre el panel rápido con todas tus alarmas configurables.
+- El bot te menciona cuando entra al mapa un jugador que NO es de tu tribu propia ni de los personajes registrados. Cada alerta lleva un botón **✅ Completado** para silenciarla.
+
+> :bulb: Más detalle en `/info modulo:🔔 Alarmas de Intrusos`.""",
     "k4ultra": """# :eye: Tracker de Inteligencia (K4Ultra)
 
 K4Ultra monitoriza de forma pasiva el cluster para calcular el comportamiento, sesiones y alianzas enemigas a partir del protocolo A2S (sin tocar Battlemetrics).
