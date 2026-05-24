@@ -6,7 +6,7 @@ import aiosqlite
 import logging
 from datetime import datetime, timedelta
 import json
-from cogs.k4ultra_ui import K4UltraView
+from cogs.k4ultra.ui import K4UltraView
 from utils import bus
 
 logger = logging.getLogger("ArkTribeBot")
@@ -22,7 +22,7 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
         import aiosqlite
         import asyncio
         from cogs.management import INFO_TEXTS
-        from cogs.k4ultra_ui import K4UltraView
+        from cogs.k4ultra.ui import K4UltraView
         
         info_embed = discord.Embed(
             description=INFO_TEXTS["k4ultra"],

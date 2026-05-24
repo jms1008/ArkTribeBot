@@ -398,40 +398,53 @@ class ArkTribeBot(commands.Bot):
             await super().close()
 
     async def load_extensions(self):
-        """Carga todos los archivos .py en la carpeta cogs que expongan ``setup()``.
+        """Carga todas las extensiones de ``cogs/`` que expongan ``setup()``.
 
-        Los módulos auxiliares (Views/Modals reutilizables, helpers) viven dentro
-        de ``cogs/`` por proximidad pero no son extensiones — se detectan por la
-        ausencia de la función ``setup`` y se ignoran sin error.
+        Soporta tanto archivos sueltos (``cogs/admin.py``) como paquetes
+        (``cogs/k4ultra/__init__.py``). Los módulos auxiliares sin ``setup``
+        (Views, helpers) se ignoran silenciosamente.
         """
         import importlib.util
 
         cogs_dir = os.path.join(BASE_DIR, "cogs")
-        for filename in sorted(os.listdir(cogs_dir)):
-            if not filename.endswith(".py") or filename == "__init__.py":
-                continue
-            module_name = f"cogs.{filename[:-3]}"
+        for entry in sorted(os.listdir(cogs_dir)):
+            full_path = os.path.join(cogs_dir, entry)
+            module_name: str | None = None
+            display_name: str = entry
 
-            # Inspección estática: ¿el módulo expone setup()? Evita el ImportError
-            # en ``load_extension`` por módulos auxiliares (ej. k4ultra_ui.py).
-            spec = importlib.util.find_spec(module_name)
-            if spec is None or spec.origin is None:
+            if os.path.isdir(full_path):
+                # Es un paquete si contiene __init__.py.
+                init_path = os.path.join(full_path, "__init__.py")
+                if not os.path.isfile(init_path):
+                    continue
+                module_name = f"cogs.{entry}"
+                source_path = init_path
+            elif entry.endswith(".py") and entry != "__init__.py":
+                module_name = f"cogs.{entry[:-3]}"
+                # Resolver ruta del .py para inspección estática.
+                spec = importlib.util.find_spec(module_name)
+                if spec is None or spec.origin is None:
+                    continue
+                source_path = spec.origin
+            else:
                 continue
+
+            # Inspección estática: ¿expone setup()? Evita ImportError ruidoso.
             try:
-                with open(spec.origin, encoding="utf-8") as f:
+                with open(source_path, encoding="utf-8") as f:
                     source = f.read()
             except OSError as e:
-                logger.warning(f"No se pudo leer {filename}: {e}")
+                logger.warning(f"No se pudo leer {display_name}: {e}")
                 continue
             if "def setup(" not in source:
-                logger.debug(f"[Loader] {filename} no es un cog (sin setup), se ignora")
+                logger.debug(f"[Loader] {display_name} sin setup(), se ignora")
                 continue
 
             try:
                 await self.load_extension(module_name)
-                logger.info(f"Cog cargado: {filename}")
+                logger.info(f"Cog cargado: {display_name}")
             except Exception as e:
-                logger.error(f"Error cargando {filename}: {e}")
+                logger.error(f"Error cargando {display_name}: {e}")
 
 
 # Ejecución

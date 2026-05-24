@@ -74,7 +74,7 @@ async def test_generate_k4ultra_embed(k4ultra_cog, mock_bot, mocker):
     """Test para verificar que el generador de Embeds de K4Ultra interactúa bien con la DB ficticia y no crashea sin base de datos real."""
 
     # Insertar jugador conectado manualmente Mockeado
-    mock_db = mocker.patch("cogs.k4ultra.aiosqlite.connect")
+    mock_db = mocker.patch("cogs.k4ultra.cog.aiosqlite.connect")
     mock_db.return_value = mocker.AsyncMock()
 
     # Sobrescribir retorno del execute fetch
