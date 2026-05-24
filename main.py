@@ -416,14 +416,40 @@ class ArkTribeBot(commands.Bot):
             await super().close()
 
     async def load_extensions(self):
-        """Carga todos los archivos .py en la carpeta cogs."""
-        for filename in os.listdir("./cogs"):
-            if filename.endswith(".py") and filename != "__init__.py":
-                try:
-                    await self.load_extension(f"cogs.{filename[:-3]}")
-                    logger.info(f"Cog cargado: {filename}")
-                except Exception as e:
-                    logger.error(f"Error cargando {filename}: {e}")
+        """Carga todos los archivos .py en la carpeta cogs que expongan ``setup()``.
+
+        Los módulos auxiliares (Views/Modals reutilizables, helpers) viven dentro
+        de ``cogs/`` por proximidad pero no son extensiones — se detectan por la
+        ausencia de la función ``setup`` y se ignoran sin error.
+        """
+        import importlib.util
+
+        cogs_dir = os.path.join(BASE_DIR, "cogs")
+        for filename in sorted(os.listdir(cogs_dir)):
+            if not filename.endswith(".py") or filename == "__init__.py":
+                continue
+            module_name = f"cogs.{filename[:-3]}"
+
+            # Inspección estática: ¿el módulo expone setup()? Evita el ImportError
+            # en ``load_extension`` por módulos auxiliares (ej. k4ultra_ui.py).
+            spec = importlib.util.find_spec(module_name)
+            if spec is None or spec.origin is None:
+                continue
+            try:
+                with open(spec.origin, encoding="utf-8") as f:
+                    source = f.read()
+            except OSError as e:
+                logger.warning(f"No se pudo leer {filename}: {e}")
+                continue
+            if "def setup(" not in source:
+                logger.debug(f"[Loader] {filename} no es un cog (sin setup), se ignora")
+                continue
+
+            try:
+                await self.load_extension(module_name)
+                logger.info(f"Cog cargado: {filename}")
+            except Exception as e:
+                logger.error(f"Error cargando {filename}: {e}")
 
 
 # Ejecución
