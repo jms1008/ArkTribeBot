@@ -26,6 +26,9 @@ def mock_bot(tmp_path):
             super().__init__(command_prefix="!", intents=intents)
             self.db_name = db_path
             self.db = None
+            # log_filename lo consume Breeding.log_mutation para crear el FileHandler
+            # por guild. En tests apuntamos a un fichero dentro de tmp_path.
+            self.log_filename = str(tmp_path / "bot.log")
 
         @property
         def user(self):

@@ -22,11 +22,6 @@ ignore = [
     "SIM105",   # suppressible-exception (estilo, no es bug)
     "SIM117",   # multiple-with-statements (legibilidad subjetiva)
     "SIM118",   # in-dict-keys (cosmético)
-    # B023: closure-uses-loop-variable. Marcado como ignorar globalmente porque
-    # los pocos casos restantes en k4ultra/cog.py se ejecutan sincronamente
-    # dentro de la misma iteración (no son closures diferidas). Revisar caso a
-    # caso si se ven bugs de scoping en producción.
-    "B023",
 ]
 
 [tool.ruff.lint.per-file-ignores]
