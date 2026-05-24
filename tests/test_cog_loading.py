@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import pytest
 
-
 # Conjunto canónico de cogs que el bot debe cargar para considerarse sano.
 EXPECTED_COGS: frozenset[str] = frozenset(
     {
@@ -55,10 +54,7 @@ async def test_all_expected_cogs_load(_bot_env):
         loaded = set(bot.cogs.keys())
         missing = EXPECTED_COGS - loaded
 
-        assert not missing, (
-            f"Cogs faltantes en el bot: {sorted(missing)}. "
-            f"Cargados: {sorted(loaded)}."
-        )
+        assert not missing, f"Cogs faltantes en el bot: {sorted(missing)}. Cargados: {sorted(loaded)}."
     finally:
         # Cerrar tasks de los loops y la DB persistente para no leakar.
         for cog in list(bot.cogs.values()):
