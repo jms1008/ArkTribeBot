@@ -13,13 +13,23 @@ logger = logging.getLogger("ArkTribeBot")
 
 
 async def get_guild_servers(bot, guild_id: int) -> dict:
-    """Recupera el diccionario de servidores configurados para un Guild desde la Base de Datos."""
-    async with aiosqlite.connect(bot.db_name) as db:
-        c = await db.execute(
+    """Recupera el diccionario de servidores configurados para un Guild desde la Base de Datos.
+
+    Usa la conexión persistente (``bot.db``) si está disponible. Mantiene fallback a
+    conexión efímera para escenarios excepcionales (ej. tests que no inicializan bot.db).
+    """
+    if getattr(bot, "db", None) is not None:
+        row = await bot.db.fetchone(
             "SELECT battlemetrics_urls FROM guild_config WHERE guild_id = ?",
             (guild_id,),
         )
-        row = await c.fetchone()
+    else:
+        async with aiosqlite.connect(bot.db_name) as db:
+            c = await db.execute(
+                "SELECT battlemetrics_urls FROM guild_config WHERE guild_id = ?",
+                (guild_id,),
+            )
+            row = await c.fetchone()
     if row and row[0]:
         return parse_battlemetrics(row[0])
     return {}
@@ -265,64 +275,59 @@ class ServerStatus(commands.Cog):
         # Espera de inicialización completa del bot
         await self.bot.wait_until_ready()
 
-        messages_to_remove = []
+        messages_to_remove: list[int] = []
+        db = self.bot.db
+        rows = await db.fetchall(
+            "SELECT id, guild_id, channel_id, message_id, map_name FROM status_messages"
+        )
 
-        async with aiosqlite.connect(self.bot.db_name) as db:
-            db.row_factory = aiosqlite.Row
-            cursor = await db.execute(
-                "SELECT id, guild_id, channel_id, message_id, map_name FROM status_messages"
-            )
-            rows = await cursor.fetchall()
+        for row in rows:
+            row_id = row["id"]
+            guild_id = row["guild_id"]
+            channel_id = row["channel_id"]
+            message_id = row["message_id"]
+            map_name = row["map_name"]
 
-            for row in rows:
-                row_id = row["id"]
-                guild_id = row["guild_id"]
-                channel_id = row["channel_id"]
-                message_id = row["message_id"]
-                map_name = row["map_name"]
-
-                try:
-                    # Carga dinámica de servidores configurados para este Guild
-                    servers = await get_guild_servers(self.bot, guild_id)
-                    channel = self.bot.get_channel(
-                        channel_id
-                    ) or await self.bot.fetch_channel(channel_id)
-                    if not channel:
-                        logger.warning(
-                            f"Canal {channel_id} no encontrado. Eliminando mensaje persistente {row_id}."
-                        )
-                        messages_to_remove.append(row_id)
-                        continue
-
-                    message = await channel.fetch_message(message_id)
-                    new_embed = await self.get_server_embed(map_name, servers)
-
-                    if new_embed:
-                        await message.edit(embed=new_embed)
-                        logger.info(
-                            f"Actualizado estado de {map_name} en mensaje {message_id}"
-                        )
-
-                except discord.NotFound:
-                    # Intercepción: El mensaje fue eliminado manualmente de Discord
+            try:
+                # Carga dinámica de servidores configurados para este Guild
+                servers = await get_guild_servers(self.bot, guild_id)
+                channel = self.bot.get_channel(
+                    channel_id
+                ) or await self.bot.fetch_channel(channel_id)
+                if not channel:
                     logger.warning(
-                        f"Mensaje {message_id} no encontrado. Eliminando de DB."
+                        f"Canal {channel_id} no encontrado. Eliminando mensaje persistente {row_id}."
                     )
                     messages_to_remove.append(row_id)
-                except discord.Forbidden:
-                    logger.error(
-                        f"Sin permiso para editar mensaje {message_id} en canal {channel_id}."
-                    )
-                except Exception as e:
-                    logger.error(f"Error actualizando mensaje {row_id}: {e}")
+                    continue
 
-            # Purgado de registros inválidos en Base de Datos
-            if messages_to_remove:
-                for msg_id in messages_to_remove:
-                    await db.execute(
-                        "DELETE FROM status_messages WHERE id = ?", (msg_id,)
+                message = await channel.fetch_message(message_id)
+                new_embed = await self.get_server_embed(map_name, servers)
+
+                if new_embed:
+                    await message.edit(embed=new_embed)
+                    logger.info(
+                        f"Actualizado estado de {map_name} en mensaje {message_id}"
                     )
-                await db.commit()
+
+            except discord.NotFound:
+                # Intercepción: El mensaje fue eliminado manualmente de Discord
+                logger.warning(
+                    f"Mensaje {message_id} no encontrado. Eliminando de DB."
+                )
+                messages_to_remove.append(row_id)
+            except discord.Forbidden:
+                logger.error(
+                    f"Sin permiso para editar mensaje {message_id} en canal {channel_id}."
+                )
+            except Exception as e:
+                logger.error(f"Error actualizando mensaje {row_id}: {e}")
+
+        # Purgado de registros inválidos en Base de Datos
+        if messages_to_remove:
+            for msg_id in messages_to_remove:
+                await db.execute("DELETE FROM status_messages WHERE id = ?", (msg_id,))
+            await db.commit()
 
     async def get_global_status_embed(self, guild_id: int, servers: dict):
         """Genera un Embed unificado para todos los servidores del Guild, ordenado por jugadores."""
@@ -339,21 +344,21 @@ class ServerStatus(commands.Cog):
         # Consulta A2S centralizada (compartida con K4Ultra)
         raw_results = await query_all_servers(self.bot, guild_id, servers)
 
-        # Guardar en caché de DB
+        # Guardar en caché de DB (usa la conexión persistente compartida).
         try:
-            async with aiosqlite.connect(self.bot.db_name) as db:
-                for name, res in raw_results.items():
-                    if not res.get("error"):
-                        player_names = ", ".join([p["name"] for p in res["players"]])
-                        if not player_names:
-                            player_names = "Nadie conectado."
-                        await db.execute(
-                            '''INSERT OR REPLACE INTO server_status_cache 
-                               (guild_id, server_name, ip_port, ping, player_count, player_names, updated_at)
-                               VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)''',
-                            (guild_id, name, res.get("address"), res.get("ping"), res.get("player_count"), player_names)
-                        )
-                await db.commit()
+            db = self.bot.db
+            for name, res in raw_results.items():
+                if not res.get("error"):
+                    player_names = ", ".join([p["name"] for p in res["players"]])
+                    if not player_names:
+                        player_names = "Nadie conectado."
+                    await db.execute(
+                        """INSERT OR REPLACE INTO server_status_cache
+                           (guild_id, server_name, ip_port, ping, player_count, player_names, updated_at)
+                           VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)""",
+                        (guild_id, name, res.get("address"), res.get("ping"), res.get("player_count"), player_names),
+                    )
+            await db.commit()
         except Exception as e:
             logger.error(f"Error guardando caché de status: {e}")
 
@@ -453,85 +458,81 @@ class ServerStatus(commands.Cog):
     @tasks.loop(minutes=1)
     async def global_status_loop(self):
         await self.bot.wait_until_ready()
-        
+
         import time
         current_minute = int(time.time() // 60)
-        
-        messages_to_remove = []
 
-        async with aiosqlite.connect(self.bot.db_name) as db:
-            db.row_factory = aiosqlite.Row
-            
-            # Extraer las configuraciones de intervalo por guild
-            c_config = await db.execute("SELECT guild_id, update_interval FROM guild_config")
-            guild_configs = {r["guild_id"]: r["update_interval"] or 2 for r in await c_config.fetchall()}
-            
-            cursor = await db.execute(
-                "SELECT id, guild_id, channel_id, message_id FROM status_online_messages"
-            )
-            rows = await cursor.fetchall()
+        messages_to_remove: list[int] = []
+        db = self.bot.db
 
-            if not rows:
-                return
+        # Extraer las configuraciones de intervalo por guild
+        cfg_rows = await db.fetchall("SELECT guild_id, update_interval FROM guild_config")
+        guild_configs = {r["guild_id"]: r["update_interval"] or 2 for r in cfg_rows}
 
-            # Filtrar qué guilds deben actualizarse en base al minuto actual y su intervalo
-            guilds_to_update = set()
-            active_rows = []
-            for row in rows:
-                g_id = row["guild_id"]
-                interval = guild_configs.get(g_id, 2)
-                if current_minute % interval == 0:
-                    guilds_to_update.add(g_id)
-                    active_rows.append(row)
-                    
-            if not active_rows:
-                return
+        rows = await db.fetchall(
+            "SELECT id, guild_id, channel_id, message_id FROM status_online_messages"
+        )
+        if not rows:
+            return
 
-            # Generar un embed por Guild, agrupando los mensajes
-            guild_embeds = {}
-            for guild_id in guilds_to_update:
-                servers = await get_guild_servers(self.bot, guild_id)
-                guild_embeds[guild_id] = await self.get_global_status_embed(guild_id, servers)
+        # Filtrar qué guilds deben actualizarse en base al minuto actual y su intervalo
+        guilds_to_update: set[int] = set()
+        active_rows = []
+        for row in rows:
+            g_id = row["guild_id"]
+            interval = guild_configs.get(g_id, 2)
+            if current_minute % interval == 0:
+                guilds_to_update.add(g_id)
+                active_rows.append(row)
 
-            for row in active_rows:
-                row_id = row["id"]
-                guild_id = row["guild_id"]
-                channel_id = row["channel_id"]
-                message_id = row["message_id"]
+        if not active_rows:
+            return
 
-                try:
-                    channel = self.bot.get_channel(
-                        channel_id
-                    ) or await self.bot.fetch_channel(channel_id)
-                    if not channel:
-                        messages_to_remove.append(row_id)
-                        continue
+        # Generar un embed por Guild, agrupando los mensajes
+        guild_embeds: dict[int, discord.Embed] = {}
+        for guild_id in guilds_to_update:
+            servers = await get_guild_servers(self.bot, guild_id)
+            guild_embeds[guild_id] = await self.get_global_status_embed(guild_id, servers)
 
-                    message = await channel.fetch_message(message_id)
-                    new_embed = guild_embeds.get(guild_id)
+        for row in active_rows:
+            row_id = row["id"]
+            guild_id = row["guild_id"]
+            channel_id = row["channel_id"]
+            message_id = row["message_id"]
 
-                    if new_embed:
-                        # Marca de tiempo de actualización para transparencia
-                        from datetime import datetime
-                        now_str = datetime.now().strftime("%H:%M:%S")
-                        new_embed.set_footer(text=f"Actualizado cada 2 min • Última vez: {now_str}")
-                        await message.edit(embed=new_embed)
-
-                except discord.NotFound:
+            try:
+                channel = self.bot.get_channel(
+                    channel_id
+                ) or await self.bot.fetch_channel(channel_id)
+                if not channel:
                     messages_to_remove.append(row_id)
-                except discord.Forbidden:
-                    pass
-                except Exception as e:
-                    logger.error(
-                        f"Error actualizando global status mensaje {row_id}: {e}"
-                    )
+                    continue
 
-            if messages_to_remove:
-                for msg_id in messages_to_remove:
-                    await db.execute(
-                        "DELETE FROM status_online_messages WHERE id = ?", (msg_id,)
-                    )
-                await db.commit()
+                message = await channel.fetch_message(message_id)
+                new_embed = guild_embeds.get(guild_id)
+
+                if new_embed:
+                    # Marca de tiempo de actualización para transparencia
+                    from datetime import datetime
+                    now_str = datetime.now().strftime("%H:%M:%S")
+                    new_embed.set_footer(text=f"Actualizado cada 2 min • Última vez: {now_str}")
+                    await message.edit(embed=new_embed)
+
+            except discord.NotFound:
+                messages_to_remove.append(row_id)
+            except discord.Forbidden as e:
+                logger.debug(f"[Status] Sin permiso editando mensaje {message_id}: {e}")
+            except Exception as e:
+                logger.error(
+                    f"Error actualizando global status mensaje {row_id}: {e}"
+                )
+
+        if messages_to_remove:
+            for msg_id in messages_to_remove:
+                await db.execute(
+                    "DELETE FROM status_online_messages WHERE id = ?", (msg_id,)
+                )
+            await db.commit()
 
 
 async def setup(bot):

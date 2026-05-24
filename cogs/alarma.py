@@ -309,158 +309,127 @@ class Alarma(commands.Cog):
         await self.bot.wait_until_ready()
 
         try:
-            async with aiosqlite.connect(self.bot.db_name) as db:
-                db.row_factory = aiosqlite.Row
+            db = self.bot.db
 
-                # Obtener todos los mapas vigilados (agrupados)
-                cursor = await db.execute(
-                    "SELECT DISTINCT guild_id, map_name FROM map_alarms"
-                )
-                watched_maps = await cursor.fetchall()
+            watched_maps = await db.fetchall(
+                "SELECT DISTINCT guild_id, map_name FROM map_alarms"
+            )
+            if not watched_maps:
+                return
 
-                if not watched_maps:
-                    return
+            for row in watched_maps:
+                guild_id = row["guild_id"]
+                map_name = row["map_name"]
 
-                for row in watched_maps:
-                    guild_id = row["guild_id"]
-                    map_name = row["map_name"]
+                try:
+                    # Leer del caché de status en vez de hacer consulta A2S propia
+                    cache_row = await db.fetchone(
+                        "SELECT player_names, player_count FROM server_status_cache WHERE guild_id = ? AND server_name = ?",
+                        (guild_id, map_name),
+                    )
 
-                    try:
-                        # Leer del caché de status en vez de hacer consulta A2S propia
-                        c_cache = await db.execute(
-                            "SELECT player_names, player_count FROM server_status_cache WHERE guild_id = ? AND server_name = ?",
-                            (guild_id, map_name),
+                    if not cache_row or not cache_row["player_names"]:
+                        continue
+
+                    # Parsear nombres actuales del caché
+                    raw_names = cache_row["player_names"]
+                    if raw_names == "Nadie conectado." or cache_row["player_count"] == 0:
+                        current_names: set[str] = set()
+                    else:
+                        current_names = {
+                            n.strip() for n in raw_names.split(",") if n.strip()
+                        }
+
+                    # Obtener estado anterior
+                    prev_row = await db.fetchone(
+                        "SELECT players_json FROM map_last_players WHERE guild_id = ? AND map_name = ?",
+                        (guild_id, map_name),
+                    )
+                    prev_names = (
+                        set(json.loads(prev_row["players_json"]))
+                        if prev_row
+                        else set()
+                    )
+
+                    new_entries = current_names - prev_names
+
+                    if new_entries:
+                        # Cargar miembros de la tribu propia
+                        own_rows = await db.fetchall(
+                            "SELECT members_json FROM k4ultra_fixed_tribes WHERE guild_id = ? AND is_own = 1",
+                            (guild_id,),
                         )
-                        cache_row = await c_cache.fetchone()
+                        own_members: set[str] = set()
+                        for row_own in own_rows:
+                            try:
+                                m_list = json.loads(row_own["members_json"])
+                                for m in m_list:
+                                    own_members.add(m.lower())
+                            except (json.JSONDecodeError, TypeError) as e:
+                                logger.warning(f"[Alarma] members_json inválido en tribu propia: {e}")
 
-                        if not cache_row or not cache_row["player_names"]:
-                            continue
+                        intruders: list[str] = []
+                        for name in new_entries:
+                            # Ignorar miembros de la tribu propia
+                            if name.lower() in own_members:
+                                continue
 
-                        # Parsear nombres actuales del caché
-                        raw_names = cache_row["player_names"]
-                        if raw_names == "Nadie conectado." or cache_row["player_count"] == 0:
-                            current_names = set()
-                        else:
-                            current_names = {
-                                n.strip()
-                                for n in raw_names.split(",")
-                                if n.strip()
-                            }
-
-                        # Obtener estado anterior
-                        c_prev = await db.execute(
-                            "SELECT players_json FROM map_last_players WHERE guild_id = ? AND map_name = ?",
-                            (guild_id, map_name),
-                        )
-                        prev_row = await c_prev.fetchone()
-                        prev_names = (
-                            set(json.loads(prev_row["players_json"]))
-                            if prev_row
-                            else set()
-                        )
-
-                        new_entries = current_names - prev_names
-
-                        if new_entries:
-                            # Cargar miembros de la tribu propia
-                            c_own = await db.execute(
-                                "SELECT members_json FROM k4ultra_fixed_tribes WHERE guild_id = ? AND is_own = 1",
-                                (guild_id,),
+                            # Comprobar si es un personaje registrado de la tribu
+                            check_row = await db.fetchone(
+                                """SELECT 1 FROM tribe_characters
+                                   WHERE guild_id = ? AND (LOWER(character_name) = LOWER(?) OR LOWER(player_name) = LOWER(?))""",
+                                (guild_id, name, name),
                             )
-                            own_members = set()
-                            for row_own in await c_own.fetchall():
+                            if not check_row:
+                                intruders.append(name)
+
+                        if intruders:
+                            alert_targets = await db.fetchall(
+                                "SELECT user_id, channel_id FROM map_alarms WHERE guild_id = ? AND map_name = ?",
+                                (guild_id, map_name),
+                            )
+
+                            for target in alert_targets:
                                 try:
-                                    m_list = json.loads(row_own["members_json"])
-                                    for m in m_list:
-                                        own_members.add(m.lower())
-                                except (json.JSONDecodeError, TypeError) as e:
-                                    logger.warning(f"[Alarma] members_json inválido en tribu propia: {e}")
-
-                            intruders = []
-                            for name in new_entries:
-                                # Ignorar miembros de la tribu propia
-                                if name.lower() in own_members:
-                                    continue
-
-                                # Comprobar si es un personaje registrado de la tribu
-                                c_check = await db.execute(
-                                    """SELECT 1 FROM tribe_characters 
-                                       WHERE guild_id = ? AND (LOWER(character_name) = LOWER(?) OR LOWER(player_name) = LOWER(?))""",
-                                    (guild_id, name, name),
-                                )
-                                if not await c_check.fetchone():
-                                    intruders.append(name)
-
-                            if intruders:
-                                c_users = await db.execute(
-                                    "SELECT user_id, channel_id FROM map_alarms WHERE guild_id = ? AND map_name = ?",
-                                    (guild_id, map_name),
-                                )
-                                alert_targets = await c_users.fetchall()
-
-                                for target in alert_targets:
-                                    try:
-                                        u_id = target["user_id"]
-                                        ch_id = target["channel_id"]
-                                        channel = self.bot.get_channel(
-                                            ch_id
-                                        ) or await self.bot.fetch_channel(ch_id)
-                                        if channel:
-                                            intruders_fmt = ", ".join(
-                                                [f"**{i}**" for i in intruders]
-                                            )
-                                            view = AlarmDismissView()
-                                            await channel.send(
-                                                f"⚠️ <@{u_id}>! **Intruso detectado** en `{map_name}`: {intruders_fmt}",
-                                                view=view,
-                                            )
-                                    except Exception as e:
-                                        logger.error(
-                                            f"[Alarma] Error enviando alerta a {target['user_id']}: {e}"
+                                    u_id = target["user_id"]
+                                    ch_id = target["channel_id"]
+                                    channel = self.bot.get_channel(
+                                        ch_id
+                                    ) or await self.bot.fetch_channel(ch_id)
+                                    if channel:
+                                        intruders_fmt = ", ".join(
+                                            [f"**{i}**" for i in intruders]
                                         )
+                                        view = AlarmDismissView()
+                                        await channel.send(
+                                            f"⚠️ <@{u_id}>! **Intruso detectado** en `{map_name}`: {intruders_fmt}",
+                                            view=view,
+                                        )
+                                except Exception as e:
+                                    logger.error(
+                                        f"[Alarma] Error enviando alerta a {target['user_id']}: {e}"
+                                    )
 
-                        # Actualizar el estado anterior
-                        await db.execute(
-                            "INSERT OR REPLACE INTO map_last_players (guild_id, map_name, players_json) VALUES (?, ?, ?)",
-                            (
-                                guild_id,
-                                map_name,
-                                json.dumps(list(current_names)),
-                            ),
-                        )
-                        await db.commit()
+                    # Actualizar el estado anterior
+                    await db.execute(
+                        "INSERT OR REPLACE INTO map_last_players (guild_id, map_name, players_json) VALUES (?, ?, ?)",
+                        (
+                            guild_id,
+                            map_name,
+                            json.dumps(list(current_names)),
+                        ),
+                    )
+                    await db.commit()
 
-                    except Exception as e:
-                        logger.error(
-                            f"[Alarma] Error procesando alarma para {map_name} (Guild {guild_id}): {e}"
-                        )
+                except Exception as e:
+                    logger.error(
+                        f"[Alarma] Error procesando alarma para {map_name} (Guild {guild_id}): {e}"
+                    )
 
         except Exception as e:
             logger.error(f"[Alarma] Error general en check_alarms_loop: {e}")
 
 
 async def setup(bot):
-    async with aiosqlite.connect(bot.db_name) as db:
-        await db.execute(
-            """
-            CREATE TABLE IF NOT EXISTS map_alarms (
-                guild_id INTEGER NOT NULL,
-                user_id INTEGER NOT NULL,
-                map_name TEXT NOT NULL,
-                channel_id INTEGER,
-                PRIMARY KEY(guild_id, user_id, map_name)
-            )
-        """
-        )
-        await db.execute(
-            """
-            CREATE TABLE IF NOT EXISTS map_last_players (
-                guild_id INTEGER NOT NULL,
-                map_name TEXT NOT NULL,
-                players_json TEXT,
-                PRIMARY KEY(guild_id, map_name)
-            )
-        """
-        )
-        await db.commit()
+    # Tablas map_alarms y map_last_players creadas en db/schema.py.
     await bot.add_cog(Alarma(bot))

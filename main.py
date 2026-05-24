@@ -137,11 +137,20 @@ class ArkTribeBot(commands.Bot):
         self.db_name = DB_NAME
         self.log_filename = log_filename
         self.is_syncing = False
+        # `self.db` se inicializa en setup_hook tras crear el esquema.
+        self.db = None
         logger.info(f"Base de datos configurada en: {os.path.abspath(self.db_name)}")
 
     async def setup_hook(self):
         """Se ejecuta al iniciar el bot."""
         await self.init_db()
+
+        # Conexión persistente compartida (hot paths la usan vía ``self.bot.db``).
+        from db.database import Database
+
+        self.db = Database(self.db_name)
+        await self.db.connect()
+
         await self.load_extensions()
 
         # Registrar Listener para Logging de Comandos
@@ -157,11 +166,11 @@ class ArkTribeBot(commands.Bot):
         from cogs.k4ultra import K4UltraView
 
         try:
-            async with aiosqlite.connect(self.db_name) as db:
-                c = await db.execute("SELECT DISTINCT guild_id FROM k4ultra_messages")
-                active_guilds = await c.fetchall()
-                for (g_id,) in active_guilds:
-                    self.add_view(K4UltraView(self, g_id))
+            active_guilds = await self.db.fetchall(
+                "SELECT DISTINCT guild_id FROM k4ultra_messages"
+            )
+            for row in active_guilds:
+                self.add_view(K4UltraView(self, row["guild_id"]))
         except Exception as e:
             logger.error(f"Error registrando vistas K4Ultra: {e}")
 
@@ -175,12 +184,12 @@ class ArkTribeBot(commands.Bot):
         try:
             from cogs.events import EventPollView
 
-            async with aiosqlite.connect(self.db_name) as db:
-                c = await db.execute("SELECT id FROM events WHERE status = 'active'")
-                active_events = await c.fetchall()
-                for (evt_id,) in active_events:
-                    view = await EventPollView.build(self, evt_id)
-                    self.add_view(view)
+            active_events = await self.db.fetchall(
+                "SELECT id FROM events WHERE status = 'active'"
+            )
+            for row in active_events:
+                view = await EventPollView.build(self, row["id"])
+                self.add_view(view)
         except Exception as e:
             logger.error(f"Error registrando vistas persistentes de Eventos: {e}")
 
@@ -323,22 +332,30 @@ class ArkTribeBot(commands.Bot):
         if hardcoded_owner_id and interaction.user.id == hardcoded_owner_id:
             return True
         if interaction.guild_id:
-            async with aiosqlite.connect(self.db_name) as db:
-                c = await db.execute(
+            # Si la conexión persistente está disponible, usarla; fallback efímero para tests.
+            if getattr(self, "db", None) is not None:
+                row = await self.db.fetchone(
                     "SELECT admin_role_id, bot_owner_id FROM guild_config WHERE guild_id = ?",
                     (interaction.guild_id,),
                 )
-                row = await c.fetchone()
-                if row:
-                    admin_role_id, bot_owner_id = row
-                    # Verificar el ID de propietario configurado por este servidor
-                    if bot_owner_id and interaction.user.id == bot_owner_id:
+            else:
+                async with aiosqlite.connect(self.db_name) as db:
+                    c = await db.execute(
+                        "SELECT admin_role_id, bot_owner_id FROM guild_config WHERE guild_id = ?",
+                        (interaction.guild_id,),
+                    )
+                    row = await c.fetchone()
+            if row:
+                admin_role_id = row["admin_role_id"] if hasattr(row, "keys") else row[0]
+                bot_owner_id = row["bot_owner_id"] if hasattr(row, "keys") else row[1]
+                # Verificar el ID de propietario configurado por este servidor
+                if bot_owner_id and interaction.user.id == bot_owner_id:
+                    return True
+                # Verificar el Rol de Administrador personalizado
+                if admin_role_id:
+                    role = interaction.guild.get_role(admin_role_id)
+                    if role and role in interaction.user.roles:
                         return True
-                    # Verificar el Rol de Administrador personalizado
-                    if admin_role_id:
-                        role = interaction.guild.get_role(admin_role_id)
-                        if role and role in interaction.user.roles:
-                            return True
         return False
 
     async def on_ready(self):
@@ -351,11 +368,10 @@ class ArkTribeBot(commands.Bot):
         # Refrescar todos los dashboards que se actualizan por acción (no periódicos)
         # para que reflejen el estado real de la DB al arrancar.
         try:
-            async with aiosqlite.connect(self.db_name) as db:
-                c = await db.execute("SELECT guild_id FROM guild_config")
-                guilds = await c.fetchall()
-            
-            for (guild_id,) in guilds:
+            guilds = await self.db.fetchall("SELECT guild_id FROM guild_config")
+
+            for row in guilds:
+                guild_id = row["guild_id"]
                 try:
                     from cogs.warfare import update_blacklist_dashboards, update_kda_dashboards
                     await update_blacklist_dashboards(self, guild_id)
@@ -390,6 +406,14 @@ class ArkTribeBot(commands.Bot):
         from db.schema import init_database
 
         await init_database(self.db_name)
+
+    async def close(self):
+        """Cierre limpio: cerrar la conexión persistente antes de salir."""
+        try:
+            if self.db is not None:
+                await self.db.close()
+        finally:
+            await super().close()
 
     async def load_extensions(self):
         """Carga todos los archivos .py en la carpeta cogs."""

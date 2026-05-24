@@ -583,47 +583,39 @@ class Breeding(commands.Cog):
     async def check_alarms(self):
         try:
             now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            async with aiosqlite.connect(self.bot.db_name) as db:
-                db.row_factory = aiosqlite.Row
-                cursor = await db.execute(
-                    "SELECT * FROM breeding_alarms WHERE alert_time <= ?", (now_str,)
-                )
-                alarms = await cursor.fetchall()
-
-                if not alarms:
-                    return
-
-                from main import (
-                    DismissAlarmView,
-                )  # Asegurar importar la vista persistente
-
-                for alarm in alarms:
-                    try:
-                        channel = self.bot.get_channel(
-                            alarm["channel_id"]
-                        ) or await self.bot.fetch_channel(alarm["channel_id"])
-                        if channel:
-                            view = DismissAlarmView()
-                            await channel.send(
-                                f"🔔 <@{alarm['user_id']}> Tu alarma ha expirado.",
-                                view=view,
-                            )
-                    except Exception as e:
-                        logging.getLogger("ArkTribeBot").error(
-                            f"Error procesando alarma {alarm['id']}: {e}"
-                        )
-
-                    # Eliminación de alarma ejecutada
-                    # Borrado de defensa en profundidad (guild_id)
-                    await db.execute(
-                        "DELETE FROM breeding_alarms WHERE id = ? AND guild_id = ?",
-                        (alarm["id"], alarm["guild_id"]),
-                    )
-                await db.commit()
-        except Exception as e:
-            logging.getLogger("ArkTribeBot").error(
-                f"Error en loop de breeding alarms: {e}"
+            db = self.bot.db
+            alarms = await db.fetchall(
+                "SELECT * FROM breeding_alarms WHERE alert_time <= ?", (now_str,)
             )
+            if not alarms:
+                return
+
+            from main import (
+                DismissAlarmView,
+            )  # Asegurar importar la vista persistente
+
+            for alarm in alarms:
+                try:
+                    channel = self.bot.get_channel(
+                        alarm["channel_id"]
+                    ) or await self.bot.fetch_channel(alarm["channel_id"])
+                    if channel:
+                        view = DismissAlarmView()
+                        await channel.send(
+                            f"🔔 <@{alarm['user_id']}> Tu alarma ha expirado.",
+                            view=view,
+                        )
+                except Exception as e:
+                    logger.error(f"[Breeding] Error procesando alarma {alarm['id']}: {e}")
+
+                # Eliminación de alarma ejecutada (defensa en profundidad con guild_id).
+                await db.execute(
+                    "DELETE FROM breeding_alarms WHERE id = ? AND guild_id = ?",
+                    (alarm["id"], alarm["guild_id"]),
+                )
+            await db.commit()
+        except Exception as e:
+            logger.error(f"[Breeding] Error en loop de breeding alarms: {e}")
 
     @check_alarms.before_loop
     async def before_check_alarms(self):

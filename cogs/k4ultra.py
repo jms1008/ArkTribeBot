@@ -61,45 +61,43 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
         from cogs.server_status import get_guild_servers, query_all_servers
 
         now = datetime.utcnow()
-        async with aiosqlite.connect(self.bot.db_name) as _cfg_db:
-            _cfg_db.row_factory = aiosqlite.Row
-            cfg_cursor = await _cfg_db.execute(
-                """
-                SELECT gc.guild_id, gc.update_interval, gls.last_a2s_run
-                FROM guild_config gc
-                LEFT JOIN guild_loop_state gls ON gls.guild_id = gc.guild_id
-                """
+        db = self.bot.db
+        guild_rows = await db.fetchall(
+            """
+            SELECT gc.guild_id, gc.update_interval, gls.last_a2s_run
+            FROM guild_config gc
+            LEFT JOIN guild_loop_state gls ON gls.guild_id = gc.guild_id
+            """
+        )
+
+        # Determinar qué guilds toca actualizar según el tiempo transcurrido.
+        guilds_to_update: list[int] = []
+        for row in guild_rows:
+            intrvl = row["update_interval"] if row["update_interval"] else 5
+            last_run_raw = row["last_a2s_run"]
+            if last_run_raw is None:
+                guilds_to_update.append(row["guild_id"])
+                continue
+            try:
+                last_run = datetime.fromisoformat(last_run_raw)
+            except (TypeError, ValueError):
+                guilds_to_update.append(row["guild_id"])
+                continue
+            if now - last_run >= timedelta(minutes=intrvl):
+                guilds_to_update.append(row["guild_id"])
+
+        if not guilds_to_update:
+            return
+
+        # Marcar antes de consultar para evitar dobles ejecuciones si el loop se solapa.
+        now_iso = now.isoformat(timespec="seconds")
+        for g_id in guilds_to_update:
+            await db.execute(
+                "INSERT INTO guild_loop_state (guild_id, last_a2s_run) VALUES (?, ?) "
+                "ON CONFLICT(guild_id) DO UPDATE SET last_a2s_run = excluded.last_a2s_run",
+                (g_id, now_iso),
             )
-            guild_rows = await cfg_cursor.fetchall()
-
-            # Determinar qué guilds toca actualizar según el tiempo transcurrido.
-            guilds_to_update: list[int] = []
-            for row in guild_rows:
-                intrvl = row["update_interval"] if row["update_interval"] else 5
-                last_run_raw = row["last_a2s_run"]
-                if last_run_raw is None:
-                    guilds_to_update.append(row["guild_id"])
-                    continue
-                try:
-                    last_run = datetime.fromisoformat(last_run_raw)
-                except (TypeError, ValueError):
-                    guilds_to_update.append(row["guild_id"])
-                    continue
-                if now - last_run >= timedelta(minutes=intrvl):
-                    guilds_to_update.append(row["guild_id"])
-
-            if not guilds_to_update:
-                return
-
-            # Marcar antes de consultar para evitar dobles ejecuciones si el loop se solapa.
-            now_iso = now.isoformat(timespec="seconds")
-            for g_id in guilds_to_update:
-                await _cfg_db.execute(
-                    "INSERT INTO guild_loop_state (guild_id, last_a2s_run) VALUES (?, ?) "
-                    "ON CONFLICT(guild_id) DO UPDATE SET last_a2s_run = excluded.last_a2s_run",
-                    (g_id, now_iso),
-                )
-            await _cfg_db.commit()
+        await db.commit()
 
         # Consulta A2S centralizada (compartida con server_status via caché de 90s).
         all_fetched_raw = []
@@ -127,13 +125,19 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
         now = datetime.now()
 
         # Diccionario para reemplazo en tiempo real (secondary -> primary)
+        # NOTA: el bloque grande siguiente continúa usando una conexión adicional
+        # (`async with aiosqlite.connect(...) as db:`) para mantener la lógica
+        # de transacciones explícitas. Se migrará en fase 3.
+        identities = {}
+        for g_id in guilds_to_update:
+            rows = await self.bot.db.fetchall(
+                "SELECT secondary_name, primary_name FROM player_identities_link WHERE guild_id = ?",
+                (g_id,),
+            )
+            identities[g_id] = {row["secondary_name"].lower(): row["primary_name"] for row in rows}
+
         async with aiosqlite.connect(self.bot.db_name) as db:
             db.row_factory = aiosqlite.Row
-            identities = {}
-            for g_id in guilds_to_update:
-                c = await db.execute("SELECT secondary_name, primary_name FROM player_identities_link WHERE guild_id = ?", (g_id,))
-                rows = await c.fetchall()
-                identities[g_id] = {row["secondary_name"].lower(): row["primary_name"] for row in rows}
 
         all_fetched = []
         for fp in all_fetched_raw:
