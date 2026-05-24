@@ -1088,27 +1088,39 @@ class Management(commands.Cog, name="Management"):
         description="Muestra la guía completa de uso y comandos del bot.",
     )
     async def guia(self, interaction: discord.Interaction):
-        """Muestra una guía interactiva con los textos de ayuda del bot."""
+        """Manual interactivo que reutiliza las secciones de ``INFO_TEXTS``.
+
+        Las etiquetas y emojis se mantienen alineados con las ``Choice`` de
+        ``/info`` para que el usuario reconozca el mismo módulo en ambos
+        comandos. Si añades una entrada a ``INFO_TEXTS``, añade aquí su
+        ``SelectOption`` con la clave coincidente (Discord limita a 25 opciones).
+        """
 
         class GuiaView(discord.ui.View):
             def __init__(self):
                 super().__init__(timeout=180)
+                # NOTA: ``value`` debe coincidir con una clave de INFO_TEXTS o
+                # la opción se descarta silenciosamente por el filtro de abajo.
                 options = [
-                    discord.SelectOption(label="Puntos Diarios", value="puntos", emoji="🪙"),
-                    discord.SelectOption(label="Configuración Tribu", value="config", emoji="⚙️"),
-                    discord.SelectOption(label="SOS y Policía", value="sos", emoji="📢"),
-                    discord.SelectOption(label="TO-DO List", value="todo_list", emoji="📝"),
-                    discord.SelectOption(label="Genética y Crianza", value="lineas", emoji="🧬"),
-                    discord.SelectOption(label="Blacklist (Enemigos)", value="blacklist", emoji="☠️"),
-                    discord.SelectOption(label="Scouting (Bases)", value="scouting", emoji="🔭"),
-                    discord.SelectOption(label="Estado Servidores", value="status", emoji="🟢"),
-                    discord.SelectOption(label="Radar K4Ultra", value="k4ultra", emoji="👁️"),
-                    discord.SelectOption(label="Rancómetro", value="ranking", emoji="💀"),
-                    discord.SelectOption(label="Gestión LFG Eventos", value="eventos", emoji="📅"),
+                    discord.SelectOption(label="SOS & Alertas", value="sos", emoji="🆘"),
+                    discord.SelectOption(label="Alarmas de Intrusos", value="alarmas", emoji="🔔"),
+                    discord.SelectOption(label="To-Do List", value="todo_list", emoji="📝"),
+                    discord.SelectOption(label="Líneas de Genética", value="lineas", emoji="🧬"),
+                    discord.SelectOption(label="Blacklist", value="blacklist", emoji="☠️"),
+                    discord.SelectOption(label="Scouting", value="scouting", emoji="🛰️"),
+                    discord.SelectOption(label="Status Servidores", value="status", emoji="🟢"),
+                    discord.SelectOption(label="K4Ultra Radar", value="k4ultra", emoji="👁️"),
+                    discord.SelectOption(label="Ranking de Muertes", value="ranking", emoji="🪦"),
+                    discord.SelectOption(label="Puntos Diarios", value="puntos_diarios", emoji="🌅"),
+                    discord.SelectOption(label="Eventos LFG", value="eventos", emoji="📆"),
+                    discord.SelectOption(label="Setup & Admin", value="admin", emoji="🛡️"),
+                    discord.SelectOption(label="Backups DB", value="backup", emoji="💾"),
                 ]
+                # Filtro defensivo: solo opciones con clave existente en INFO_TEXTS.
+                valid = [opt for opt in options if opt.value in INFO_TEXTS]
                 self.select = discord.ui.Select(
                     placeholder="Selecciona una sección de la guía...",
-                    options=[opt for opt in options if opt.value in INFO_TEXTS],
+                    options=valid,
                 )
                 self.select.callback = self.select_callback
                 self.add_item(self.select)
@@ -1121,7 +1133,14 @@ class Management(commands.Cog, name="Management"):
 
         embed_inicial = discord.Embed(
             title="📚 Manual de Usuario - ArkTribeBot",
-            description="Selecciona una de las categorías del menú inferior para conocer los comandos y funcionamiento de cada módulo.\n\nRecuerda usar `/perfil_tribu` si acabas de llegar para registrarte en el sistema de la red.",
+            description=(
+                "Selecciona una sección del menú inferior para conocer los comandos y "
+                "funcionamiento de cada módulo.\n\n"
+                "💡 **Si acabas de llegar:** usa `/perfil_tribu` para registrarte en el "
+                "sistema (necesario para el ranking de muertes y K4Ultra).\n"
+                "⚙️ **Si eres admin:** empieza por la sección *Setup & Admin* para "
+                "configurar el bot con `/inicio_ark`."
+            ),
             color=discord.Color.blurple(),
         )
         await interaction.response.send_message(embed=embed_inicial, view=GuiaView(), ephemeral=True)
