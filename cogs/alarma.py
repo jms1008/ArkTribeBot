@@ -32,45 +32,101 @@ class AlarmDismissView(discord.ui.View):
             logger.debug(f"[Alarma] Dismiss falló (mensaje ya eliminado o sin permisos): {e}")
 
 
-async def build_alarmas_embed(bot, guild_id: int, user_id: int) -> discord.Embed:
-    embed = discord.Embed(
-        title="🔔 PANEL DE ALARMAS ACTIVAS",
-        color=discord.Color.from_rgb(255, 100, 0),
-    )
-
-    lines = []
-    lines.append("Selecciona un mapa en el menú inferior para controlar su alarma.")
-    lines.append("")
-
-    # Soporta tanto bot.db (runtime) como conexión efímera (tests que pasan MagicMock).
+async def _fetch_user_alarms(bot, guild_id: int, user_id: int) -> list[dict]:
+    """Alarmas de un usuario concreto en un guild. Usado por el Select para
+    saber qué mapas ya tiene activos el usuario que interactúa."""
     if getattr(bot, "db", None) is not None:
         rows = await bot.db.fetchall(
-            "SELECT map_name FROM map_alarms WHERE guild_id = ? AND user_id = ?",
+            "SELECT map_name, channel_id FROM map_alarms WHERE guild_id = ? AND user_id = ?",
             (guild_id, user_id),
         )
     else:
         async with aiosqlite.connect(bot.db_name) as db:
+            db.row_factory = aiosqlite.Row
             c = await db.execute(
-                "SELECT map_name FROM map_alarms WHERE guild_id = ? AND user_id = ?",
+                "SELECT map_name, channel_id FROM map_alarms WHERE guild_id = ? AND user_id = ?",
                 (guild_id, user_id),
             )
             rows = await c.fetchall()
+    return [{"map_name": r["map_name"], "channel_id": r["channel_id"]} for r in rows]
 
-    if not rows:
-        lines.append("## 💤 Estado Actual")
-        lines.append("> No tienes ninguna alarma activada ahora.")
+
+async def _fetch_guild_alarms(bot, guild_id: int) -> list[dict]:
+    """Todas las alarmas del guild (de todos los usuarios). Usado por el embed
+    del panel compartido."""
+    if getattr(bot, "db", None) is not None:
+        rows = await bot.db.fetchall(
+            "SELECT user_id, map_name, channel_id FROM map_alarms WHERE guild_id = ? ORDER BY map_name, user_id",
+            (guild_id,),
+        )
     else:
-        mapas = [r[0] for r in rows]
-        lines.append("## 👀 Mapas Vigilados")
-        for m in mapas:
-            lines.append(f"> • **{m}**")
+        async with aiosqlite.connect(bot.db_name) as db:
+            db.row_factory = aiosqlite.Row
+            c = await db.execute(
+                "SELECT user_id, map_name, channel_id FROM map_alarms WHERE guild_id = ? ORDER BY map_name, user_id",
+                (guild_id,),
+            )
+            rows = await c.fetchall()
+    return [
+        {"user_id": r["user_id"], "map_name": r["map_name"], "channel_id": r["channel_id"]}
+        for r in rows
+    ]
+
+
+async def build_alarmas_embed(bot, guild_id: int) -> discord.Embed:
+    """Construye el embed compartido del panel de alarmas del servidor.
+
+    El panel es PÚBLICO (todos los miembros de la tribu lo ven) y muestra el
+    estado global agrupado por mapa: qué mapas están vigilados y por quién.
+    Cada miembro puede usar el selector inferior para gestionar SUS propias
+    alarmas (las acciones individuales son efímeras).
+    """
+    embed = discord.Embed(
+        title="🔔 PANEL DE ALARMAS DE LA TRIBU",
+        color=discord.Color.from_rgb(255, 100, 0),
+    )
+
+    alarms = await _fetch_guild_alarms(bot, guild_id)
+    logger.info(
+        f"[Alarma] build_alarmas_embed guild={guild_id} → {len(alarms)} alarmas activas"
+    )
+
+    lines = ["Selecciona un mapa en el menú inferior para activar/desactivar **tu** alarma personal.", ""]
+
+    if not alarms:
+        lines.append("## 💤 Estado Actual")
+        lines.append("> Nadie en la tribu tiene alarmas activas ahora mismo.")
+    else:
+        # Agrupar por mapa para mostrar quién vigila cada uno.
+        by_map: dict[str, list[int]] = {}
+        for a in alarms:
+            by_map.setdefault(a["map_name"], []).append(a["user_id"])
+
+        lines.append(f"## 👀 Mapas Vigilados ({len(by_map)})")
+        for map_name in sorted(by_map.keys()):
+            watchers = by_map[map_name]
+            mentions = ", ".join(f"<@{uid}>" for uid in watchers)
+            lines.append(f"> 🟢 **{map_name}**  ·  {mentions}")
+
+    lines.append("")
+    lines.append(
+        "*El bot avisa cuando entra un jugador que NO sea de la tribu propia ni un personaje registrado.*"
+    )
 
     embed.description = "\n".join(lines).strip()
     return embed
 
 
 class AlarmasPanelView(discord.ui.View):
-    """Vista del panel de alarmas. Cada usuario tiene su propia instancia."""
+    """Vista del panel COMPARTIDO de alarmas de la tribu.
+
+    El panel es público (visible para todos los miembros) y refleja el estado
+    global. Cuando un miembro pulsa el Select, se le abre una vista efímera
+    con el estado de SUS alarmas para ese mapa concreto.
+
+    El Select NO marca mapas como activos porque el panel lo ve gente con
+    configuraciones distintas — el estado individual aparece al pulsar.
+    """
 
     def __init__(self, bot, servers: list = None):
         super().__init__(timeout=None)
@@ -115,6 +171,27 @@ class AlarmasPanelView(discord.ui.View):
             ephemeral=True,
         )
 
+    @discord.ui.button(
+        label="Refrescar",
+        style=discord.ButtonStyle.secondary,
+        emoji="🔄",
+        custom_id="alarm_panel_refresh",
+    )
+    async def refresh_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Vuelve a leer la DB y reconstruye el embed compartido + el Select."""
+        guild_id = interaction.guild_id
+
+        servers = await get_guild_servers(self.bot, guild_id)
+        server_names = list(servers.keys()) if servers else []
+
+        # El panel es compartido: el embed muestra estado global, el Select
+        # queda neutro (sin marca de "activa" porque el panel lo ven varios
+        # usuarios con configs distintas). Cada usuario verá su estado
+        # personal en el ephemeral que aparece al pulsar.
+        new_view = AlarmasPanelView(self.bot, server_names)
+        new_embed = await build_alarmas_embed(self.bot, guild_id)
+        await interaction.response.edit_message(embed=new_embed, view=new_view)
+
 
 class AlarmActionView(discord.ui.View):
     """Vista efímera que aparece tras seleccionar un mapa.
@@ -133,11 +210,11 @@ class AlarmActionView(discord.ui.View):
             self.btn_off.disabled = True
 
     async def _refresh_parent(self, interaction: discord.Interaction):
-        """Actualiza el embed del panel principal para reflejar el cambio."""
+        """Actualiza el embed del panel compartido para reflejar el cambio global."""
         if not self.parent_message:
             return
         try:
-            embed = await build_alarmas_embed(self.bot, interaction.guild_id, interaction.user.id)
+            embed = await build_alarmas_embed(self.bot, interaction.guild_id)
             await self.parent_message.edit(embed=embed)
         except Exception as e:
             logger.error(f"[Alarma] Error actualizando panel principal: {e}")
@@ -274,9 +351,12 @@ class Alarma(commands.Cog):
             return
 
         server_names = list(servers.keys())
-        embed = await build_alarmas_embed(self.bot, interaction.guild_id, interaction.user.id)
+        embed = await build_alarmas_embed(self.bot, interaction.guild_id)
+        # Panel compartido: el Select queda neutro (todos los mapas ⚪).
+        # Cada usuario gestiona sus alarmas individualmente vía ephemeral.
         view = AlarmasPanelView(self.bot, server_names)
 
+        # NO efímero — debe ser visible para toda la tribu.
         await interaction.response.send_message(embed=embed, view=view, ephemeral=False)
 
     @tasks.loop(minutes=1)

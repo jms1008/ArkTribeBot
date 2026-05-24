@@ -25,31 +25,57 @@ class TestBuildAlarmasEmbed:
     async def test_empty_state(self, mock_bot):
         """Sin alarmas registradas → embed muestra estado vacío."""
         await mock_bot.init_mock_db()
-        embed = await alarma_mod.build_alarmas_embed(mock_bot, guild_id=1, user_id=42)
+        embed = await alarma_mod.build_alarmas_embed(mock_bot, guild_id=1)
         assert "PANEL DE ALARMAS" in embed.title
-        assert "No tienes ninguna alarma" in embed.description
+        assert "Nadie en la tribu" in embed.description
 
     @pytest.mark.asyncio
-    async def test_lists_user_alarms(self, mock_bot):
-        """Sólo se listan las alarmas del usuario actual; no las de otros usuarios o guilds."""
+    async def test_lists_all_guild_alarms(self, mock_bot):
+        """Panel compartido: muestra alarmas de TODOS los usuarios del guild,
+        agrupadas por mapa con mención de los watchers. Excluye otros guilds."""
         await mock_bot.init_mock_db()
         await mock_bot.db.executemany(
             "INSERT INTO map_alarms (guild_id, user_id, map_name, channel_id) VALUES (?, ?, ?, ?)",
             [
                 (1, 42, "Ragnarok", 100),
                 (1, 42, "TheIsland", 100),
-                (1, 99, "Aberration", 100),  # Otro usuario
-                (2, 42, "Extinction", 100),  # Otro guild
+                (1, 99, "Aberration", 100),  # Otro usuario del MISMO guild → debe aparecer
+                (2, 42, "Extinction", 100),  # Otro guild → debe excluirse
             ],
         )
         await mock_bot.db.commit()
 
-        embed = await alarma_mod.build_alarmas_embed(mock_bot, guild_id=1, user_id=42)
+        embed = await alarma_mod.build_alarmas_embed(mock_bot, guild_id=1)
         desc = embed.description
+        # Los 3 mapas del guild 1 deben aparecer.
         assert "Ragnarok" in desc
         assert "TheIsland" in desc
-        assert "Aberration" not in desc  # No es del usuario
-        assert "Extinction" not in desc  # No es del guild
+        assert "Aberration" in desc
+        # Y se mencionan los usuarios que vigilan cada uno.
+        assert "<@42>" in desc
+        assert "<@99>" in desc
+        # El otro guild se excluye.
+        assert "Extinction" not in desc
+
+    @pytest.mark.asyncio
+    async def test_groups_watchers_per_map(self, mock_bot):
+        """Si varios usuarios vigilan el mismo mapa, todos se listan juntos."""
+        await mock_bot.init_mock_db()
+        await mock_bot.db.executemany(
+            "INSERT INTO map_alarms (guild_id, user_id, map_name, channel_id) VALUES (?, ?, ?, ?)",
+            [
+                (1, 42, "Ragnarok", 100),
+                (1, 99, "Ragnarok", 100),  # Mismo mapa, otro usuario
+            ],
+        )
+        await mock_bot.db.commit()
+
+        embed = await alarma_mod.build_alarmas_embed(mock_bot, guild_id=1)
+        desc = embed.description
+        # Ragnarok aparece UNA vez con ambos watchers en la misma línea.
+        assert desc.count("Ragnarok") == 1
+        assert "<@42>" in desc
+        assert "<@99>" in desc
 
 
 class TestIntruderDetection:
