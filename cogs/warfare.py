@@ -84,24 +84,22 @@ def build_blacklist_embed(rows: list, page: int = 0) -> discord.Embed:
 async def update_blacklist_dashboards(bot, guild_id: int, page: int = 0):
     """Actualiza todos los mensajes de lista negra (dashboards)."""
 
-    async with aiosqlite.connect(bot.db_name) as db:
-        db.row_factory = aiosqlite.Row
-        cursor = await db.execute(
-            "SELECT * FROM blacklist_messages WHERE guild_id = ?", (guild_id,)
-        )
-        dashboards = await cursor.fetchall()
+    db = bot.db
+    cursor = await db.execute(
+        "SELECT * FROM blacklist_messages WHERE guild_id = ?", (guild_id,)
+    )
+    dashboards = await cursor.fetchall()
 
     if not dashboards:
         return
 
     # Recuperación de registros de la Blacklist
-    async with aiosqlite.connect(bot.db_name) as db:
-        db.row_factory = aiosqlite.Row
-        cursor = await db.execute(
-            "SELECT * FROM blacklist WHERE guild_id = ? ORDER BY is_enemy DESC, id DESC",
-            (guild_id,),
-        )
-        rows = await cursor.fetchall()
+    db = bot.db
+    cursor = await db.execute(
+        "SELECT * FROM blacklist WHERE guild_id = ? ORDER BY is_enemy DESC, id DESC",
+        (guild_id,),
+    )
+    rows = await cursor.fetchall()
 
     embed, current_page, total_pages = build_blacklist_embed(rows, page)
     view = BlacklistView(bot, rows, current_page)
@@ -124,72 +122,70 @@ async def update_blacklist_dashboards(bot, guild_id: int, page: int = 0):
 
     # Purgado de dashboards inactivos o inaccesibles
     if messages_to_remove:
-        async with aiosqlite.connect(bot.db_name) as db:
-            for mid in messages_to_remove:
-                await db.execute("DELETE FROM blacklist_messages WHERE id = ?", (mid,))
-            await db.commit()
+        db = bot.db
+        for mid in messages_to_remove:
+            await db.execute("DELETE FROM blacklist_messages WHERE id = ?", (mid,))
+        await db.commit()
 
 
 async def update_kda_dashboards(bot, guild_id: int):
     """Actualiza todos los mensajes persistentes del Rancómetro (Cazador de Mancos)."""
-    async with aiosqlite.connect(bot.db_name) as db:
-        db.row_factory = aiosqlite.Row
-        cursor = await db.execute(
-            "SELECT * FROM kda_messages WHERE guild_id = ?", (guild_id,)
-        )
-        dashboards = await cursor.fetchall()
+    db = bot.db
+    cursor = await db.execute(
+        "SELECT * FROM kda_messages WHERE guild_id = ?", (guild_id,)
+    )
+    dashboards = await cursor.fetchall()
 
     if not dashboards:
         return
 
     # Generación del Leaderboard de Mortalidad
-    async with aiosqlite.connect(bot.db_name) as db:
-        db.row_factory = aiosqlite.Row
-        cursor = await db.execute(
+    db = bot.db
+    cursor = await db.execute(
+        """
+        SELECT player_name, deaths
+        FROM tribe_kda
+        WHERE guild_id = ?
+        ORDER BY deaths DESC
+    """,
+        (guild_id,),
+    )
+    rows = await cursor.fetchall()
+        
+    # Calcular total de muertes de la tribu para las barras
+    total_tribe_deaths = sum(row["deaths"] for row in rows) if rows else 0
+        
+    # Obtener pico de muertes/hora por jugador (máximo de muertes en cualquier ventana de 1h)
+    peak_dph_map = {}
+    try:
+        c_peak = await db.execute(
             """
-            SELECT player_name, deaths
-            FROM tribe_kda
-            WHERE guild_id = ?
-            ORDER BY deaths DESC
-        """,
+            SELECT player_name, strftime('%Y-%m-%d %H', died_at) as hora, COUNT(*) as cnt 
+            FROM tribe_death_log 
+            WHERE guild_id = ? 
+            GROUP BY player_name, hora
+            """,
             (guild_id,),
         )
-        rows = await cursor.fetchall()
-        
-        # Calcular total de muertes de la tribu para las barras
-        total_tribe_deaths = sum(row["deaths"] for row in rows) if rows else 0
-        
-        # Obtener pico de muertes/hora por jugador (máximo de muertes en cualquier ventana de 1h)
-        peak_dph_map = {}
-        try:
-            c_peak = await db.execute(
-                """
-                SELECT player_name, strftime('%Y-%m-%d %H', died_at) as hora, COUNT(*) as cnt 
-                FROM tribe_death_log 
-                WHERE guild_id = ? 
-                GROUP BY player_name, hora
-                """,
-                (guild_id,),
-            )
-            for peak_row in await c_peak.fetchall():
-                pname = peak_row["player_name"]
-                cnt = peak_row["cnt"]
-                if pname not in peak_dph_map or cnt > peak_dph_map[pname]:
-                    peak_dph_map[pname] = cnt
-        except aiosqlite.OperationalError as e:
-            logger.debug(f"[Warfare] Tabla peak_dph no disponible aún: {e}")
+        for peak_row in await c_peak.fetchall():
+            pname = peak_row["player_name"]
+            cnt = peak_row["cnt"]
+            if pname not in peak_dph_map or cnt > peak_dph_map[pname]:
+                peak_dph_map[pname] = cnt
+    except aiosqlite.OperationalError as e:
+        logger.debug(f"[Warfare] Tabla peak_dph no disponible aún: {e}")
 
-        # Obtener aliases de K4Ultra para nombres legibles
-        alias_map = {}
-        try:
-            c_alias = await db.execute(
-                "SELECT player_name, alias FROM k4ultra_aliases WHERE guild_id = ?",
-                (guild_id,),
-            )
-            for a_row in await c_alias.fetchall():
-                alias_map[a_row["player_name"]] = a_row["alias"]
-        except aiosqlite.OperationalError as e:
-            logger.debug(f"[Warfare] Tabla k4ultra_aliases no disponible: {e}")
+    # Obtener aliases de K4Ultra para nombres legibles
+    alias_map = {}
+    try:
+        c_alias = await db.execute(
+            "SELECT player_name, alias FROM k4ultra_aliases WHERE guild_id = ?",
+            (guild_id,),
+        )
+        for a_row in await c_alias.fetchall():
+            alias_map[a_row["player_name"]] = a_row["alias"]
+    except aiosqlite.OperationalError as e:
+        logger.debug(f"[Warfare] Tabla k4ultra_aliases no disponible: {e}")
 
     def resolve_display_name(player_name):
         """Usa el alias de K4Ultra si existe, si no devuelve el nombre tal cual."""
@@ -298,10 +294,10 @@ async def update_kda_dashboards(bot, guild_id: int):
 
     # Purgado de dashboards inactivos
     if messages_to_remove:
-        async with aiosqlite.connect(bot.db_name) as db:
-            for mid in messages_to_remove:
-                await db.execute("DELETE FROM kda_messages WHERE id = ?", (mid,))
-            await db.commit()
+        db = bot.db
+        for mid in messages_to_remove:
+            await db.execute("DELETE FROM kda_messages WHERE id = ?", (mid,))
+        await db.commit()
 
 
 class AddBlacklistModal(discord.ui.Modal, title="Añadir a Blacklist"):
@@ -326,18 +322,18 @@ class AddBlacklistModal(discord.ui.Modal, title="Añadir a Blacklist"):
         self.bot = bot
 
     async def on_submit(self, interaction: discord.Interaction):
-        async with aiosqlite.connect(self.bot.db_name) as db:
-            await db.execute(
-                "INSERT INTO blacklist (guild_id, player, tribe, map, notes, is_enemy) VALUES (?, ?, ?, ?, ?, 1)",
-                (
-                    interaction.guild_id,
-                    self.player.value,
-                    self.tribe.value or "Desconocido",
-                    self.map_name.value or "Desconocido",
-                    self.notes.value or "",
-                ),
-            )
-            await db.commit()
+        db = self.bot.db
+        await db.execute(
+            "INSERT INTO blacklist (guild_id, player, tribe, map, notes, is_enemy) VALUES (?, ?, ?, ?, ?, 1)",
+            (
+                interaction.guild_id,
+                self.player.value,
+                self.tribe.value or "Desconocido",
+                self.map_name.value or "Desconocido",
+                self.notes.value or "",
+            ),
+        )
+        await db.commit()
         await interaction.response.send_message(
             f"✅ **{self.player.value}** añadido a la Blacklist.", ephemeral=True
         )
@@ -389,25 +385,25 @@ class ModifyBlacklistModal(discord.ui.Modal, title="Modificar entrada de Blackli
                 return
             valor = int(valor)
 
-        async with aiosqlite.connect(self.bot.db_name) as db:
-            cursor = await db.execute(
-                "SELECT id FROM blacklist WHERE id = ? AND guild_id = ?",
-                (
-                    bid,
-                    interaction.guild_id,
-                ),
+        db = self.bot.db
+        cursor = await db.execute(
+            "SELECT id FROM blacklist WHERE id = ? AND guild_id = ?",
+            (
+                bid,
+                interaction.guild_id,
+            ),
+        )
+        if not await cursor.fetchone():
+            await interaction.response.send_message(
+                f"❌ No existe la entrada ID {bid} o no te pertenece.",
+                ephemeral=True,
             )
-            if not await cursor.fetchone():
-                await interaction.response.send_message(
-                    f"❌ No existe la entrada ID {bid} o no te pertenece.",
-                    ephemeral=True,
-                )
-                return
-            await db.execute(
-                f"UPDATE blacklist SET {campo} = ? WHERE id = ? AND guild_id = ?",
-                (valor, bid, interaction.guild_id),
-            )
-            await db.commit()
+            return
+        await db.execute(
+            f"UPDATE blacklist SET {campo} = ? WHERE id = ? AND guild_id = ?",
+            (valor, bid, interaction.guild_id),
+        )
+        await db.commit()
 
         await interaction.response.send_message(
             f"✅ ID {bid} actualizado: **{campo}** → {valor}",
@@ -434,15 +430,15 @@ class DeleteBlacklistModal(discord.ui.Modal, title="Eliminar de Blacklist"):
             )
             return
 
-        async with aiosqlite.connect(self.bot.db_name) as db:
-            await db.execute(
-                "DELETE FROM blacklist WHERE id = ? AND guild_id = ?",
-                (
-                    bid,
-                    interaction.guild_id,
-                ),
-            )
-            await db.commit()
+        db = self.bot.db
+        await db.execute(
+            "DELETE FROM blacklist WHERE id = ? AND guild_id = ?",
+            (
+                bid,
+                interaction.guild_id,
+            ),
+        )
+        await db.commit()
 
         await interaction.response.send_message(
             f"🗑️ Entrada ID {bid} eliminada.", ephemeral=True
@@ -458,277 +454,276 @@ async def build_player_detail_embed(
         title=f"👤 Expediente: {player_name}", color=discord.Color.dark_orange()
     )
 
-    async with aiosqlite.connect(bot.db_name) as db:
-        db.row_factory = aiosqlite.Row
+    db = bot.db
 
-        # --- Check si es Miembro de la Tribu Propia ---
-        c_own = await db.execute("SELECT members_json FROM k4ultra_fixed_tribes WHERE guild_id = ? AND is_own = 1", (guild_id,))
-        own_row = await c_own.fetchone()
-        is_tribe_member = False
-        if own_row:
-            import json
-            try:
-                own_members = {m.lower() for m in json.loads(own_row["members_json"])}
-                if player_name.lower() in own_members:
-                    is_tribe_member = True
-            except (json.JSONDecodeError, TypeError) as e:
-                logger.warning(f"[Warfare] members_json inválido en tribu propia: {e}")
+    # --- Check si es Miembro de la Tribu Propia ---
+    c_own = await db.execute("SELECT members_json FROM k4ultra_fixed_tribes WHERE guild_id = ? AND is_own = 1", (guild_id,))
+    own_row = await c_own.fetchone()
+    is_tribe_member = False
+    if own_row:
+        import json
+        try:
+            own_members = {m.lower() for m in json.loads(own_row["members_json"])}
+            if player_name.lower() in own_members:
+                is_tribe_member = True
+        except (json.JSONDecodeError, TypeError) as e:
+            logger.warning(f"[Warfare] members_json inválido en tribu propia: {e}")
 
-        # --- 0. Alias y Identidad ---
-        cursor = await db.execute(
-            "SELECT alias FROM k4ultra_aliases WHERE player_name = ? AND guild_id = ?",
-            (player_name, guild_id),
-        )
-        alias_row = await cursor.fetchone()
-        if alias_row:
-            embed.title = f"👤 Expediente: {player_name} [{alias_row['alias']}]"
+    # --- 0. Alias y Identidad ---
+    cursor = await db.execute(
+        "SELECT alias FROM k4ultra_aliases WHERE player_name = ? AND guild_id = ?",
+        (player_name, guild_id),
+    )
+    alias_row = await cursor.fetchone()
+    if alias_row:
+        embed.title = f"👤 Expediente: {player_name} [{alias_row['alias']}]"
             
-        desc = []
-        c_ids = await db.execute("SELECT secondary_name FROM player_identities_link WHERE primary_name = ? AND guild_id = ?", (player_name, guild_id))
-        old_ids = await c_ids.fetchall()
-        if old_ids:
-            old_lst = ", ".join([r["secondary_name"] for r in old_ids])
-            desc.append(f"⚠️ **Antiguos nombres de Steam:** `{old_lst}`\n*(Progreso fusionado automáticamente a este perfil)*")
-        embed.description = "\n\n".join(desc) if desc else ""
+    desc = []
+    c_ids = await db.execute("SELECT secondary_name FROM player_identities_link WHERE primary_name = ? AND guild_id = ?", (player_name, guild_id))
+    old_ids = await c_ids.fetchall()
+    if old_ids:
+        old_lst = ", ".join([r["secondary_name"] for r in old_ids])
+        desc.append(f"⚠️ **Antiguos nombres de Steam:** `{old_lst}`\n*(Progreso fusionado automáticamente a este perfil)*")
+    embed.description = "\n\n".join(desc) if desc else ""
 
-        # --- 1. Datos de Blacklist ---
-        cursor = await db.execute(
-            "SELECT tribe, map, notes, created_at, last_seen, total_hours, is_enemy FROM blacklist WHERE player = ? AND guild_id = ? LIMIT 1",
-            (
-                player_name,
-                guild_id,
-            ),
-        )
-        bl_row = await cursor.fetchone()
+    # --- 1. Datos de Blacklist ---
+    cursor = await db.execute(
+        "SELECT tribe, map, notes, created_at, last_seen, total_hours, is_enemy FROM blacklist WHERE player = ? AND guild_id = ? LIMIT 1",
+        (
+            player_name,
+            guild_id,
+        ),
+    )
+    bl_row = await cursor.fetchone()
 
-        status_msg = "⚪ Registro Pasivo (K4Ultra)"
-        if is_tribe_member:
-            status_msg = "🟢 Miembro de la Tribu"
-            embed.color = discord.Color.green()
-        elif bl_row:
-            # Comprobar si es enemigo o neutral
-            is_enemy_val = bl_row["is_enemy"] if "is_enemy" in bl_row.keys() else 1
-            if is_enemy_val == 1:
-                status_msg = "🔴 Marcado en Blacklist (Enemigo)"
-                embed.color = discord.Color.red()
-            else:
-                status_msg = "⚪ Marcado en Blacklist (Neutral)"
-                embed.color = discord.Color.light_grey()
-
-            notes_str = bl_row["notes"] if bl_row["notes"] else "Ninguna"
-            if "Pasaporte registrado (K4Ultra)" in notes_str and len(notes_str) > 35:
-                # Limpiar texto autogenerado si hay notas escritas manualmente por el jugador
-                notes_str = notes_str.replace("Pasaporte registrado (K4Ultra) | ", "")
-                notes_str = notes_str.replace("Pasaporte registrado (K4Ultra)", "").strip()
-                if notes_str.startswith("|"): 
-                    notes_str = notes_str[1:].strip()
-                if notes_str.startswith("["): 
-                    # El delimitador manual de notas a veces es | [De Alias]:
-                    pass
-            embed.add_field(
-                name="🏠 Tribu", value=bl_row["tribe"] or "Desconocida", inline=True
-            )
-            embed.add_field(
-                name="🗺️ Mapa Origen", value=bl_row["map"] or "Desconocido", inline=True
-            )
-            embed.add_field(name="📝 Notas", value=notes_str, inline=False)
+    status_msg = "⚪ Registro Pasivo (K4Ultra)"
+    if is_tribe_member:
+        status_msg = "🟢 Miembro de la Tribu"
+        embed.color = discord.Color.green()
+    elif bl_row:
+        # Comprobar si es enemigo o neutral
+        is_enemy_val = bl_row["is_enemy"] if "is_enemy" in bl_row.keys() else 1
+        if is_enemy_val == 1:
+            status_msg = "🔴 Marcado en Blacklist (Enemigo)"
+            embed.color = discord.Color.red()
         else:
-            if embed.description is None or embed.description == "":
-                embed.description = "Este jugador no está en la blacklist manual."
-            else:
-                embed.description += "\n\nEste jugador no está en la blacklist manual."
+            status_msg = "⚪ Marcado en Blacklist (Neutral)"
+            embed.color = discord.Color.light_grey()
 
-        # --- 2. Estadísticas de Juego (K4Ultra) ---
-        cursor = await db.execute(
-            "SELECT SUM(total_minutes) as t_mins FROM k4ultra_playtime WHERE player_name = ? AND guild_id = ?",
-            (
-                player_name,
-                guild_id,
-            ),
-        )
-        playtime_row = await cursor.fetchone()
-        total_hours = (
-            (playtime_row["t_mins"] / 60)
-            if playtime_row and playtime_row["t_mins"]
-            else 0.0
-        )
-
-        # --- 3. Estado Online y Map Orbit ---
-        cursor = await db.execute(
-            "SELECT map_name, start_time FROM k4ultra_sessions WHERE player_name = ? AND is_active = 1 AND guild_id = ? LIMIT 1",
-            (
-                player_name,
-                guild_id,
-            ),
-        )
-        active_session = await cursor.fetchone()
-
-        if active_session:
-            since = (
-                active_session["start_time"][11:16]
-                if active_session["start_time"]
-                else "?"
-            )
-            online_str = (
-                f"🟢 **En línea** (en {active_session['map_name']} desde {since})"
-            )
-        else:
-            # Buscar el último mapa en el que estuvo conectado
-            cursor = await db.execute(
-                "SELECT map_name FROM k4ultra_sessions WHERE player_name = ? AND is_active = 0 AND guild_id = ? ORDER BY end_time DESC LIMIT 1",
-                (player_name, guild_id,)
-            )
-            offline_session = await cursor.fetchone()
-            if offline_session:
-                online_str = f"🔴 **Desconectado** (Visto en {offline_session['map_name']})"
-            else:
-                online_str = "🔴 **Desconectado**"
-
-        embed.add_field(name="🔌 Estado Actual", value=online_str, inline=True)
+        notes_str = bl_row["notes"] if bl_row["notes"] else "Ninguna"
+        if "Pasaporte registrado (K4Ultra)" in notes_str and len(notes_str) > 35:
+            # Limpiar texto autogenerado si hay notas escritas manualmente por el jugador
+            notes_str = notes_str.replace("Pasaporte registrado (K4Ultra) | ", "")
+            notes_str = notes_str.replace("Pasaporte registrado (K4Ultra)", "").strip()
+            if notes_str.startswith("|"): 
+                notes_str = notes_str[1:].strip()
+            if notes_str.startswith("["): 
+                # El delimitador manual de notas a veces es | [De Alias]:
+                pass
         embed.add_field(
-            name="⏱️ Tiempo Total", value=f"{total_hours:.1f} horas", inline=True
+            name="🏠 Tribu", value=bl_row["tribe"] or "Desconocida", inline=True
         )
+        embed.add_field(
+            name="🗺️ Mapa Origen", value=bl_row["map"] or "Desconocido", inline=True
+        )
+        embed.add_field(name="📝 Notas", value=notes_str, inline=False)
+    else:
+        if embed.description is None or embed.description == "":
+            embed.description = "Este jugador no está en la blacklist manual."
+        else:
+            embed.description += "\n\nEste jugador no está en la blacklist manual."
 
-        # Historial de Desplazamiento (Últimos 3 mapas visitados cronológicamente)
-        cursor = await db.execute(
-            "SELECT map_name FROM k4ultra_sessions WHERE player_name = ? AND guild_id = ? ORDER BY start_time DESC LIMIT 20",
-            (
-                player_name,
-                guild_id,
-            ),
+    # --- 2. Estadísticas de Juego (K4Ultra) ---
+    cursor = await db.execute(
+        "SELECT SUM(total_minutes) as t_mins FROM k4ultra_playtime WHERE player_name = ? AND guild_id = ?",
+        (
+            player_name,
+            guild_id,
+        ),
+    )
+    playtime_row = await cursor.fetchone()
+    total_hours = (
+        (playtime_row["t_mins"] / 60)
+        if playtime_row and playtime_row["t_mins"]
+        else 0.0
+    )
+
+    # --- 3. Estado Online y Map Orbit ---
+    cursor = await db.execute(
+        "SELECT map_name, start_time FROM k4ultra_sessions WHERE player_name = ? AND is_active = 1 AND guild_id = ? LIMIT 1",
+        (
+            player_name,
+            guild_id,
+        ),
+    )
+    active_session = await cursor.fetchone()
+
+    if active_session:
+        since = (
+            active_session["start_time"][11:16]
+            if active_session["start_time"]
+            else "?"
         )
-        recent_sessions = await cursor.fetchall()
+        online_str = (
+            f"🟢 **En línea** (en {active_session['map_name']} desde {since})"
+        )
+    else:
+        # Buscar el último mapa en el que estuvo conectado
+        cursor = await db.execute(
+            "SELECT map_name FROM k4ultra_sessions WHERE player_name = ? AND is_active = 0 AND guild_id = ? ORDER BY end_time DESC LIMIT 1",
+            (player_name, guild_id,)
+        )
+        offline_session = await cursor.fetchone()
+        if offline_session:
+            online_str = f"🔴 **Desconectado** (Visto en {offline_session['map_name']})"
+        else:
+            online_str = "🔴 **Desconectado**"
+
+    embed.add_field(name="🔌 Estado Actual", value=online_str, inline=True)
+    embed.add_field(
+        name="⏱️ Tiempo Total", value=f"{total_hours:.1f} horas", inline=True
+    )
+
+    # Historial de Desplazamiento (Últimos 3 mapas visitados cronológicamente)
+    cursor = await db.execute(
+        "SELECT map_name FROM k4ultra_sessions WHERE player_name = ? AND guild_id = ? ORDER BY start_time DESC LIMIT 20",
+        (
+            player_name,
+            guild_id,
+        ),
+    )
+    recent_sessions = await cursor.fetchall()
         
-        orbit_list = []
-        for r in recent_sessions:
-            m_name = r["map_name"]
-            # Filtrar si el mapa actual es igual al anterior registrado (evitar duplicados consecutivos)
-            if not orbit_list or orbit_list[-1] != m_name:
-                orbit_list.append(m_name)
-            if len(orbit_list) >= 3:
-                break
+    orbit_list = []
+    for r in recent_sessions:
+        m_name = r["map_name"]
+        # Filtrar si el mapa actual es igual al anterior registrado (evitar duplicados consecutivos)
+        if not orbit_list or orbit_list[-1] != m_name:
+            orbit_list.append(m_name)
+        if len(orbit_list) >= 3:
+            break
                 
-        if orbit_list:
-            # Invertimos el orden para mostrar la ruta cronológicamente (Pasado -> Reciente)
-            orbit_list.reverse()
-            orbit_str = " -> ".join(orbit_list)
-            embed.add_field(
-                name="🛰️ Órbita (Últimos Mapas)", value=f"`{orbit_str}`", inline=False
-            )
-
-        # --- 4. Análisis Horario y Predicción ---
-        from datetime import datetime
-
-        now = datetime.now()
-        current_hour = now.hour
-
-        cursor = await db.execute(
-            "SELECT strftime('%H', start_time) as h, COUNT(*) as c FROM k4ultra_sessions WHERE player_name = ? AND guild_id = ? GROUP BY h",
-            (
-                player_name,
-                guild_id,
-            ),
-        )
-        hour_data = await cursor.fetchall()
-
-        total_sessions = sum(h["c"] for h in hour_data)
-        prob = 0
-        vulnerability_window = "Indeterminada"
-
-        if total_sessions > 0:
-            # Predicción para la próxima hora
-            next_hour = (current_hour + 1) % 24
-            next_hour_str = f"{next_hour:02d}"
-
-            matches = [h["c"] for h in hour_data if h["h"] == next_hour_str]
-            if matches:
-                prob = int((matches[0] / total_sessions) * 100)
-
-            # Ventana de Vulnerabilidad (Bloque de 4 horas con menos actividad)
-            # Simplificado: buscar la hora con 0 sesiones
-            inactive_hours = []
-            recorded_hours = {int(h["h"]) for h in hour_data}
-            for i in range(24):
-                if i not in recorded_hours:
-                    inactive_hours.append(i)
-
-            if inactive_hours:
-                # Buscar el bloque más largo de horas inactivas
-                vulnerability_window = "Madrugada / Variable"
-                if len(inactive_hours) >= 4:
-                    # Ejemplo: 03:00 - 07:00
-                    vulnerability_window = f"Entre {min(inactive_hours):02d}:00 y {max(inactive_hours):02d}:00"
-
+    if orbit_list:
+        # Invertimos el orden para mostrar la ruta cronológicamente (Pasado -> Reciente)
+        orbit_list.reverse()
+        orbit_str = " -> ".join(orbit_list)
         embed.add_field(
-            name="🕒 Ventana Vulnerable", value=vulnerability_window, inline=True
-        )
-        embed.add_field(name="📈 Prob. Conexión (1h)", value=f"{prob}%", inline=True)
-
-        # --- 5. PVP y Alts ---
-        cursor = await db.execute(
-            "SELECT deaths FROM tribe_kda WHERE player_name = ? AND guild_id = ?",
-            (player_name, guild_id),
-        )
-        death_row = await cursor.fetchone()
-        deaths = death_row["deaths"] if death_row else 0
-
-        cursor = await db.execute(
-            "SELECT character_name FROM tribe_characters WHERE player_name = ? AND guild_id = ?",
-            (player_name, guild_id),
-        )
-        chars = await cursor.fetchall()
-        chars_str = (
-            ", ".join([f"`{c['character_name']}`" for c in chars])
-            if chars
-            else "Ninguno"
+            name="🛰️ Órbita (Últimos Mapas)", value=f"`{orbit_str}`", inline=False
         )
 
-        embed.add_field(
-            name="⚔️ Ficha de Muertes",
-            value=f"**Deaths Totales (Rancómetro):** {deaths}",
-            inline=False,
-        )
-        embed.add_field(name="🧑‍🤝‍🧑 Alts / Personajes", value=chars_str, inline=False)
+    # --- 4. Análisis Horario y Predicción ---
+    from datetime import datetime
 
-        # --- 6. Grado de Peligro (1-5 💀) ---
-        threat = 1
-        if total_hours > 50:
-            threat += 1
-        if bl_row:
-            threat += 1
-        if deaths > 50:
-            threat += 1
+    now = datetime.now()
+    current_hour = now.hour
 
-        threat_str = "💀" * threat + "▫️" * (5 - threat)
-        embed.add_field(
-            name="🔥 Grado de Peligro", value=f"`{threat_str}`", inline=True
-        )
-        embed.add_field(name="📑 Tipo de Registro", value=status_msg, inline=True)
+    cursor = await db.execute(
+        "SELECT strftime('%H', start_time) as h, COUNT(*) as c FROM k4ultra_sessions WHERE player_name = ? AND guild_id = ? GROUP BY h",
+        (
+            player_name,
+            guild_id,
+        ),
+    )
+    hour_data = await cursor.fetchall()
 
-        # --- 7. Aliados ---
-        cursor = await db.execute(
-            """
-            SELECT player2 as ally, probability_score FROM k4ultra_relationships WHERE player1 = ? AND guild_id = ?
-            UNION
-            SELECT player1 as ally, probability_score FROM k4ultra_relationships WHERE player2 = ? AND guild_id = ?
-            ORDER BY probability_score DESC LIMIT 3
-            """,
-            (
-                player_name,
-                guild_id,
-                player_name,
-                guild_id,
-            ),
+    total_sessions = sum(h["c"] for h in hour_data)
+    prob = 0
+    vulnerability_window = "Indeterminada"
+
+    if total_sessions > 0:
+        # Predicción para la próxima hora
+        next_hour = (current_hour + 1) % 24
+        next_hour_str = f"{next_hour:02d}"
+
+        matches = [h["c"] for h in hour_data if h["h"] == next_hour_str]
+        if matches:
+            prob = int((matches[0] / total_sessions) * 100)
+
+        # Ventana de Vulnerabilidad (Bloque de 4 horas con menos actividad)
+        # Simplificado: buscar la hora con 0 sesiones
+        inactive_hours = []
+        recorded_hours = {int(h["h"]) for h in hour_data}
+        for i in range(24):
+            if i not in recorded_hours:
+                inactive_hours.append(i)
+
+        if inactive_hours:
+            # Buscar el bloque más largo de horas inactivas
+            vulnerability_window = "Madrugada / Variable"
+            if len(inactive_hours) >= 4:
+                # Ejemplo: 03:00 - 07:00
+                vulnerability_window = f"Entre {min(inactive_hours):02d}:00 y {max(inactive_hours):02d}:00"
+
+    embed.add_field(
+        name="🕒 Ventana Vulnerable", value=vulnerability_window, inline=True
+    )
+    embed.add_field(name="📈 Prob. Conexión (1h)", value=f"{prob}%", inline=True)
+
+    # --- 5. PVP y Alts ---
+    cursor = await db.execute(
+        "SELECT deaths FROM tribe_kda WHERE player_name = ? AND guild_id = ?",
+        (player_name, guild_id),
+    )
+    death_row = await cursor.fetchone()
+    deaths = death_row["deaths"] if death_row else 0
+
+    cursor = await db.execute(
+        "SELECT character_name FROM tribe_characters WHERE player_name = ? AND guild_id = ?",
+        (player_name, guild_id),
+    )
+    chars = await cursor.fetchall()
+    chars_str = (
+        ", ".join([f"`{c['character_name']}`" for c in chars])
+        if chars
+        else "Ninguno"
+    )
+
+    embed.add_field(
+        name="⚔️ Ficha de Muertes",
+        value=f"**Deaths Totales (Rancómetro):** {deaths}",
+        inline=False,
+    )
+    embed.add_field(name="🧑‍🤝‍🧑 Alts / Personajes", value=chars_str, inline=False)
+
+    # --- 6. Grado de Peligro (1-5 💀) ---
+    threat = 1
+    if total_hours > 50:
+        threat += 1
+    if bl_row:
+        threat += 1
+    if deaths > 50:
+        threat += 1
+
+    threat_str = "💀" * threat + "▫️" * (5 - threat)
+    embed.add_field(
+        name="🔥 Grado de Peligro", value=f"`{threat_str}`", inline=True
+    )
+    embed.add_field(name="📑 Tipo de Registro", value=status_msg, inline=True)
+
+    # --- 7. Aliados ---
+    cursor = await db.execute(
+        """
+        SELECT player2 as ally, probability_score FROM k4ultra_relationships WHERE player1 = ? AND guild_id = ?
+        UNION
+        SELECT player1 as ally, probability_score FROM k4ultra_relationships WHERE player2 = ? AND guild_id = ?
+        ORDER BY probability_score DESC LIMIT 3
+        """,
+        (
+            player_name,
+            guild_id,
+            player_name,
+            guild_id,
+        ),
+    )
+    allies = await cursor.fetchall()
+    ally_text = (
+        "\n".join(
+            [f"• **{a['ally']}** ({a['probability_score']}%)" for a in allies]
         )
-        allies = await cursor.fetchall()
-        ally_text = (
-            "\n".join(
-                [f"• **{a['ally']}** ({a['probability_score']}%)" for a in allies]
-            )
-            if allies
-            else "Sin aliados conocidos."
-        )
-        embed.add_field(name="🤝 Aliados Cercanos", value=ally_text, inline=False)
+        if allies
+        else "Sin aliados conocidos."
+    )
+    embed.add_field(name="🤝 Aliados Cercanos", value=ally_text, inline=False)
 
     return embed
 
@@ -881,13 +876,12 @@ class BlacklistView(discord.ui.View):
 
     async def _update_page(self, interaction: discord.Interaction, new_page: int):
         """Carga los datos frescos, construye el embed de la página pedida y edita el mensaje."""
-        async with aiosqlite.connect(self.bot.db_name) as db:
-            db.row_factory = aiosqlite.Row
-            cursor = await db.execute(
-                "SELECT * FROM blacklist WHERE guild_id = ? ORDER BY is_enemy DESC, id DESC",
-                (interaction.guild_id,),
-            )
-            rows = await cursor.fetchall()
+        db = self.bot.db
+        cursor = await db.execute(
+            "SELECT * FROM blacklist WHERE guild_id = ? ORDER BY is_enemy DESC, id DESC",
+            (interaction.guild_id,),
+        )
+        rows = await cursor.fetchall()
 
         embed, current_page, _ = build_blacklist_embed(rows, new_page)
         new_view = BlacklistView(self.bot, rows, current_page)
@@ -927,74 +921,73 @@ class Warfare(commands.Cog):
         )
         await channel.send(embed=info_embed)
 
-        async with aiosqlite.connect(self.bot.db_name) as db:
-            db.row_factory = aiosqlite.Row
-            cursor = await db.execute(
-                "SELECT * FROM blacklist WHERE guild_id = ? ORDER BY is_enemy DESC, id DESC",
-                (guild_id,),
-            )
-            rows = await cursor.fetchall()
+        db = self.bot.db
+        cursor = await db.execute(
+            "SELECT * FROM blacklist WHERE guild_id = ? ORDER BY is_enemy DESC, id DESC",
+            (guild_id,),
+        )
+        rows = await cursor.fetchall()
             
         embed, _, _ = build_blacklist_embed(rows, 0)
         view = BlacklistView(self.bot, rows)
         msg = await channel.send(embed=embed, view=view)
         await asyncio.sleep(0.5)
 
-        async with aiosqlite.connect(self.bot.db_name) as db:
-            await db.execute(
-                "INSERT INTO blacklist_messages (guild_id, channel_id, message_id) VALUES (?, ?, ?)",
-                (guild_id, channel.id, msg.id),
-            )
-            await db.commit()
+        db = self.bot.db
+        await db.execute(
+            "INSERT INTO blacklist_messages (guild_id, channel_id, message_id) VALUES (?, ?, ?)",
+            (guild_id, channel.id, msg.id),
+        )
+        await db.commit()
         # Rutina de seguridad para asegurar el esquema correcto (Migración legacy)
         asyncio.create_task(self.check_schema())
 
     async def check_schema(self):
-        async with aiosqlite.connect(self.bot.db_name) as db:
-            # Comprobación de existencia del esquema antiguo (steam_id vs id)
+        db = self.bot.db
+        # Comprobación de existencia del esquema antiguo (steam_id vs id)
+        try:
+            # Intento de lectura de la columna ID (Nuevo estándar)
+            await db.execute("SELECT id FROM blacklist LIMIT 1")
+        except aiosqlite.OperationalError:
+            # Falla de lectura: Detectado esquema antiguo
+            logger.warning(
+                "⚠️ Detectada versión antigua de Blacklist. Migrando tabla..."
+            )
             try:
-                # Intento de lectura de la columna ID (Nuevo estándar)
-                await db.execute("SELECT id FROM blacklist LIMIT 1")
-            except aiosqlite.OperationalError:
-                # Falla de lectura: Detectado esquema antiguo
-                logger.warning(
-                    "⚠️ Detectada versión antigua de Blacklist. Migrando tabla..."
+                backup_name = (
+                    f"blacklist_backup_{int(datetime.datetime.now().timestamp())}"
                 )
-                try:
-                    backup_name = (
-                        f"blacklist_backup_{int(datetime.datetime.now().timestamp())}"
-                    )
-                    await db.execute(f"ALTER TABLE blacklist RENAME TO {backup_name}")
-                    logger.info(f"✅ Tabla antigua renombrada a {backup_name}")
+                await db.execute(f"ALTER TABLE blacklist RENAME TO {backup_name}")
+                logger.info(f"✅ Tabla antigua renombrada a {backup_name}")
 
-                    await db.execute("""
-                        CREATE TABLE blacklist (
-                            id INTEGER PRIMARY KEY AUTOINCREMENT,
-                            player TEXT,
-                            tribe TEXT,
-                            map TEXT,
-                            notes TEXT,
-                            created_at TEXT
-                        )
-                    """)
-                    logger.info("✅ Nueva tabla blacklist creada con schema correcto.")
-                    await db.commit()
-                except Exception as e:
-                    logger.error(f"❌ Error durante la migración de Blacklist: {e}")
+                await db.execute("""
+                    CREATE TABLE blacklist (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        player TEXT,
+                        tribe TEXT,
+                        map TEXT,
+                        notes TEXT,
+                        created_at TEXT
+                    )
+                """)
+                logger.info("✅ Nueva tabla blacklist creada con schema correcto.")
+                await db.commit()
+            except Exception as e:
+                logger.error(f"❌ Error durante la migración de Blacklist: {e}")
 
     # --- Funciones de Autocompletado ---
     async def tribe_autocomplete(
         self, interaction: discord.Interaction, current: str
     ) -> list[app_commands.Choice[str]]:
-        async with aiosqlite.connect(self.bot.db_name) as db:
-            cursor = await db.execute(
-                "SELECT DISTINCT tribe FROM blacklist WHERE tribe LIKE ? AND guild_id = ? ORDER BY tribe ASC LIMIT 25",
-                (
-                    f"%{current}%",
-                    interaction.guild_id,
-                ),
-            )
-            rows = await cursor.fetchall()
+        db = self.bot.db
+        cursor = await db.execute(
+            "SELECT DISTINCT tribe FROM blacklist WHERE tribe LIKE ? AND guild_id = ? ORDER BY tribe ASC LIMIT 25",
+            (
+                f"%{current}%",
+                interaction.guild_id,
+            ),
+        )
+        rows = await cursor.fetchall()
 
         choices = [
             app_commands.Choice(name=row[0], value=row[0]) for row in rows if row[0]
@@ -1028,12 +1021,12 @@ class Warfare(commands.Cog):
         await interaction.followup.send(embed=embed)
         message = await interaction.original_response()
 
-        async with aiosqlite.connect(self.bot.db_name) as db:
-            await db.execute(
-                "INSERT INTO blacklist_messages (guild_id, channel_id, message_id) VALUES (?, ?, ?)",
-                (interaction.guild_id, interaction.channel_id, message.id),
-            )
-            await db.commit()
+        db = self.bot.db
+        await db.execute(
+            "INSERT INTO blacklist_messages (guild_id, channel_id, message_id) VALUES (?, ?, ?)",
+            (interaction.guild_id, interaction.channel_id, message.id),
+        )
+        await db.commit()
 
         await update_blacklist_dashboards(self.bot, interaction.guild_id)
 
@@ -1130,12 +1123,12 @@ class Warfare(commands.Cog):
         await interaction.followup.send(embed=embed)
         message = await interaction.original_response()
 
-        async with aiosqlite.connect(self.bot.db_name) as db:
-            await db.execute(
-                "INSERT INTO kda_messages (guild_id, channel_id, message_id) VALUES (?, ?, ?)",
-                (interaction.guild_id, interaction.channel_id, message.id),
-            )
-            await db.commit()
+        db = self.bot.db
+        await db.execute(
+            "INSERT INTO kda_messages (guild_id, channel_id, message_id) VALUES (?, ?, ?)",
+            (interaction.guild_id, interaction.channel_id, message.id),
+        )
+        await db.commit()
 
         await update_kda_dashboards(self.bot, interaction.guild_id)
 

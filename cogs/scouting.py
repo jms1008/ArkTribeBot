@@ -49,14 +49,14 @@ class AddScoutModal(discord.ui.Modal, title="Añadir Scout"):
         coords = self.coords.value
         notas = self.notas.value or ""
 
-        async with aiosqlite.connect(self.bot.db_name) as db:
-            cursor = await db.execute(
-                "INSERT INTO scouts (guild_id, tribu_enemiga, mapa, coordenadas, nivel_amenaza, url_imagen, notas) "
-                "VALUES (?, ?, ?, ?, ?, 'N/A', ?)",
-                (interaction.guild_id, tribu, mapa, coords, amenaza_int, notas),
-            )
-            scout_id = cursor.lastrowid
-            await db.commit()
+        db = self.bot.db
+        cursor = await db.execute(
+            "INSERT INTO scouts (guild_id, tribu_enemiga, mapa, coordenadas, nivel_amenaza, url_imagen, notas) "
+            "VALUES (?, ?, ?, ?, ?, 'N/A', ?)",
+            (interaction.guild_id, tribu, mapa, coords, amenaza_int, notas),
+        )
+        scout_id = cursor.lastrowid
+        await db.commit()
 
         await interaction.response.send_message(
             f"✅ Scout **#{scout_id}** registrado: **{tribu}** en {mapa}.\n"
@@ -92,10 +92,9 @@ class ScoutSelect(discord.ui.Select):
             return
             
         scout_id = int(self.values[0])
-        async with aiosqlite.connect(self.bot.db_name) as db:
-            db.row_factory = aiosqlite.Row
-            c = await db.execute("SELECT * FROM scouts WHERE id = ?", (scout_id,))
-            row = await c.fetchone()
+        db = self.bot.db
+        c = await db.execute("SELECT * FROM scouts WHERE id = ?", (scout_id,))
+        row = await c.fetchone()
             
         if not row:
             await interaction.response.send_message("❌ Scout no encontrado.", ephemeral=True)
@@ -111,10 +110,10 @@ class ScoutSelect(discord.ui.Select):
             try:
                 if str(row["url_imagen"]).strip().isdigit():
                     msg_id = int(str(row["url_imagen"]).strip())
-                    async with aiosqlite.connect(self.bot.db_name) as _db:
-                        c = await _db.execute("SELECT upload_channel_id FROM guild_config WHERE guild_id = ?", (row["guild_id"],))
-                        cfg_row = await c.fetchone()
-                        upload_id = cfg_row[0] if cfg_row else None
+                    _db = self.bot.db
+                    c = await _db.execute("SELECT upload_channel_id FROM guild_config WHERE guild_id = ?", (row["guild_id"],))
+                    cfg_row = await c.fetchone()
+                    upload_id = cfg_row[0] if cfg_row else None
                     if upload_id:
                         ch = self.bot.get_channel(upload_id) or await self.bot.fetch_channel(upload_id)
                         if ch:
@@ -216,13 +215,12 @@ class ScoutView(discord.ui.View):
         await self._update_page(interaction, new_page)
 
     async def _update_page(self, interaction: discord.Interaction, new_page: int):
-        async with aiosqlite.connect(self.bot.db_name) as db:
-            db.row_factory = aiosqlite.Row
-            if self.map_filter == "Global":
-                cursor = await db.execute("SELECT * FROM scouts WHERE guild_id = ? ORDER BY mapa, nivel_amenaza DESC", (interaction.guild_id,))
-            else:
-                cursor = await db.execute("SELECT * FROM scouts WHERE guild_id = ? AND mapa = ? ORDER BY nivel_amenaza DESC", (interaction.guild_id, self.map_filter,))
-            rows = await cursor.fetchall()
+        db = self.bot.db
+        if self.map_filter == "Global":
+            cursor = await db.execute("SELECT * FROM scouts WHERE guild_id = ? ORDER BY mapa, nivel_amenaza DESC", (interaction.guild_id,))
+        else:
+            cursor = await db.execute("SELECT * FROM scouts WHERE guild_id = ? AND mapa = ? ORDER BY nivel_amenaza DESC", (interaction.guild_id, self.map_filter,))
+        rows = await cursor.fetchall()
         
         embed, page, view = await build_scout_embed_view(self.bot, rows, self.map_filter, new_page)
         await interaction.response.edit_message(embed=embed, view=view)
@@ -258,13 +256,13 @@ async def build_scout_embed_view(bot, rows: list, map_filter: str, page: int = 0
                 try:
                     if str(row["url_imagen"]).strip().isdigit():
                         msg_id = int(str(row["url_imagen"]).strip())
-                        async with aiosqlite.connect(bot.db_name) as _db:
-                            c = await _db.execute(
-                                "SELECT upload_channel_id FROM guild_config WHERE guild_id = ?",
-                                (row["guild_id"],)
-                            )
-                            cfg_row = await c.fetchone()
-                            upload_id = cfg_row[0] if cfg_row else None
+                        _db = bot.db
+                        c = await _db.execute(
+                            "SELECT upload_channel_id FROM guild_config WHERE guild_id = ?",
+                            (row["guild_id"],)
+                        )
+                        cfg_row = await c.fetchone()
+                        upload_id = cfg_row[0] if cfg_row else None
 
                         thread = None
                         if upload_id:
@@ -299,17 +297,16 @@ async def build_scout_embed_view(bot, rows: list, map_filter: str, page: int = 0
 async def update_scout_dashboards(bot, guild_id: int, target_map=None, page: int = 0):
     """Actualiza los dashboards. target_map es el mapa que ha sufrido cambios (o None si unknown)."""
 
-    async with aiosqlite.connect(bot.db_name) as db:
-        db.row_factory = aiosqlite.Row
-        # Actualización dual: Dashboards Globales y Dashboards del mapa afectado
-        if target_map:
-            cursor = await db.execute(
-                "SELECT * FROM scout_messages WHERE guild_id = ? AND (map_filter = ? OR map_filter = 'Global')",
-                (guild_id, target_map,),
-            )
-        else:
-            cursor = await db.execute("SELECT * FROM scout_messages WHERE guild_id = ?", (guild_id,))
-        dashboards = await cursor.fetchall()
+    db = bot.db
+    # Actualización dual: Dashboards Globales y Dashboards del mapa afectado
+    if target_map:
+        cursor = await db.execute(
+            "SELECT * FROM scout_messages WHERE guild_id = ? AND (map_filter = ? OR map_filter = 'Global')",
+            (guild_id, target_map,),
+        )
+    else:
+        cursor = await db.execute("SELECT * FROM scout_messages WHERE guild_id = ?", (guild_id,))
+    dashboards = await cursor.fetchall()
 
     if not dashboards:
         return
@@ -321,13 +318,12 @@ async def update_scout_dashboards(bot, guild_id: int, target_map=None, page: int
 
         # Omitimos la recarga completa aquí; simplemente usamos build_scout_embed_view
         # Necesitamos cargar las 'rows' para este dashboard concreto
-        async with aiosqlite.connect(bot.db_name) as db:
-            db.row_factory = aiosqlite.Row
-            if map_filter == "Global":
-                cursor = await db.execute("SELECT * FROM scouts WHERE guild_id = ? ORDER BY mapa, nivel_amenaza DESC", (guild_id,))
-            else:
-                cursor = await db.execute("SELECT * FROM scouts WHERE guild_id = ? AND mapa = ? ORDER BY nivel_amenaza DESC", (guild_id, map_filter,))
-            rows = await cursor.fetchall()
+        db = bot.db
+        if map_filter == "Global":
+            cursor = await db.execute("SELECT * FROM scouts WHERE guild_id = ? ORDER BY mapa, nivel_amenaza DESC", (guild_id,))
+        else:
+            cursor = await db.execute("SELECT * FROM scouts WHERE guild_id = ? AND mapa = ? ORDER BY nivel_amenaza DESC", (guild_id, map_filter,))
+        rows = await cursor.fetchall()
 
         embed, _, view = await build_scout_embed_view(bot, rows, map_filter, page)
 
@@ -346,10 +342,10 @@ async def update_scout_dashboards(bot, guild_id: int, target_map=None, page: int
             logger.error(f"Error actualizando dashboard scout {dash['id']}: {e}")
 
     if messages_to_remove:
-        async with aiosqlite.connect(bot.db_name) as db:
-            for mid in messages_to_remove:
-                await db.execute("DELETE FROM scout_messages WHERE id = ?", (mid,))
-            await db.commit()
+        db = bot.db
+        for mid in messages_to_remove:
+            await db.execute("DELETE FROM scout_messages WHERE id = ?", (mid,))
+        await db.commit()
 
 
 class DeleteScoutModal(discord.ui.Modal, title="Eliminar Scout"):
@@ -368,49 +364,48 @@ class DeleteScoutModal(discord.ui.Modal, title="Eliminar Scout"):
             )
             return
 
-        async with aiosqlite.connect(self.bot.db_name) as db:
-            db.row_factory = aiosqlite.Row
-            cursor = await db.execute(
-                "SELECT mapa, url_imagen, guild_id FROM scouts WHERE id = ? AND guild_id = ?", (sid, interaction.guild_id)
+        db = self.bot.db
+        cursor = await db.execute(
+            "SELECT mapa, url_imagen, guild_id FROM scouts WHERE id = ? AND guild_id = ?", (sid, interaction.guild_id)
+        )
+        scout = await cursor.fetchone()
+        if not scout:
+            await interaction.response.send_message(
+                "❌ No encontrado.", ephemeral=True
             )
-            scout = await cursor.fetchone()
-            if not scout:
-                await interaction.response.send_message(
-                    "❌ No encontrado.", ephemeral=True
+            return
+
+        target_map = scout["mapa"]
+
+        # Eliminar imagen del hilo de archivos si existe
+        url_img = scout["url_imagen"]
+        if url_img and str(url_img).strip().isdigit():
+            try:
+                guild_id = scout["guild_id"] or interaction.guild_id
+                c2 = await db.execute(
+                    "SELECT upload_channel_id FROM guild_config WHERE guild_id = ?",
+                    (guild_id,),
                 )
-                return
+                cfg = await c2.fetchone()
+                if cfg and cfg[0]:
+                    thread = self.bot.get_channel(
+                        cfg[0]
+                    ) or await self.bot.fetch_channel(cfg[0])
+                    if thread:
+                        try:
+                            img_msg = await thread.fetch_message(
+                                int(url_img.strip())
+                            )
+                            await img_msg.delete()
+                        except (discord.NotFound, discord.Forbidden, ValueError) as e:
+                            logger.debug(f"[Scouting] Imagen de scout ya inaccesible: {e}")
+            except Exception as e:
+                logging.getLogger("ArkTribeBot").warning(
+                    f"No se pudo eliminar imagen del scout #{sid}: {e}"
+                )
 
-            target_map = scout["mapa"]
-
-            # Eliminar imagen del hilo de archivos si existe
-            url_img = scout["url_imagen"]
-            if url_img and str(url_img).strip().isdigit():
-                try:
-                    guild_id = scout["guild_id"] or interaction.guild_id
-                    c2 = await db.execute(
-                        "SELECT upload_channel_id FROM guild_config WHERE guild_id = ?",
-                        (guild_id,),
-                    )
-                    cfg = await c2.fetchone()
-                    if cfg and cfg[0]:
-                        thread = self.bot.get_channel(
-                            cfg[0]
-                        ) or await self.bot.fetch_channel(cfg[0])
-                        if thread:
-                            try:
-                                img_msg = await thread.fetch_message(
-                                    int(url_img.strip())
-                                )
-                                await img_msg.delete()
-                            except (discord.NotFound, discord.Forbidden, ValueError) as e:
-                                logger.debug(f"[Scouting] Imagen de scout ya inaccesible: {e}")
-                except Exception as e:
-                    logging.getLogger("ArkTribeBot").warning(
-                        f"No se pudo eliminar imagen del scout #{sid}: {e}"
-                    )
-
-            await db.execute("DELETE FROM scouts WHERE id = ? AND guild_id = ?", (sid, interaction.guild_id))
-            await db.commit()
+        await db.execute("DELETE FROM scouts WHERE id = ? AND guild_id = ?", (sid, interaction.guild_id))
+        await db.commit()
 
         await interaction.response.send_message(
             f"🗑️ Scout **#{sid}** eliminado.", ephemeral=False
@@ -467,52 +462,52 @@ class ModifyScoutModal(discord.ui.Modal, title="Modificar Scout"):
             )
             return
 
-        async with aiosqlite.connect(self.bot.db_name) as db:
-            cursor = await db.execute(
-                "SELECT mapa, notas, nivel_amenaza FROM scouts WHERE id = ? AND guild_id = ?", (sid, interaction.guild_id)
+        db = self.bot.db
+        cursor = await db.execute(
+            "SELECT mapa, notas, nivel_amenaza FROM scouts WHERE id = ? AND guild_id = ?", (sid, interaction.guild_id)
+        )
+        row = await cursor.fetchone()
+        if not row:
+            await interaction.response.send_message(
+                "❌ Scout no encontrado.", ephemeral=True
             )
-            row = await cursor.fetchone()
-            if not row:
+            return
+
+        target_map = row[0]
+        existing_notas = row[1]
+        existing_amenaza = row[2]
+
+        new_amenaza = existing_amenaza
+        if amenaza:
+            try:
+                new_amenaza = int(amenaza)
+                if new_amenaza < 1 or new_amenaza > 5:
+                    await interaction.response.send_message(
+                        "❌ La amenaza debe ser entre 1 y 5.", ephemeral=True
+                    )
+                    return
+            except Exception:
                 await interaction.response.send_message(
-                    "❌ Scout no encontrado.", ephemeral=True
+                    "❌ La amenaza debe ser un número.", ephemeral=True
                 )
                 return
 
-            target_map = row[0]
-            existing_notas = row[1]
-            existing_amenaza = row[2]
+        new_notas = existing_notas
+        if notas:
+            import datetime as dt
 
-            new_amenaza = existing_amenaza
-            if amenaza:
-                try:
-                    new_amenaza = int(amenaza)
-                    if new_amenaza < 1 or new_amenaza > 5:
-                        await interaction.response.send_message(
-                            "❌ La amenaza debe ser entre 1 y 5.", ephemeral=True
-                        )
-                        return
-                except Exception:
-                    await interaction.response.send_message(
-                        "❌ La amenaza debe ser un número.", ephemeral=True
-                    )
-                    return
-
-            new_notas = existing_notas
-            if notas:
-                import datetime as dt
-
-                today = dt.date.today().strftime("%d/%m")
-                new_notas = (
-                    f"{existing_notas}\n[{today}]: {notas}"
-                    if existing_notas
-                    else f"[{today}]: {notas}"
-                )
-
-            await db.execute(
-                "UPDATE scouts SET notas = ?, nivel_amenaza = ? WHERE id = ? AND guild_id = ?",
-                (new_notas, new_amenaza, sid, interaction.guild_id),
+            today = dt.date.today().strftime("%d/%m")
+            new_notas = (
+                f"{existing_notas}\n[{today}]: {notas}"
+                if existing_notas
+                else f"[{today}]: {notas}"
             )
-            await db.commit()
+
+        await db.execute(
+            "UPDATE scouts SET notas = ?, nivel_amenaza = ? WHERE id = ? AND guild_id = ?",
+            (new_notas, new_amenaza, sid, interaction.guild_id),
+        )
+        await db.commit()
 
         await interaction.response.send_message(
             f"✅ Scout **#{sid}** actualizado.", ephemeral=False
@@ -551,24 +546,23 @@ class Scouting(commands.Cog):
         )
         await channel.send(embed=info_embed)
 
-        async with aiosqlite.connect(self.bot.db_name) as db:
-            db.row_factory = aiosqlite.Row
-            cursor = await db.execute(
-                "SELECT * FROM scouts WHERE guild_id = ? ORDER BY id DESC",
-                (guild_id,),
-            )
-            rows = await cursor.fetchall()
+        db = self.bot.db
+        cursor = await db.execute(
+            "SELECT * FROM scouts WHERE guild_id = ? ORDER BY id DESC",
+            (guild_id,),
+        )
+        rows = await cursor.fetchall()
 
         embed, _, view = await build_scout_embed_view(self.bot, rows, "Global", 0)
         msg = await channel.send(embed=embed, view=view)
         await asyncio.sleep(0.5)
 
-        async with aiosqlite.connect(self.bot.db_name) as db:
-            await db.execute(
-                "INSERT INTO scout_messages (guild_id, channel_id, message_id) VALUES (?, ?, ?)",
-                (guild_id, channel.id, msg.id),
-            )
-            await db.commit()
+        db = self.bot.db
+        await db.execute(
+            "INSERT INTO scout_messages (guild_id, channel_id, message_id) VALUES (?, ?, ?)",
+            (guild_id, channel.id, msg.id),
+        )
+        await db.commit()
 
     async def scouting_mapa_autocomplete(
         self, interaction: discord.Interaction, current: str
@@ -606,27 +600,27 @@ class Scouting(commands.Cog):
         await interaction.response.defer(ephemeral=False)
 
         # Insertar primero para obtener el ID autogenerado
-        async with aiosqlite.connect(self.bot.db_name) as db:
-            cursor = await db.execute(
-                """
-                INSERT INTO scouts (guild_id, tribu_enemiga, mapa, coordenadas, nivel_amenaza, url_imagen, notas)
-                VALUES (?, ?, ?, ?, ?, 'N/A', ?)
-            """,
-                (interaction.guild_id, tribu, mapa, coords, amenaza, notas),
-            )
-            scout_id = cursor.lastrowid
-            await db.commit()
+        db = self.bot.db
+        cursor = await db.execute(
+            """
+            INSERT INTO scouts (guild_id, tribu_enemiga, mapa, coordenadas, nivel_amenaza, url_imagen, notas)
+            VALUES (?, ?, ?, ?, ?, 'N/A', ?)
+        """,
+            (interaction.guild_id, tribu, mapa, coords, amenaza, notas),
+        )
+        scout_id = cursor.lastrowid
+        await db.commit()
 
         url_imagen = "N/A"
         if imagen:
             try:
-                async with aiosqlite.connect(self.bot.db_name) as db:
-                    c = await db.execute(
-                        "SELECT upload_channel_id FROM guild_config WHERE guild_id = ?",
-                        (interaction.guild_id,),
-                    )
-                    cfg_row = await c.fetchone()
-                    upload_id = cfg_row[0] if cfg_row else None
+                db = self.bot.db
+                c = await db.execute(
+                    "SELECT upload_channel_id FROM guild_config WHERE guild_id = ?",
+                    (interaction.guild_id,),
+                )
+                cfg_row = await c.fetchone()
+                upload_id = cfg_row[0] if cfg_row else None
 
                 thread = None
                 if upload_id:
@@ -649,12 +643,12 @@ class Scouting(commands.Cog):
                 url_imagen = imagen.url
 
             # Actualizar url_imagen ahora que ya tenemos el mensaje subido
-            async with aiosqlite.connect(self.bot.db_name) as db:
-                await db.execute(
-                    "UPDATE scouts SET url_imagen = ? WHERE id = ?",
-                    (url_imagen, scout_id),
-                )
-                await db.commit()
+            db = self.bot.db
+            await db.execute(
+                "UPDATE scouts SET url_imagen = ? WHERE id = ?",
+                (url_imagen, scout_id),
+            )
+            await db.commit()
 
         await interaction.followup.send(
             f"✅ Base de **{tribu}** ({mapa}) registrada. [Scout **#{scout_id}**]"
@@ -684,11 +678,10 @@ class Scouting(commands.Cog):
     ):
         await interaction.response.defer(ephemeral=False)
 
-        async with aiosqlite.connect(self.bot.db_name) as db:
-            db.row_factory = aiosqlite.Row
-            # Buscamos primero el scout sin filtrar por guild para diagnosticar si existe en otro lado
-            cursor = await db.execute("SELECT tribu_enemiga, mapa, guild_id FROM scouts WHERE id = ?", (id,))
-            row = await cursor.fetchone()
+        db = self.bot.db
+        # Buscamos primero el scout sin filtrar por guild para diagnosticar si existe en otro lado
+        cursor = await db.execute("SELECT tribu_enemiga, mapa, guild_id FROM scouts WHERE id = ?", (id,))
+        row = await cursor.fetchone()
 
         if not row:
             await interaction.followup.send(f"❌ No existe ningún registro de scout con ID **{id}**.")
@@ -704,13 +697,13 @@ class Scouting(commands.Cog):
         url_imagen = "N/A"
 
         try:
-            async with aiosqlite.connect(self.bot.db_name) as db:
-                c = await db.execute(
-                    "SELECT upload_channel_id FROM guild_config WHERE guild_id = ?",
-                    (interaction.guild_id,),
-                )
-                cfg_row = await c.fetchone()
-                upload_id = cfg_row[0] if cfg_row else None
+            db = self.bot.db
+            c = await db.execute(
+                "SELECT upload_channel_id FROM guild_config WHERE guild_id = ?",
+                (interaction.guild_id,),
+            )
+            cfg_row = await c.fetchone()
+            upload_id = cfg_row[0] if cfg_row else None
 
             thread = None
             if upload_id:
@@ -726,12 +719,12 @@ class Scouting(commands.Cog):
             logging.getLogger("ArkTribeBot").error(f"Error redirigiendo imagen (scout_add_image): {e}")
             url_imagen = imagen.url
 
-        async with aiosqlite.connect(self.bot.db_name) as db:
-            await db.execute(
-                "UPDATE scouts SET url_imagen = ? WHERE id = ?",
-                (url_imagen, id),
-            )
-            await db.commit()
+        db = self.bot.db
+        await db.execute(
+            "UPDATE scouts SET url_imagen = ? WHERE id = ?",
+            (url_imagen, id),
+        )
+        await db.commit()
 
         await interaction.followup.send(
             f"✅ Imagen adjuntada satisfactoriamente al Scout **#{id}** ({tribu})."
@@ -750,20 +743,20 @@ class Scouting(commands.Cog):
     )
     @app_commands.describe(id="ID del registro a eliminar")
     async def scout_delete(self, interaction: discord.Interaction, id: int):
-        async with aiosqlite.connect(self.bot.db_name) as db:
-            cursor = await db.execute("SELECT mapa FROM scouts WHERE id = ? AND guild_id = ?", (id, interaction.guild_id,))
-            row = await cursor.fetchone()
+        db = self.bot.db
+        cursor = await db.execute("SELECT mapa FROM scouts WHERE id = ? AND guild_id = ?", (id, interaction.guild_id,))
+        row = await cursor.fetchone()
 
-            if not row:
-                await interaction.response.send_message(
-                    f"❌ ID {id} no encontrado o no tienes permisos.", ephemeral=True
-                )
-                return
+        if not row:
+            await interaction.response.send_message(
+                f"❌ ID {id} no encontrado o no tienes permisos.", ephemeral=True
+            )
+            return
 
-            map_target = row[0]
+        map_target = row[0]
 
-            await db.execute("DELETE FROM scouts WHERE id = ? AND guild_id = ?", (id, interaction.guild_id))
-            await db.commit()
+        await db.execute("DELETE FROM scouts WHERE id = ? AND guild_id = ?", (id, interaction.guild_id))
+        await db.commit()
 
         await interaction.response.send_message(
             f"🗑️ Registro #{id} eliminado.", ephemeral=False
@@ -787,19 +780,18 @@ class Scouting(commands.Cog):
         target_map = mapa if mapa else "Global"
         ephemeral_mode = bool(mapa)
 
-        async with aiosqlite.connect(self.bot.db_name) as db:
-            db.row_factory = aiosqlite.Row
-            if target_map == "Global":
-                cursor = await db.execute(
-                    "SELECT * FROM scouts WHERE guild_id = ? ORDER BY mapa, nivel_amenaza DESC",
-                    (interaction.guild_id,)
-                )
-            else:
-                cursor = await db.execute(
-                    "SELECT * FROM scouts WHERE guild_id = ? AND mapa = ? ORDER BY nivel_amenaza DESC",
-                    (interaction.guild_id, target_map,),
-                )
-            rows = await cursor.fetchall()
+        db = self.bot.db
+        if target_map == "Global":
+            cursor = await db.execute(
+                "SELECT * FROM scouts WHERE guild_id = ? ORDER BY mapa, nivel_amenaza DESC",
+                (interaction.guild_id,)
+            )
+        else:
+            cursor = await db.execute(
+                "SELECT * FROM scouts WHERE guild_id = ? AND mapa = ? ORDER BY nivel_amenaza DESC",
+                (interaction.guild_id, target_map,),
+            )
+        rows = await cursor.fetchall()
 
         if ephemeral_mode:
             # Vista privada paginada — página 0
@@ -812,12 +804,12 @@ class Scouting(commands.Cog):
                 embed=embed, view=view, ephemeral=False
             )
             message = await interaction.original_response()
-            async with aiosqlite.connect(self.bot.db_name) as db:
-                await db.execute(
-                    "INSERT INTO scout_messages (guild_id, channel_id, message_id, map_filter) VALUES (?, ?, ?, ?)",
-                    (interaction.guild_id, interaction.channel_id, message.id, "Global"),
-                )
-                await db.commit()
+            db = self.bot.db
+            await db.execute(
+                "INSERT INTO scout_messages (guild_id, channel_id, message_id, map_filter) VALUES (?, ?, ?, ?)",
+                (interaction.guild_id, interaction.channel_id, message.id, "Global"),
+            )
+            await db.commit()
 
     async def _send_private_scout_page(
         self,
@@ -887,13 +879,12 @@ class ScoutPrivateListView(discord.ui.View):
     ):
         cog = self.bot.cogs.get("Scouting")
         if cog:
-            async with aiosqlite.connect(self.bot.db_name) as db:
-                db.row_factory = aiosqlite.Row
-                cursor = await db.execute(
-                    "SELECT * FROM scouts WHERE guild_id = ? AND mapa = ? ORDER BY nivel_amenaza DESC",
-                    (interaction.guild_id, self.target_map,),
-                )
-                rows = await cursor.fetchall()
+            db = self.bot.db
+            cursor = await db.execute(
+                "SELECT * FROM scouts WHERE guild_id = ? AND mapa = ? ORDER BY nivel_amenaza DESC",
+                (interaction.guild_id, self.target_map,),
+            )
+            rows = await cursor.fetchall()
             await cog._send_private_scout_page(
                 interaction,
                 rows,
@@ -910,13 +901,12 @@ class ScoutPrivateListView(discord.ui.View):
     ):
         cog = self.bot.cogs.get("Scouting")
         if cog:
-            async with aiosqlite.connect(self.bot.db_name) as db:
-                db.row_factory = aiosqlite.Row
-                cursor = await db.execute(
-                    "SELECT * FROM scouts WHERE guild_id = ? AND mapa = ? ORDER BY nivel_amenaza DESC",
-                    (interaction.guild_id, self.target_map,),
-                )
-                rows = await cursor.fetchall()
+            db = self.bot.db
+            cursor = await db.execute(
+                "SELECT * FROM scouts WHERE guild_id = ? AND mapa = ? ORDER BY nivel_amenaza DESC",
+                (interaction.guild_id, self.target_map,),
+            )
+            rows = await cursor.fetchall()
             total_pages = max(1, (len(rows) + SCOUT_PAGE_SIZE - 1) // SCOUT_PAGE_SIZE)
             await cog._send_private_scout_page(
                 interaction,

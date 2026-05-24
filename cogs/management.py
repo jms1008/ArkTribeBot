@@ -85,10 +85,9 @@ class TodoView(discord.ui.View):
         await self._update_page(interaction, new_page)
 
     async def _update_page(self, interaction: discord.Interaction, new_page: int):
-        async with aiosqlite.connect(self.bot.db_name) as db:
-            db.row_factory = aiosqlite.Row
-            cursor = await db.execute("SELECT * FROM todos WHERE guild_id = ?", (interaction.guild_id,))
-            rows = await cursor.fetchall()
+        db = self.bot.db
+        cursor = await db.execute("SELECT * FROM todos WHERE guild_id = ?", (interaction.guild_id,))
+        rows = await cursor.fetchall()
         
         embed, page, view = build_todo_embed_view(self.bot, rows, new_page)
         await interaction.response.edit_message(embed=embed, view=view)
@@ -148,43 +147,41 @@ def build_todo_embed_view(bot, rows: list, page: int = 0):
 async def update_all_dashboards(bot, guild_id: int, page: int = 0):
     """Actualiza todos los mensajes de lista de tareas registrados en el servidor actual."""
     # 1. Generación del nuevo Embed
-    async with aiosqlite.connect(bot.db_name) as db:
-        db.row_factory = aiosqlite.Row
-        cursor = await db.execute("SELECT * FROM todos WHERE guild_id = ?", (guild_id,))
-        rows = await cursor.fetchall()
+    db = bot.db
+    cursor = await db.execute("SELECT * FROM todos WHERE guild_id = ?", (guild_id,))
+    rows = await cursor.fetchall()
 
     embed, current_page, view = build_todo_embed_view(bot, rows, page)
     # 2. Búsqueda y edición de mensajes registrados
     messages_to_remove = []
-    async with aiosqlite.connect(bot.db_name) as db:
-        db.row_factory = aiosqlite.Row
-        cursor = await db.execute(
-            "SELECT id, channel_id, message_id FROM todo_messages WHERE guild_id = ?", (guild_id,)
-        )
-        msg_rows = await cursor.fetchall()
+    db = bot.db
+    cursor = await db.execute(
+        "SELECT id, channel_id, message_id FROM todo_messages WHERE guild_id = ?", (guild_id,)
+    )
+    msg_rows = await cursor.fetchall()
 
-        for row in msg_rows:
-            try:
-                channel = bot.get_channel(row["channel_id"]) or await bot.fetch_channel(
-                    row["channel_id"]
-                )
-                if channel:
-                    message = await channel.fetch_message(row["message_id"])
-                    await message.edit(embed=embed, view=view)
-                else:
-                    messages_to_remove.append(row["id"])
-            except (discord.NotFound, discord.Forbidden):
-                messages_to_remove.append(
-                    row["id"]
-                )  # Inaccesible (borrado o sin permisos)
-            except Exception as e:
-                logger.error(f"[Management] Error actualizando dashboard {row['id']}: {e}")
+    for row in msg_rows:
+        try:
+            channel = bot.get_channel(row["channel_id"]) or await bot.fetch_channel(
+                row["channel_id"]
+            )
+            if channel:
+                message = await channel.fetch_message(row["message_id"])
+                await message.edit(embed=embed, view=view)
+            else:
+                messages_to_remove.append(row["id"])
+        except (discord.NotFound, discord.Forbidden):
+            messages_to_remove.append(
+                row["id"]
+            )  # Inaccesible (borrado o sin permisos)
+        except Exception as e:
+            logger.error(f"[Management] Error actualizando dashboard {row['id']}: {e}")
 
-        # Limpieza de registros inactivos
-        if messages_to_remove:
-            for mid in messages_to_remove:
-                await db.execute("DELETE FROM todo_messages WHERE id = ?", (mid,))
-            await db.commit()
+    # Limpieza de registros inactivos
+    if messages_to_remove:
+        for mid in messages_to_remove:
+            await db.execute("DELETE FROM todo_messages WHERE id = ?", (mid,))
+        await db.commit()
 
 
 class AddTaskModal(discord.ui.Modal, title="Añadir Nueva Tarea"):
@@ -200,9 +197,9 @@ class AddTaskModal(discord.ui.Modal, title="Añadir Nueva Tarea"):
 
     async def on_submit(self, interaction: discord.Interaction):
         tarea = self.tarea_content.value
-        async with aiosqlite.connect(self.bot.db_name) as db:
-            await db.execute("INSERT INTO todos (guild_id, tarea) VALUES (?, ?)", (interaction.guild_id, tarea,))
-            await db.commit()
+        db = self.bot.db
+        await db.execute("INSERT INTO todos (guild_id, tarea) VALUES (?, ?)", (interaction.guild_id, tarea,))
+        await db.commit()
 
         await interaction.response.send_message(
             f"✅ Tarea añadida: **{tarea}**", ephemeral=False
@@ -236,47 +233,46 @@ class ClaimTaskModal(discord.ui.Modal, title="Reclamar Tarea"):
             )
             return
 
-        async with aiosqlite.connect(self.bot.db_name) as db:
-            db.row_factory = aiosqlite.Row
-            # Verificar si la tarea existe y recuperar datos actuales
-            cursor = await db.execute(
-                "SELECT asignado_a FROM todos WHERE id = ? AND guild_id = ?",
-                (tid_int, interaction.guild_id),
+        db = self.bot.db
+        # Verificar si la tarea existe y recuperar datos actuales
+        cursor = await db.execute(
+            "SELECT asignado_a FROM todos WHERE id = ? AND guild_id = ?",
+            (tid_int, interaction.guild_id),
+        )
+        row = await cursor.fetchone()
+        if not row:
+            await interaction.response.send_message(
+                f"❌ La tarea **#{tid_int}** no existe en este servidor.",
+                ephemeral=True,
             )
-            row = await cursor.fetchone()
-            if not row:
-                await interaction.response.send_message(
-                    f"❌ La tarea **#{tid_int}** no existe en este servidor.",
-                    ephemeral=True,
-                )
-                return
+            return
             
-            actual_assignee = row["asignado_a"]
-            actual_assignee_str = str(actual_assignee) if actual_assignee else ""
-            user_mention = f"<@{interaction.user.id}>"
-            user_id_str = str(interaction.user.id)
-            user_name = interaction.user.display_name
+        actual_assignee = row["asignado_a"]
+        actual_assignee_str = str(actual_assignee) if actual_assignee else ""
+        user_mention = f"<@{interaction.user.id}>"
+        user_id_str = str(interaction.user.id)
+        user_name = interaction.user.display_name
             
-            assignees = [a.strip() for a in actual_assignee_str.split(",") if a.strip()]
+        assignees = [a.strip() for a in actual_assignee_str.split(",") if a.strip()]
             
-            encontrado = False
-            for a in assignees:
-                core = a.replace("<@", "").replace(">", "")
-                if core == user_id_str or core.lower() == user_name.lower():
-                    assignees.remove(a)
-                    encontrado = True
-                    break
+        encontrado = False
+        for a in assignees:
+            core = a.replace("<@", "").replace(">", "")
+            if core == user_id_str or core.lower() == user_name.lower():
+                assignees.remove(a)
+                encontrado = True
+                break
                     
-            if not encontrado:
-                assignees.append(user_mention)
+        if not encontrado:
+            assignees.append(user_mention)
                 
-            new_assignee = ", ".join(assignees)
+        new_assignee = ", ".join(assignees)
 
-            await db.execute(
-                "UPDATE todos SET asignado_a = ?, estado = 'En Progreso' WHERE id = ? AND guild_id = ?",
-                (new_assignee, tid_int, interaction.guild_id),
-            )
-            await db.commit()
+        await db.execute(
+            "UPDATE todos SET asignado_a = ?, estado = 'En Progreso' WHERE id = ? AND guild_id = ?",
+            (new_assignee, tid_int, interaction.guild_id),
+        )
+        await db.commit()
 
         # Envío de feedback temporal
         await interaction.response.send_message(
@@ -314,21 +310,21 @@ class DeleteTaskModal(discord.ui.Modal, title="Eliminar Tarea"):
             )
             return
 
-        async with aiosqlite.connect(self.bot.db_name) as db:
-            # Verificar si la tarea existe y pertenece al servidor
-            cursor = await db.execute(
-                "SELECT id FROM todos WHERE id = ? AND guild_id = ?",
-                (tid_int, interaction.guild_id),
+        db = self.bot.db
+        # Verificar si la tarea existe y pertenece al servidor
+        cursor = await db.execute(
+            "SELECT id FROM todos WHERE id = ? AND guild_id = ?",
+            (tid_int, interaction.guild_id),
+        )
+        if not await cursor.fetchone():
+            await interaction.response.send_message(
+                f"❌ La tarea **#{tid_int}** no existe en este servidor.",
+                ephemeral=True,
             )
-            if not await cursor.fetchone():
-                await interaction.response.send_message(
-                    f"❌ La tarea **#{tid_int}** no existe en este servidor.",
-                    ephemeral=True,
-                )
-                return
+            return
 
-            await db.execute("DELETE FROM todos WHERE id = ? AND guild_id = ?", (tid_int, interaction.guild_id,))
-            await db.commit()
+        await db.execute("DELETE FROM todos WHERE id = ? AND guild_id = ?", (tid_int, interaction.guild_id,))
+        await db.commit()
 
         await interaction.response.send_message(
             f"🗑️ Tarea **#{t_id}** eliminada.", ephemeral=False
@@ -507,13 +503,12 @@ class Management(commands.Cog, name="Management"):
         )
         await channel.send(embed=info_embed)
 
-        async with aiosqlite.connect(self.bot.db_name) as db:
-            db.row_factory = aiosqlite.Row
-            cursor = await db.execute(
-                "SELECT * FROM todos WHERE guild_id = ?",
-                (guild_id,),
-            )
-            rows = await cursor.fetchall()
+        db = self.bot.db
+        cursor = await db.execute(
+            "SELECT * FROM todos WHERE guild_id = ?",
+            (guild_id,),
+        )
+        rows = await cursor.fetchall()
 
         todo_embed = discord.Embed(
             title="📝 Lista de Tareas", color=discord.Color.orange()
@@ -535,21 +530,21 @@ class Management(commands.Cog, name="Management"):
         msg = await channel.send(embed=todo_embed, view=view)
         await asyncio.sleep(0.5)
 
-        async with aiosqlite.connect(self.bot.db_name) as db:
-            await db.execute(
-                "INSERT INTO todo_messages (guild_id, channel_id, message_id) VALUES (?, ?, ?)",
-                (guild_id, channel.id, msg.id),
-            )
-            await db.commit()
+        db = self.bot.db
+        await db.execute(
+            "INSERT INTO todo_messages (guild_id, channel_id, message_id) VALUES (?, ?, ?)",
+            (guild_id, channel.id, msg.id),
+        )
+        await db.commit()
 
     @app_commands.command(
         name="todo_add", description="Añade una nueva tarea a la lista."
     )
     @app_commands.describe(tarea="Descripción de la tarea")
     async def todo_add(self, interaction: discord.Interaction, tarea: str):
-        async with aiosqlite.connect(self.bot.db_name) as db:
-            await db.execute("INSERT INTO todos (guild_id, tarea) VALUES (?, ?)", (interaction.guild_id, tarea,))
-            await db.commit()
+        db = self.bot.db
+        await db.execute("INSERT INTO todos (guild_id, tarea) VALUES (?, ?)", (interaction.guild_id, tarea,))
+        await db.commit()
 
         # Envío de feedback
         await interaction.response.send_message(
@@ -572,10 +567,9 @@ class Management(commands.Cog, name="Management"):
     )
     async def todo_list(self, interaction: discord.Interaction):
         # Generación del Embed inicial
-        async with aiosqlite.connect(self.bot.db_name) as db:
-            db.row_factory = aiosqlite.Row
-            cursor = await db.execute("SELECT * FROM todos WHERE guild_id = ?", (interaction.guild_id,))
-            rows = await cursor.fetchall()
+        db = self.bot.db
+        cursor = await db.execute("SELECT * FROM todos WHERE guild_id = ?", (interaction.guild_id,))
+        rows = await cursor.fetchall()
 
         embed = discord.Embed(title="📝 Lista de Tareas", color=discord.Color.orange())
         if not rows:
@@ -596,12 +590,12 @@ class Management(commands.Cog, name="Management"):
         message = await interaction.original_response()
 
         # Registro del mensaje para futuras actualizaciones
-        async with aiosqlite.connect(self.bot.db_name) as db:
-            await db.execute(
-                "INSERT INTO todo_messages (guild_id, channel_id, message_id) VALUES (?, ?, ?)",
-                (interaction.guild_id, interaction.channel_id, message.id),
-            )
-            await db.commit()
+        db = self.bot.db
+        await db.execute(
+            "INSERT INTO todo_messages (guild_id, channel_id, message_id) VALUES (?, ?, ?)",
+            (interaction.guild_id, interaction.channel_id, message.id),
+        )
+        await db.commit()
 
     @app_commands.command(
         name="info", description="Muestra la información y guía de uso de un módulo específico."
@@ -659,75 +653,74 @@ class Management(commands.Cog, name="Management"):
             )
             return
 
-        async with aiosqlite.connect(self.bot.db_name) as db:
-            db.row_factory = aiosqlite.Row
+        db = self.bot.db
 
-            # Verificar si el jugador existe en la blacklist
-            cursor = await db.execute(
-                "SELECT id FROM blacklist WHERE player = ? AND guild_id = ?",
-                (jugador, interaction.guild_id),
+        # Verificar si el jugador existe en la blacklist
+        cursor = await db.execute(
+            "SELECT id FROM blacklist WHERE player = ? AND guild_id = ?",
+            (jugador, interaction.guild_id),
+        )
+        bl_row = await cursor.fetchone()
+
+        # Si no está en la blacklist, lo añadimos automáticamente
+        if not bl_row:
+            from datetime import datetime
+            await db.execute(
+                "INSERT INTO blacklist (guild_id, player, tribe, map, notes, is_enemy, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    interaction.guild_id,
+                    jugador,
+                    tribu or "Desconocido",
+                    mapa or "Desconocido",
+                    notas or "",
+                    int(enemigo.value) if enemigo else 1,
+                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                ),
             )
-            bl_row = await cursor.fetchone()
+            await db.commit()
+            was_new = True
+        else:
+            was_new = False
+            # Actualizar los campos proporcionados en blacklist
+            updates = {}
+            if tribu is not None:
+                updates["tribe"] = tribu
+            if mapa is not None:
+                updates["map"] = mapa
+            if notas is not None:
+                updates["notes"] = notas
+            if enemigo is not None:
+                updates["is_enemy"] = int(enemigo.value)
 
-            # Si no está en la blacklist, lo añadimos automáticamente
-            if not bl_row:
-                from datetime import datetime
-                await db.execute(
-                    "INSERT INTO blacklist (guild_id, player, tribe, map, notes, is_enemy, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (
-                        interaction.guild_id,
-                        jugador,
-                        tribu or "Desconocido",
-                        mapa or "Desconocido",
-                        notas or "",
-                        int(enemigo.value) if enemigo else 1,
-                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    ),
-                )
-                await db.commit()
-                was_new = True
-            else:
-                was_new = False
-                # Actualizar los campos proporcionados en blacklist
-                updates = {}
-                if tribu is not None:
-                    updates["tribe"] = tribu
-                if mapa is not None:
-                    updates["map"] = mapa
-                if notas is not None:
-                    updates["notes"] = notas
-                if enemigo is not None:
-                    updates["is_enemy"] = int(enemigo.value)
+            if updates:
+                # Defensa en profundidad: verificar columnas contra whitelist antes de interpolar.
+                from utils.parsing import ALLOWED_BLACKLIST_FIELDS
 
-                if updates:
-                    # Defensa en profundidad: verificar columnas contra whitelist antes de interpolar.
-                    from utils.parsing import ALLOWED_BLACKLIST_FIELDS
-
-                    safe_keys = [k for k in updates.keys() if k in ALLOWED_BLACKLIST_FIELDS]
-                    if safe_keys:
-                        set_clause = ", ".join(f"{k} = ?" for k in safe_keys)
-                        values = [updates[k] for k in safe_keys] + [bl_row["id"], interaction.guild_id]
-                        await db.execute(
-                            f"UPDATE blacklist SET {set_clause} WHERE id = ? AND guild_id = ?",
-                            values,
-                        )
-                        await db.commit()
-
-            # Gestión del personaje (nombre in-game) en tribe_characters
-            if personaje is not None:
-                try:
-                    cursor = await db.execute(
-                        "SELECT character_name FROM tribe_characters WHERE player_name = ? AND character_name = ? AND guild_id = ?",
-                        (jugador, personaje, interaction.guild_id),
+                safe_keys = [k for k in updates.keys() if k in ALLOWED_BLACKLIST_FIELDS]
+                if safe_keys:
+                    set_clause = ", ".join(f"{k} = ?" for k in safe_keys)
+                    values = [updates[k] for k in safe_keys] + [bl_row["id"], interaction.guild_id]
+                    await db.execute(
+                        f"UPDATE blacklist SET {set_clause} WHERE id = ? AND guild_id = ?",
+                        values,
                     )
-                    if not await cursor.fetchone():
-                        await db.execute(
-                            "INSERT INTO tribe_characters (guild_id, player_name, character_name) VALUES (?, ?, ?)",
-                            (interaction.guild_id, jugador, personaje),
-                        )
-                        await db.commit()
-                except Exception as e:
-                    logger.error(f"[bl_editar] Error al guardar personaje: {e}")
+                    await db.commit()
+
+        # Gestión del personaje (nombre in-game) en tribe_characters
+        if personaje is not None:
+            try:
+                cursor = await db.execute(
+                    "SELECT character_name FROM tribe_characters WHERE player_name = ? AND character_name = ? AND guild_id = ?",
+                    (jugador, personaje, interaction.guild_id),
+                )
+                if not await cursor.fetchone():
+                    await db.execute(
+                        "INSERT INTO tribe_characters (guild_id, player_name, character_name) VALUES (?, ?, ?)",
+                        (interaction.guild_id, jugador, personaje),
+                    )
+                    await db.commit()
+            except Exception as e:
+                logger.error(f"[bl_editar] Error al guardar personaje: {e}")
 
         # Resumen de cambios
         changes = []
@@ -780,71 +773,71 @@ class Management(commands.Cog, name="Management"):
         await interaction.response.defer(ephemeral=False)
         guild_id = interaction.guild_id
         
-        async with aiosqlite.connect(self.bot.db_name) as db:
-            # 1. Resolver el encadenamiento (Si Z se convierte en Y, actualizar todos los X apuntando a Z para que apunten a Y)
-            await db.execute(
-                "UPDATE player_identities_link SET primary_name = ? WHERE primary_name = ? AND guild_id = ?",
-                (primario, secundario, guild_id)
+        db = self.bot.db
+        # 1. Resolver el encadenamiento (Si Z se convierte en Y, actualizar todos los X apuntando a Z para que apunten a Y)
+        await db.execute(
+            "UPDATE player_identities_link SET primary_name = ? WHERE primary_name = ? AND guild_id = ?",
+            (primario, secundario, guild_id)
+        )
+            
+        # 2. Insertar el nuevo alias
+        await db.execute(
+            "INSERT OR REPLACE INTO player_identities_link (guild_id, secondary_name, primary_name) VALUES (?, ?, ?)",
+            (guild_id, secundario, primario)
+        )
+            
+        # 3. Trasladar registro de sesiones completas (radar activo e inactivo)
+        await db.execute(
+            "UPDATE k4ultra_sessions SET player_name = ? WHERE player_name = ? AND guild_id = ?",
+            (primario, secundario, guild_id)
+        )
+            
+        # 4. Fusión de Playtimes
+        c_play = await db.execute("SELECT map_name, total_minutes, last_seen FROM k4ultra_playtime WHERE player_name = ? AND guild_id = ?", (secundario, guild_id))
+        old_playtimes = await c_play.fetchall()
+            
+        for map_name, mins, last_seen in old_playtimes:
+            c_prim = await db.execute("SELECT total_minutes FROM k4ultra_playtime WHERE player_name = ? AND map_name = ? AND guild_id = ?", (primario, map_name, guild_id))
+            prim_row = await c_prim.fetchone()
+            if prim_row:
+                new_mins = prim_row[0] + mins
+                await db.execute("UPDATE k4ultra_playtime SET total_minutes = ?, last_seen = max(last_seen, ?) WHERE player_name = ? AND map_name = ? AND guild_id = ?", (new_mins, last_seen, primario, map_name, guild_id))
+            else:
+                await db.execute("INSERT INTO k4ultra_playtime (guild_id, player_name, map_name, total_minutes, last_seen) VALUES (?, ?, ?, ?, ?)", (guild_id, primario, map_name, mins, last_seen))
+            
+        await db.execute("DELETE FROM k4ultra_playtime WHERE player_name = ? AND guild_id = ?", (secundario, guild_id))
+            
+        # 5. Trasladar alts en In-Game
+        await db.execute(
+            "UPDATE tribe_characters SET player_name = ? WHERE player_name = ? AND guild_id = ?",
+            (primario, secundario, guild_id)
+        )
+            
+        # 6. Para blacklist, simplemente si tenía notas antiguas, no queremos perderlas
+        c_bl = await db.execute("SELECT notes FROM blacklist WHERE player = ? AND guild_id = ?", (secundario, guild_id))
+        row_bl = await c_bl.fetchone()
+        if row_bl:
+            old_note = row_bl[0]
+            c_p_bl = await db.execute("SELECT id, notes FROM blacklist WHERE player = ? AND guild_id = ?", (primario, guild_id))
+            row_p_bl = await c_p_bl.fetchone()
+            if row_p_bl:
+                combined_notes = f"{row_p_bl[1]} | [De {secundario}]: {old_note}"
+                await db.execute("UPDATE blacklist SET notes = ? WHERE id = ?", (combined_notes, row_p_bl[0]))
+            else:
+                new_note = f"[Heredado de {secundario}]: {old_note}"
+                await db.execute("UPDATE blacklist SET player = ?, notes = ? WHERE player = ? AND guild_id = ?", (primario, new_note, secundario, guild_id))
+            
+        await db.execute("DELETE FROM blacklist WHERE player = ? AND guild_id = ?", (secundario, guild_id))
+            
+        # Eliminar duplicados en tribe_characters en caso de que ambos tuviesen ya los mismos in-games asignados
+        await db.execute("""
+            DELETE FROM tribe_characters 
+            WHERE rowid NOT IN (
+                SELECT max(rowid) FROM tribe_characters GROUP BY player_name, character_name, guild_id
             )
+        """)
             
-            # 2. Insertar el nuevo alias
-            await db.execute(
-                "INSERT OR REPLACE INTO player_identities_link (guild_id, secondary_name, primary_name) VALUES (?, ?, ?)",
-                (guild_id, secundario, primario)
-            )
-            
-            # 3. Trasladar registro de sesiones completas (radar activo e inactivo)
-            await db.execute(
-                "UPDATE k4ultra_sessions SET player_name = ? WHERE player_name = ? AND guild_id = ?",
-                (primario, secundario, guild_id)
-            )
-            
-            # 4. Fusión de Playtimes
-            c_play = await db.execute("SELECT map_name, total_minutes, last_seen FROM k4ultra_playtime WHERE player_name = ? AND guild_id = ?", (secundario, guild_id))
-            old_playtimes = await c_play.fetchall()
-            
-            for map_name, mins, last_seen in old_playtimes:
-                c_prim = await db.execute("SELECT total_minutes FROM k4ultra_playtime WHERE player_name = ? AND map_name = ? AND guild_id = ?", (primario, map_name, guild_id))
-                prim_row = await c_prim.fetchone()
-                if prim_row:
-                    new_mins = prim_row[0] + mins
-                    await db.execute("UPDATE k4ultra_playtime SET total_minutes = ?, last_seen = max(last_seen, ?) WHERE player_name = ? AND map_name = ? AND guild_id = ?", (new_mins, last_seen, primario, map_name, guild_id))
-                else:
-                    await db.execute("INSERT INTO k4ultra_playtime (guild_id, player_name, map_name, total_minutes, last_seen) VALUES (?, ?, ?, ?, ?)", (guild_id, primario, map_name, mins, last_seen))
-            
-            await db.execute("DELETE FROM k4ultra_playtime WHERE player_name = ? AND guild_id = ?", (secundario, guild_id))
-            
-            # 5. Trasladar alts en In-Game
-            await db.execute(
-                "UPDATE tribe_characters SET player_name = ? WHERE player_name = ? AND guild_id = ?",
-                (primario, secundario, guild_id)
-            )
-            
-            # 6. Para blacklist, simplemente si tenía notas antiguas, no queremos perderlas
-            c_bl = await db.execute("SELECT notes FROM blacklist WHERE player = ? AND guild_id = ?", (secundario, guild_id))
-            row_bl = await c_bl.fetchone()
-            if row_bl:
-                old_note = row_bl[0]
-                c_p_bl = await db.execute("SELECT id, notes FROM blacklist WHERE player = ? AND guild_id = ?", (primario, guild_id))
-                row_p_bl = await c_p_bl.fetchone()
-                if row_p_bl:
-                    combined_notes = f"{row_p_bl[1]} | [De {secundario}]: {old_note}"
-                    await db.execute("UPDATE blacklist SET notes = ? WHERE id = ?", (combined_notes, row_p_bl[0]))
-                else:
-                    new_note = f"[Heredado de {secundario}]: {old_note}"
-                    await db.execute("UPDATE blacklist SET player = ?, notes = ? WHERE player = ? AND guild_id = ?", (primario, new_note, secundario, guild_id))
-            
-            await db.execute("DELETE FROM blacklist WHERE player = ? AND guild_id = ?", (secundario, guild_id))
-            
-            # Eliminar duplicados en tribe_characters en caso de que ambos tuviesen ya los mismos in-games asignados
-            await db.execute("""
-                DELETE FROM tribe_characters 
-                WHERE rowid NOT IN (
-                    SELECT max(rowid) FROM tribe_characters GROUP BY player_name, character_name, guild_id
-                )
-            """)
-            
-            await db.commit()
+        await db.commit()
             
         # Mensaje de confirmación detallado
         embed = discord.Embed(
@@ -879,49 +872,49 @@ class Management(commands.Cog, name="Management"):
         apodo_final = apodo if apodo else jugador_nombre
         steam_safe = steam if steam else "No Registrado"
 
-        async with aiosqlite.connect(self.bot.db_name) as db:
-            # 1. Tabla Unificada de Perfiles (para futura persistencia general de la tribu)
-            await db.execute("""
-                CREATE TABLE IF NOT EXISTS tribe_profiles (
-                    guild_id INTEGER,
-                    discord_id INTEGER,
-                    ark_character TEXT,
-                    steam_id TEXT,
-                    alias TEXT,
-                    UNIQUE(guild_id, discord_id)
-                )
-            """)
-            await db.execute("""
-                INSERT INTO tribe_profiles (guild_id, discord_id, ark_character, steam_id, alias)
-                VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT(guild_id, discord_id) DO UPDATE SET 
-                    ark_character=excluded.ark_character,
-                    steam_id=excluded.steam_id,
-                    alias=excluded.alias
-            """, (interaction.guild_id, usuario.id, personaje, steam_safe, apodo_final))
+        db = self.bot.db
+        # 1. Tabla Unificada de Perfiles (para futura persistencia general de la tribu)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS tribe_profiles (
+                guild_id INTEGER,
+                discord_id INTEGER,
+                ark_character TEXT,
+                steam_id TEXT,
+                alias TEXT,
+                UNIQUE(guild_id, discord_id)
+            )
+        """)
+        await db.execute("""
+            INSERT INTO tribe_profiles (guild_id, discord_id, ark_character, steam_id, alias)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(guild_id, discord_id) DO UPDATE SET 
+                ark_character=excluded.ark_character,
+                steam_id=excluded.steam_id,
+                alias=excluded.alias
+        """, (interaction.guild_id, usuario.id, personaje, steam_safe, apodo_final))
 
-            # 2. Vínculo del Rancómetro (Warfare: tracker de muertes)
-            await db.execute(
-                """
-                INSERT INTO tribe_characters (guild_id, character_name, player_name)
-                VALUES (?, ?, ?)
-                ON CONFLICT(guild_id, character_name) DO UPDATE SET player_name = excluded.player_name
-                """,
-                (interaction.guild_id, personaje, jugador_nombre),
-            )
-            # Inicialización para el Rancómetro
-            await db.execute(
-                "INSERT OR IGNORE INTO tribe_kda (guild_id, player_name, kills, deaths) VALUES (?, ?, 0, 0)",
-                (interaction.guild_id, jugador_nombre),
-            )
+        # 2. Vínculo del Rancómetro (Warfare: tracker de muertes)
+        await db.execute(
+            """
+            INSERT INTO tribe_characters (guild_id, character_name, player_name)
+            VALUES (?, ?, ?)
+            ON CONFLICT(guild_id, character_name) DO UPDATE SET player_name = excluded.player_name
+            """,
+            (interaction.guild_id, personaje, jugador_nombre),
+        )
+        # Inicialización para el Rancómetro
+        await db.execute(
+            "INSERT OR IGNORE INTO tribe_kda (guild_id, player_name, kills, deaths) VALUES (?, ?, 0, 0)",
+            (interaction.guild_id, jugador_nombre),
+        )
 
-            # 3. K4Ultra Radar Alias (Si tiene un apodo y nombre característico)
-            await db.execute(
-                "INSERT INTO k4ultra_aliases (guild_id, player_name, alias) VALUES (?, ?, ?) ON CONFLICT(guild_id, player_name) DO UPDATE SET alias=excluded.alias",
-                (interaction.guild_id, personaje, apodo_final),
-            )
+        # 3. K4Ultra Radar Alias (Si tiene un apodo y nombre característico)
+        await db.execute(
+            "INSERT INTO k4ultra_aliases (guild_id, player_name, alias) VALUES (?, ?, ?) ON CONFLICT(guild_id, player_name) DO UPDATE SET alias=excluded.alias",
+            (interaction.guild_id, personaje, apodo_final),
+        )
             
-            await db.commit()
+        await db.commit()
 
         embed = discord.Embed(
             title="✅ Perfil de Tribu Configurado",

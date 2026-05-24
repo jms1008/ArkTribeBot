@@ -1,6 +1,6 @@
 import pytest
-from unittest.mock import AsyncMock, patch
-from cogs.warfare import Warfare, AddBlacklistModal
+
+from cogs.warfare import AddBlacklistModal, Warfare
 
 
 @pytest.fixture
@@ -10,22 +10,27 @@ async def warfare_cog(mock_bot):
 
 
 @pytest.mark.asyncio
-async def test_blacklist_add_modal(warfare_cog, mock_interaction, mocker):
-    """Test adding via modal (button replaces slash command)."""
+async def test_blacklist_add_modal(warfare_cog, mock_interaction, mock_bot):
+    """El modal inserta una fila en blacklist con los valores proporcionados."""
+    await mock_bot.init_mock_db()
+
     modal = AddBlacklistModal(warfare_cog.bot)
-    modal.player._value = "A"
-    modal.tribe._value = "B"
-    modal.map_name._value = "C"
-    modal.notes._value = "D"
+    modal.player._value = "Enemy"
+    modal.tribe._value = "BadTribe"
+    modal.map_name._value = "Ragnarok"
+    modal.notes._value = "Sospechoso"
 
-    with patch("cogs.warfare.aiosqlite.connect") as mock_connect:
-        mock_db = AsyncMock()
-        mock_db.__aenter__ = AsyncMock(return_value=mock_db)
-        mock_db.__aexit__ = AsyncMock(return_value=None)
-        mock_db.execute = AsyncMock()
-        mock_db.commit = AsyncMock()
-        mock_connect.return_value = mock_db
-
-        await modal.on_submit(mock_interaction)
+    await modal.on_submit(mock_interaction)
 
     mock_interaction.response.send_message.assert_called_once()
+
+    # Verificar la inserción real.
+    row = await mock_bot.db.fetchone(
+        "SELECT player, tribe, map, notes FROM blacklist WHERE guild_id = ?",
+        (mock_interaction.guild_id,),
+    )
+    assert row is not None
+    assert row["player"] == "Enemy"
+    assert row["tribe"] == "BadTribe"
+    assert row["map"] == "Ragnarok"
+    assert row["notes"] == "Sospechoso"
