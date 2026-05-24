@@ -898,6 +898,24 @@ class Warfare(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
+    # --- Bus de eventos: Warfare es dueño de los dashboards Blacklist y KDA. ---
+
+    @commands.Cog.listener()
+    async def on_blacklist_updated(self, guild_id: int):
+        """Refresca el dashboard de blacklist cuando algún cog la modifica."""
+        try:
+            await update_blacklist_dashboards(self.bot, guild_id)
+        except Exception as e:
+            logger.error(f"[Warfare] Refresh blacklist falló (guild {guild_id}): {e}")
+
+    @commands.Cog.listener()
+    async def on_kda_updated(self, guild_id: int):
+        """Refresca el dashboard de KDA cuando algún cog modifica deaths/kills."""
+        try:
+            await update_kda_dashboards(self.bot, guild_id)
+        except Exception as e:
+            logger.error(f"[Warfare] Refresh KDA falló (guild {guild_id}): {e}")
+
     async def setup_dashboard(self, guild_id: int, channel: discord.TextChannel):
         """Inicializa el dashboard interactivo de Blacklist."""
         import aiosqlite

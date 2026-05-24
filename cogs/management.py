@@ -5,6 +5,8 @@ import aiosqlite
 import asyncio
 import logging
 
+from utils import bus
+
 logger = logging.getLogger("ArkTribeBot")
 
 
@@ -486,6 +488,14 @@ class Management(commands.Cog, name="Management"):
     def __init__(self, bot):
         self.bot = bot
 
+    @commands.Cog.listener()
+    async def on_todo_updated(self, guild_id: int):
+        """Refresca el dashboard de To-Do cuando algún cog lo modifica."""
+        try:
+            await update_all_dashboards(self.bot, guild_id)
+        except Exception as e:
+            logger.error(f"[Management] Refresh todo dashboards falló (guild {guild_id}): {e}")
+
     async def setup_dashboard(self, guild_id: int, channel: discord.TextChannel):
         """Inicializa el dashboard del To-Do List y almacena su ID."""
         import aiosqlite
@@ -745,8 +755,7 @@ class Management(commands.Cog, name="Management"):
             ephemeral=True,
         )
 
-        from cogs.warfare import update_blacklist_dashboards
-        await update_blacklist_dashboards(self.bot, interaction.guild_id)
+        self.bot.dispatch(bus.BLACKLIST_UPDATED, interaction.guild_id)
 
     @app_commands.command(
         name="fusionar_perfiles",
@@ -846,9 +855,8 @@ class Management(commands.Cog, name="Management"):
         embed.set_footer(text="A partir de ahora, el bot convertirá automáticamente a este jugador si se conecta usando su viejo nombre de Steam.")
         
         await interaction.followup.send(embed=embed)
-        
-        from cogs.warfare import update_blacklist_dashboards
-        await update_blacklist_dashboards(self.bot, guild_id)
+
+        self.bot.dispatch(bus.BLACKLIST_UPDATED, guild_id)
 
     @app_commands.command(
         name="perfil_tribu",
@@ -927,12 +935,8 @@ class Management(commands.Cog, name="Management"):
         
         await interaction.response.send_message(embed=embed, ephemeral=False)
         
-        # Puesto que actualizamos records, recargamos el dashboard de muertes.
-        try:
-            from cogs.warfare import update_kda_dashboards
-            await update_kda_dashboards(self.bot, interaction.guild_id)
-        except Exception as e:
-            logger.error(f"[Management] Error refrescando dashboard KDA: {e}")
+        # Puesto que actualizamos records, recargamos el dashboard de muertes vía bus.
+        self.bot.dispatch(bus.KDA_UPDATED, interaction.guild_id)
 
     @app_commands.command(
         name="guia",

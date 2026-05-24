@@ -7,6 +7,7 @@ import json
 import logging
 
 from main import PoliciaSosView, get_guild_logger
+from utils import bus
 
 logger = logging.getLogger("ArkTribeBot")
 
@@ -260,11 +261,8 @@ class LogProcessor(commands.Cog, name="LogProcessor"):
 
                             # Actualización global de dashboards si hubo algún cambio
                             if victima_player or (asesino_player and not victima_player):
-                                try:
-                                    from cogs.warfare import update_kda_dashboards
-                                    await update_kda_dashboards(self.bot, guild_id)
-                                except Exception as e:
-                                    self.logger.error(f"[KDA] Error recargando dashboards: {e}")
+                                # Aviso al cog Warfare vía bus de eventos.
+                                self.bot.dispatch(bus.KDA_UPDATED, guild_id)
 
                 except Exception as e:
                     self.logger.error(f"[KDA] Error parseando kill log: {e}")

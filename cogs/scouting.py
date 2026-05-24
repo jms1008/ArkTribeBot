@@ -531,6 +531,14 @@ class Scouting(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
+    @commands.Cog.listener()
+    async def on_scouting_updated(self, guild_id: int):
+        """Refresca dashboards de scouting cuando algún cog los modifica."""
+        try:
+            await update_scout_dashboards(self.bot, guild_id)
+        except Exception as e:
+            logger.error(f"[Scouting] Refresh dashboards falló (guild {guild_id}): {e}")
+
     async def setup_dashboard(self, guild_id: int, channel: discord.TextChannel):
         """Inicializa el dashboard interactivo de Scouting."""
         import aiosqlite

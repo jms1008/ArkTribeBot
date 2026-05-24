@@ -365,41 +365,23 @@ class ArkTribeBot(commands.Bot):
             activity=discord.CustomActivity(name="ARK | By @K4NEKIs")
         )
         
-        # Refrescar todos los dashboards que se actualizan por acción (no periódicos)
-        # para que reflejen el estado real de la DB al arrancar.
+        # Refrescar todos los dashboards al arrancar disparando el bus de eventos.
+        # Cada cog dueño escucha su evento y refresca su UI — sin imports cruzados.
         try:
-            guilds = await self.db.fetchall("SELECT guild_id FROM guild_config")
+            from utils import bus
 
+            guilds = await self.db.fetchall("SELECT guild_id FROM guild_config")
             for row in guilds:
                 guild_id = row["guild_id"]
-                try:
-                    from cogs.warfare import update_blacklist_dashboards, update_kda_dashboards
-                    await update_blacklist_dashboards(self, guild_id)
-                    await update_kda_dashboards(self, guild_id)
-                except Exception as e:
-                    logger.error(f"[Startup] Error refrescando blacklist/kda guild {guild_id}: {e}")
-                
-                try:
-                    from cogs.scouting import update_scout_dashboards
-                    await update_scout_dashboards(self, guild_id)
-                except Exception as e:
-                    logger.error(f"[Startup] Error refrescando scouting guild {guild_id}: {e}")
-                
-                try:
-                    from cogs.management import update_all_dashboards
-                    await update_all_dashboards(self, guild_id)
-                except Exception as e:
-                    logger.error(f"[Startup] Error refrescando todo-list guild {guild_id}: {e}")
-                
-                try:
-                    from cogs.breeding import update_breeding_dashboards
-                    await update_breeding_dashboards(self, guild_id)
-                except Exception as e:
-                    logger.error(f"[Startup] Error refrescando breeding guild {guild_id}: {e}")
+                self.dispatch(bus.BLACKLIST_UPDATED, guild_id)
+                self.dispatch(bus.KDA_UPDATED, guild_id)
+                self.dispatch(bus.SCOUTING_UPDATED, guild_id)
+                self.dispatch(bus.TODO_UPDATED, guild_id)
+                self.dispatch(bus.BREEDING_UPDATED, guild_id)
 
-            logger.info("[Startup] Todos los dashboards refrescados correctamente.")
+            logger.info("[Startup] Eventos de refresh disparados para todos los guilds.")
         except Exception as e:
-            logger.error(f"[Startup] Error general refrescando dashboards: {e}")
+            logger.error(f"[Startup] Error disparando eventos de refresh: {e}")
 
     async def init_db(self):
         """Inicializa la base de datos delegando en db.schema (esquema centralizado)."""

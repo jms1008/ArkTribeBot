@@ -7,6 +7,7 @@ import logging
 from datetime import datetime, timedelta
 import json
 from cogs.k4ultra_ui import K4UltraView
+from utils import bus
 
 logger = logging.getLogger("ArkTribeBot")
 
@@ -514,14 +515,8 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
 
                         if new_blacklist_count > 0:
                             await db.commit()
-                            try:
-                                from cogs.warfare import update_blacklist_dashboards
-                                # Actualizamos SÓLO el dashboard del gremio afectado
-                                await update_blacklist_dashboards(self.bot, guild_id)
-                            except Exception as e:
-                                logger.error(
-                                    f"[K4Ultra] Error updating blacklist dashboards: {e}"
-                                )
+                            # Aviso al cog Warfare (que escucha el evento y refresca).
+                            self.bot.dispatch(bus.BLACKLIST_UPDATED, guild_id)
             except Exception as e:
                 logger.error(f"[K4Ultra] Auto-blacklist check failed: {e}")
 

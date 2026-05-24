@@ -547,6 +547,14 @@ class Breeding(commands.Cog):
     def cog_unload(self):
         self.check_alarms.cancel()
 
+    @commands.Cog.listener()
+    async def on_breeding_updated(self, guild_id: int):
+        """Refresca el dashboard de líneas cuando algún cog las modifica."""
+        try:
+            await update_breeding_dashboards(self.bot, guild_id)
+        except Exception as e:
+            logger.error(f"[Breeding] Refresh dashboards falló (guild {guild_id}): {e}")
+
     async def setup_dashboard(self, guild_id: int, channel: discord.TextChannel):
         """Inicializa el dashboard de Líneas Genéticas y almacena su ID."""
         import aiosqlite
