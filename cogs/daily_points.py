@@ -99,60 +99,58 @@ class DailyPoints(commands.Cog):
             )
             return
 
+        db = self.bot.db
         # Verificar si el sistema está activo para este servidor
         if interaction.guild_id:
-            async with aiosqlite.connect(self.bot.db_name) as _db:
-                c = await _db.execute(
-                    "SELECT daily_points_enabled FROM guild_config WHERE guild_id = ?",
-                    (interaction.guild_id,),
+            row = await db.fetchone(
+                "SELECT daily_points_enabled FROM guild_config WHERE guild_id = ?",
+                (interaction.guild_id,),
+            )
+            if row and row["daily_points_enabled"] == 0:
+                await interaction.response.send_message(
+                    "🔕 El sistema de puntos diarios está **desactivado** en este servidor.",
+                    ephemeral=True,
                 )
-                row = await c.fetchone()
-                if row and row[0] == 0:
-                    await interaction.response.send_message(
-                        "🔕 El sistema de puntos diarios está **desactivado** en este servidor.",
-                        ephemeral=True,
-                    )
-                    return
+                return
 
-        async with aiosqlite.connect(self.bot.db_name) as db:
-            if estado.value == "on":
-                try:
-                    await db.execute(
-                        """
-                        INSERT INTO daily_points_users (guild_id, user_id, alert_hour, timezone, last_sent_date)
-                        VALUES (?, ?, ?, ?, NULL)
-                        ON CONFLICT(guild_id, user_id) DO UPDATE SET
-                            alert_hour=excluded.alert_hour,
-                            timezone=excluded.timezone
-                        """,
-                        (interaction.guild_id, user_id, hora, zona_val),
-                    )
-                    await db.commit()
+        if estado.value == "on":
+            try:
+                await db.execute(
+                    """
+                    INSERT INTO daily_points_users (guild_id, user_id, alert_hour, timezone, last_sent_date)
+                    VALUES (?, ?, ?, ?, NULL)
+                    ON CONFLICT(guild_id, user_id) DO UPDATE SET
+                        alert_hour=excluded.alert_hour,
+                        timezone=excluded.timezone
+                    """,
+                    (interaction.guild_id, user_id, hora, zona_val),
+                )
+                await db.commit()
 
-                    zona_nombre = "España" if zona_val == "es" else "México"
-                    await interaction.response.send_message(
-                        f"✅ **Notificaciones activadas.** Te avisaré todos los días a las **{hora:02d}:00** (Hora de {zona_nombre}) para votar.",
-                        ephemeral=True,
-                    )
-                except Exception as e:
-                    await interaction.response.send_message(
-                        f"❌ Error al activar: {e}", ephemeral=True
-                    )
-            else:
-                try:
-                    await db.execute(
-                        "DELETE FROM daily_points_users WHERE user_id = ? AND guild_id = ?",
-                        (user_id, interaction.guild_id),
-                    )
-                    await db.commit()
-                    await interaction.response.send_message(
-                        "🔕 **Notificaciones desactivadas.** Ya no te enviaré mensajes diarios.",
-                        ephemeral=True,
-                    )
-                except Exception as e:
-                    await interaction.response.send_message(
-                        f"❌ Error al desactivar: {e}", ephemeral=True
-                    )
+                zona_nombre = "España" if zona_val == "es" else "México"
+                await interaction.response.send_message(
+                    f"✅ **Notificaciones activadas.** Te avisaré todos los días a las **{hora:02d}:00** (Hora de {zona_nombre}) para votar.",
+                    ephemeral=True,
+                )
+            except Exception as e:
+                await interaction.response.send_message(
+                    f"❌ Error al activar: {e}", ephemeral=True
+                )
+        else:
+            try:
+                await db.execute(
+                    "DELETE FROM daily_points_users WHERE user_id = ? AND guild_id = ?",
+                    (user_id, interaction.guild_id),
+                )
+                await db.commit()
+                await interaction.response.send_message(
+                    "🔕 **Notificaciones desactivadas.** Ya no te enviaré mensajes diarios.",
+                    ephemeral=True,
+                )
+            except Exception as e:
+                await interaction.response.send_message(
+                    f"❌ Error al desactivar: {e}", ephemeral=True
+                )
 
     @app_commands.command(
         name="config_puntos",
@@ -183,49 +181,46 @@ class DailyPoints(commands.Cog):
 
         guild_id = interaction.guild_id
         cambios = []
+        db = self.bot.db
 
-        async with aiosqlite.connect(self.bot.db_name) as db:
-            if estado is not None:
-                enabled = 1 if estado.value == "on" else 0
-                await db.execute(
-                    """
-                    INSERT INTO guild_config (guild_id, daily_points_enabled) VALUES (?, ?)
-                    ON CONFLICT(guild_id) DO UPDATE SET daily_points_enabled = excluded.daily_points_enabled
-                    """,
-                    (guild_id, enabled),
-                )
-                cambios.append(
-                    f"{'✅ Sistema activado' if enabled else '🔕 Sistema desactivado'}"
-                )
+        if estado is not None:
+            enabled = 1 if estado.value == "on" else 0
+            await db.execute(
+                """
+                INSERT INTO guild_config (guild_id, daily_points_enabled) VALUES (?, ?)
+                ON CONFLICT(guild_id) DO UPDATE SET daily_points_enabled = excluded.daily_points_enabled
+                """,
+                (guild_id, enabled),
+            )
+            cambios.append(
+                f"{'✅ Sistema activado' if enabled else '🔕 Sistema desactivado'}"
+            )
 
-            if vote_links is not None:
-                await db.execute(
-                    """
-                    INSERT INTO guild_config (guild_id, vote_urls) VALUES (?, ?)
-                    ON CONFLICT(guild_id) DO UPDATE SET vote_urls = excluded.vote_urls
-                    """,
-                    (guild_id, vote_links),
-                )
-                # Mostrar los enlaces parseados para confirmación visual
-                parsed = parse_vote_urls(vote_links)
-                links_fmt = "\n".join(
-                    [f"{i + 1}️⃣ {url}" for i, url in enumerate(parsed)]
-                )
-                cambios.append(f"🔗 **URLs de voto actualizadas:**\n{links_fmt}")
+        if vote_links is not None:
+            await db.execute(
+                """
+                INSERT INTO guild_config (guild_id, vote_urls) VALUES (?, ?)
+                ON CONFLICT(guild_id) DO UPDATE SET vote_urls = excluded.vote_urls
+                """,
+                (guild_id, vote_links),
+            )
+            # Mostrar los enlaces parseados para confirmación visual
+            parsed = parse_vote_urls(vote_links)
+            links_fmt = "\n".join(
+                [f"{i + 1}️⃣ {url}" for i, url in enumerate(parsed)]
+            )
+            cambios.append(f"🔗 **URLs de voto actualizadas:**\n{links_fmt}")
 
-            await db.commit()
+        await db.commit()
 
         if not cambios:
             # Sin args: mostrar estado actual
-            async with aiosqlite.connect(self.bot.db_name) as db:
-                c = await db.execute(
-                    "SELECT daily_points_enabled, vote_urls FROM guild_config WHERE guild_id = ?",
-                    (guild_id,),
-                )
-                row = await c.fetchone()
-
-            enabled_str = "✅ Activo" if (not row or row[0] != 0) else "🔕 Desactivado"
-            current_urls = parse_vote_urls(row[1] if row else None)
+            row = await db.fetchone(
+                "SELECT daily_points_enabled, vote_urls FROM guild_config WHERE guild_id = ?",
+                (guild_id,),
+            )
+            enabled_str = "✅ Activo" if (not row or row["daily_points_enabled"] != 0) else "🔕 Desactivado"
+            current_urls = parse_vote_urls(row["vote_urls"] if row else None)
             urls_str = "\n".join(
                 [f"{i + 1}️⃣ {url}" for i, url in enumerate(current_urls)]
             )

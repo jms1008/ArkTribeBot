@@ -58,31 +58,23 @@ async def daily_points_cog(mock_bot):
 
 
 @pytest.mark.asyncio
-async def test_puntos_diarios_subscribe(daily_points_cog, mock_interaction, mocker):
-    """Test subscribing to daily points."""
-
+async def test_puntos_diarios_subscribe(daily_points_cog, mock_interaction):
+    """Test subscribing to daily points: usa bot.db real (in-memory)."""
     await daily_points_cog.bot.init_mock_db()
     estado_choice = app_commands.Choice(name="Activar", value="on")
     zona_choice = app_commands.Choice(name="España", value="es")
 
-    # Simular que el guild_config devuelve daily_points_enabled = 1 (activo)
-    mock_row = mocker.MagicMock()
-    mock_row.__getitem__ = mocker.MagicMock(return_value=1)
-
-    with patch("cogs.daily_points.aiosqlite.connect") as mock_connect:
-        mock_db = AsyncMock()
-        mock_db.__aenter__ = AsyncMock(return_value=mock_db)
-        mock_db.__aexit__ = AsyncMock(return_value=None)
-        mock_cursor = AsyncMock()
-        # Primera query: guild_config check → enabled
-        # Segunda query: INSERT daily_points_users
-        mock_cursor.fetchone = AsyncMock(return_value=(1,))
-        mock_db.execute = AsyncMock(return_value=mock_cursor)
-        mock_db.commit = AsyncMock()
-        mock_connect.return_value = mock_db
-
-        await daily_points_cog.puntos_diarios.callback(
-            daily_points_cog, mock_interaction, estado=estado_choice, zona=zona_choice
-        )
+    await daily_points_cog.puntos_diarios.callback(
+        daily_points_cog, mock_interaction, estado=estado_choice, zona=zona_choice
+    )
 
     mock_interaction.response.send_message.assert_called_once()
+
+    # Verificar que el usuario fue insertado en la DB real.
+    row = await daily_points_cog.bot.db.fetchone(
+        "SELECT alert_hour, timezone FROM daily_points_users WHERE user_id = ? AND guild_id = ?",
+        (mock_interaction.user.id, mock_interaction.guild_id),
+    )
+    assert row is not None
+    assert row["alert_hour"] == 8
+    assert row["timezone"] == "es"

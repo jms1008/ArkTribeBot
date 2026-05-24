@@ -44,14 +44,14 @@ class EventPollView(discord.ui.View):
     @classmethod
     async def build(cls, bot, event_id: int):
         view = cls(bot, event_id)
-        async with aiosqlite.connect(bot.db_name) as db:
-            c = await db.execute(
-                "SELECT id, option_text FROM event_options WHERE event_id = ?",
-                (event_id,),
-            )
-            opts = await c.fetchall()
+        opts = await bot.db.fetchall(
+            "SELECT id, option_text FROM event_options WHERE event_id = ?",
+            (event_id,),
+        )
 
-        for opt_id, opt_text in opts:
+        for opt_row in opts:
+            opt_id = opt_row["id"]
+            opt_text = opt_row["option_text"]
             btn = OptionButton(
                 option_id=opt_id,
                 event_view=view,
@@ -69,72 +69,67 @@ class EventPollView(discord.ui.View):
 
     async def update_embed(self, interaction: discord.Interaction):
         """Reconstruye el embed con los votos actuales y lo edita."""
-        async with aiosqlite.connect(self.bot.db_name) as db:
-            # Obtener datos del evento
-            c = await db.execute(
-                "SELECT title, description, creator_id FROM events WHERE id = ?",
-                (self.event_id,),
+        db = self.bot.db
+        # Obtener datos del evento
+        event_row = await db.fetchone(
+            "SELECT title, description, creator_id FROM events WHERE id = ?",
+            (self.event_id,),
+        )
+        if not event_row:
+            await interaction.response.send_message(
+                "El evento ya no existe en la base de datos.", ephemeral=True
             )
-            event_row = await c.fetchone()
-            if not event_row:
-                await interaction.response.send_message(
-                    "El evento ya no existe en la base de datos.", ephemeral=True
-                )
-                return
-            title, description, creator_id = event_row
+            return
+        title = event_row["title"]
+        description = event_row["description"]
+        creator_id = event_row["creator_id"]
 
-            # Obtener opciones y votos
-            c = await db.execute(
-                "SELECT option_text, voter_ids FROM event_options WHERE event_id = ? AND guild_id = ? ORDER BY id",
-                (self.event_id, interaction.guild_id),
+        # Obtener opciones y votos
+        options = await db.fetchall(
+            "SELECT option_text, voter_ids FROM event_options WHERE event_id = ? AND guild_id = ? ORDER BY id",
+            (self.event_id, interaction.guild_id),
+        )
+
+        creator = interaction.guild.get_member(creator_id)
+        creator_name = creator.display_name if creator else "Desconocido"
+
+        embed = discord.Embed(
+            title=f"📅 Evento: {title}",
+            description=description,
+            color=discord.Color.blue(),
+        )
+        embed.set_author(name=f"Organizado por {creator_name}")
+
+        total_votes = sum(len(json.loads(o["voter_ids"])) for o in options)
+
+        for opt in options:
+            opt_text = opt["option_text"]
+            voters = json.loads(opt["voter_ids"])
+            voter_names = [f"<@{v_id}>" for v_id in voters]
+
+            count = len(voters)
+            pct = (count / total_votes * 100) if total_votes > 0 else 0
+            filled = round(pct / 10)
+            bar = "█" * filled + "░" * (10 - filled)
+
+            voters_str = "\n".join([f"• {name}" for name in voter_names]) if count > 0 else "*Nadie todavía*"
+
+            embed.add_field(
+                name=f"✅ {opt_text}",
+                value=f"`{bar}` **{pct:.0f}%** ({count} votos)\n{voters_str}",
+                inline=False,
             )
-            options = await c.fetchall()
 
-            creator = interaction.guild.get_member(creator_id)
-            creator_name = creator.display_name if creator else "Desconocido"
+        embed.set_footer(text=f"Total de participantes: {total_votes}")
 
-            embed = discord.Embed(
-                title=f"📅 Evento: {title}",
-                description=description,
-                color=discord.Color.blue(),
-            )
-            embed.set_author(name=f"Organizado por {creator_name}")
-
-            total_votes = sum(len(json.loads(voters_json)) for _, voters_json in options)
-
-            for opt_text, voters_json in options:
-                voters = json.loads(voters_json)
-                voter_names = []
-                for v_id in voters:
-                    voter_names.append(f"<@{v_id}>")
-
-                count = len(voters)
-                pct = (count / total_votes * 100) if total_votes > 0 else 0
-                filled = round(pct / 10)
-                bar = "█" * filled + "░" * (10 - filled)
-
-                # Formatear la lista de votantes
-                if count > 0:
-                    voters_str = "\n".join([f"• {name}" for name in voter_names])
-                else:
-                    voters_str = "*Nadie todavía*"
-
-                embed.add_field(
-                    name=f"✅ {opt_text}",
-                    value=f"`{bar}` **{pct:.0f}%** ({count} votos)\n{voters_str}",
-                    inline=False,
-                )
-
-            embed.set_footer(text=f"Total de participantes: {total_votes}")
-
-            try:
-                # Usamos edit_original_response o message.edit según el contexto de la interacción
-                if not interaction.response.is_done():
-                    await interaction.response.edit_message(embed=embed, view=self)
-                else:
-                    await interaction.message.edit(embed=embed, view=self)
-            except Exception as e:
-                logger.error(f"Error actualizando embed de evento {self.event_id}: {e}")
+        try:
+            # Usamos edit_original_response o message.edit según el contexto de la interacción
+            if not interaction.response.is_done():
+                await interaction.response.edit_message(embed=embed, view=self)
+            else:
+                await interaction.message.edit(embed=embed, view=self)
+        except Exception as e:
+            logger.error(f"Error actualizando embed de evento {self.event_id}: {e}")
 
     async def process_vote(
         self,
@@ -143,40 +138,39 @@ class EventPollView(discord.ui.View):
         remove_only: bool = False,
     ):
         user_id = interaction.user.id
+        db = self.bot.db
 
-        async with aiosqlite.connect(self.bot.db_name) as db:
-            # Primero, eliminar el voto del usuario de TODAS las opciones de este evento
-            # (Para que solo pueda votar por una opción a la vez)
-            c = await db.execute(
-                "SELECT id, voter_ids FROM event_options WHERE event_id = ? AND guild_id = ?",
-                (self.event_id, interaction.guild_id),
-            )
-            all_opts = await c.fetchall()
+        # Primero, eliminar el voto del usuario de TODAS las opciones de este evento
+        # (Para que solo pueda votar por una opción a la vez)
+        all_opts = await db.fetchall(
+            "SELECT id, voter_ids FROM event_options WHERE event_id = ? AND guild_id = ?",
+            (self.event_id, interaction.guild_id),
+        )
 
-            for o_id, v_json in all_opts:
-                voters_list = json.loads(v_json)
-                if user_id in voters_list:
-                    voters_list.remove(user_id)
-                    await db.execute(
-                        "UPDATE event_options SET voter_ids = ? WHERE id = ? AND guild_id = ?",
-                        (json.dumps(voters_list), o_id, interaction.guild_id),
-                    )
-
-            # Si no es "remove_only" (No puedo asistir), añadimos el voto a la nueva opción
-            if not remove_only:
-                c = await db.execute(
-                    "SELECT voter_ids FROM event_options WHERE id = ? AND guild_id = ?", (option_id, interaction.guild_id)
+        for opt in all_opts:
+            voters_list = json.loads(opt["voter_ids"])
+            if user_id in voters_list:
+                voters_list.remove(user_id)
+                await db.execute(
+                    "UPDATE event_options SET voter_ids = ? WHERE id = ? AND guild_id = ?",
+                    (json.dumps(voters_list), opt["id"], interaction.guild_id),
                 )
-                row = await c.fetchone()
-                if row:
-                    voters_list = json.loads(row[0])
-                    voters_list.append(user_id)
-                    await db.execute(
-                        "UPDATE event_options SET voter_ids = ? WHERE id = ? AND guild_id = ?",
-                        (json.dumps(voters_list), option_id, interaction.guild_id),
-                    )
 
-            await db.commit()
+        # Si no es "remove_only" (No puedo asistir), añadimos el voto a la nueva opción
+        if not remove_only:
+            row = await db.fetchone(
+                "SELECT voter_ids FROM event_options WHERE id = ? AND guild_id = ?",
+                (option_id, interaction.guild_id),
+            )
+            if row:
+                voters_list = json.loads(row["voter_ids"])
+                voters_list.append(user_id)
+                await db.execute(
+                    "UPDATE event_options SET voter_ids = ? WHERE id = ? AND guild_id = ?",
+                    (json.dumps(voters_list), option_id, interaction.guild_id),
+                )
+
+        await db.commit()
 
         # Refrescar UI
         await self.update_embed(interaction)
@@ -226,65 +220,64 @@ class Events(commands.Cog):
 
         # Deferir respuesta ya que interactuamos con BD
         await interaction.response.defer()
+        db = self.bot.db
 
-        async with aiosqlite.connect(self.bot.db_name) as db:
-            # 1. Crear Evento
-            cursor = await db.execute(
-                "INSERT INTO events (guild_id, title, description, creator_id, channel_id, status) VALUES (?, ?, ?, ?, ?, 'active')",
-                (
-                    interaction.guild_id,
-                    titulo,
-                    descripcion,
-                    interaction.user.id,
-                    interaction.channel_id,
-                ),
-            )
-            event_id = cursor.lastrowid
+        # 1. Crear Evento
+        cursor = await db.execute(
+            "INSERT INTO events (guild_id, title, description, creator_id, channel_id, status) VALUES (?, ?, ?, ?, ?, 'active')",
+            (
+                interaction.guild_id,
+                titulo,
+                descripcion,
+                interaction.user.id,
+                interaction.channel_id,
+            ),
+        )
+        event_id = cursor.lastrowid
 
-            # 2. Crear Opciones
-            for opt in opciones_validas:
-                await db.execute(
-                    "INSERT INTO event_options (event_id, option_text, voter_ids, guild_id) VALUES (?, ?, ?, ?)",
-                    (event_id, opt, "[]", interaction.guild_id),
-                )
-
-            await db.commit()
-
-            # 3. Crear View y Botones dinámicos
-            view = await EventPollView.build(self.bot, event_id)
-
-            # Para el embed necesitamos los nombres de las opciones
-            c = await db.execute(
-                "SELECT id, option_text FROM event_options WHERE event_id = ? AND guild_id = ?",
-                (event_id, interaction.guild_id),
-            )
-            inserted_opts = await c.fetchall()
-
-            # 4. Construir Embed inicial
-            embed = discord.Embed(
-                title=f"📅 Evento: {titulo}",
-                description=descripcion,
-                color=discord.Color.blue(),
-            )
-            creator_name = interaction.user.display_name
-            embed.set_author(name=f"Organizado por {creator_name}")
-
-            for _, opt_text in inserted_opts:
-                embed.add_field(
-                    name=f"✅ {opt_text} (0 votos)",
-                    value="*Nadie todavía*",
-                    inline=False,
-                )
-            embed.set_footer(text="Total de participantes: 0")
-
-            # 5. Enviar mensaje y guardar refs
-            msg = await interaction.followup.send(embed=embed, view=view)
-
+        # 2. Crear Opciones
+        for opt in opciones_validas:
             await db.execute(
-                "UPDATE events SET channel_id = ?, message_id = ? WHERE id = ?",
-                (msg.channel.id, msg.id, event_id),
+                "INSERT INTO event_options (event_id, option_text, voter_ids, guild_id) VALUES (?, ?, ?, ?)",
+                (event_id, opt, "[]", interaction.guild_id),
             )
-            await db.commit()
+
+        await db.commit()
+
+        # 3. Crear View y Botones dinámicos
+        view = await EventPollView.build(self.bot, event_id)
+
+        # Para el embed necesitamos los nombres de las opciones
+        inserted_opts = await db.fetchall(
+            "SELECT id, option_text FROM event_options WHERE event_id = ? AND guild_id = ?",
+            (event_id, interaction.guild_id),
+        )
+
+        # 4. Construir Embed inicial
+        embed = discord.Embed(
+            title=f"📅 Evento: {titulo}",
+            description=descripcion,
+            color=discord.Color.blue(),
+        )
+        creator_name = interaction.user.display_name
+        embed.set_author(name=f"Organizado por {creator_name}")
+
+        for opt in inserted_opts:
+            embed.add_field(
+                name=f"✅ {opt['option_text']} (0 votos)",
+                value="*Nadie todavía*",
+                inline=False,
+            )
+        embed.set_footer(text="Total de participantes: 0")
+
+        # 5. Enviar mensaje y guardar refs
+        msg = await interaction.followup.send(embed=embed, view=view)
+
+        await db.execute(
+            "UPDATE events SET channel_id = ?, message_id = ? WHERE id = ?",
+            (msg.channel.id, msg.id, event_id),
+        )
+        await db.commit()
 
 
 async def setup(bot):

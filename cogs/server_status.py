@@ -139,12 +139,11 @@ class ServerStatus(commands.Cog):
         msg = await channel.send(embed=embed)
         await asyncio.sleep(0.5)
 
-        async with aiosqlite.connect(self.bot.db_name) as db:
-            await db.execute(
-                "INSERT INTO status_messages (guild_id, channel_id, message_id) VALUES (?, ?, ?)",
-                (guild_id, channel.id, msg.id),
-            )
-            await db.commit()
+        await self.bot.db.execute(
+            "INSERT INTO status_messages (guild_id, channel_id, message_id) VALUES (?, ?, ?)",
+            (guild_id, channel.id, msg.id),
+        )
+        await self.bot.db.commit()
 
     def cog_unload(self):
         self.status_loop.cancel()
@@ -259,15 +258,11 @@ class ServerStatus(commands.Cog):
         message = await interaction.followup.send(embed=embed)
 
         # Persistencia del mensaje en Base de Datos
-        async with aiosqlite.connect(self.bot.db_name) as db:
-            await db.execute(
-                """
-                INSERT INTO status_messages (guild_id, channel_id, message_id, map_name)
-                VALUES (?, ?, ?, ?)
-            """,
-                (interaction.guild_id, interaction.channel_id, message.id, mapa),
-            )
-            await db.commit()
+        await self.bot.db.execute(
+            "INSERT INTO status_messages (guild_id, channel_id, message_id, map_name) VALUES (?, ?, ?, ?)",
+            (interaction.guild_id, interaction.channel_id, message.id, mapa),
+        )
+        await self.bot.db.commit()
 
     @tasks.loop(minutes=2)
     async def status_loop(self):
@@ -445,15 +440,11 @@ class ServerStatus(commands.Cog):
         embed = await self.get_global_status_embed(interaction.guild_id, servers)
         message = await interaction.followup.send(embed=embed)
 
-        async with aiosqlite.connect(self.bot.db_name) as db:
-            await db.execute(
-                """
-                INSERT INTO status_online_messages (guild_id, channel_id, message_id)
-                VALUES (?, ?, ?)
-            """,
-                (interaction.guild_id, interaction.channel_id, message.id),
-            )
-            await db.commit()
+        await self.bot.db.execute(
+            "INSERT INTO status_online_messages (guild_id, channel_id, message_id) VALUES (?, ?, ?)",
+            (interaction.guild_id, interaction.channel_id, message.id),
+        )
+        await self.bot.db.commit()
 
     @tasks.loop(minutes=1)
     async def global_status_loop(self):

@@ -44,12 +44,19 @@ async def build_alarmas_embed(bot, guild_id: int, user_id: int) -> discord.Embed
     lines.append("Selecciona un mapa en el menú inferior para controlar su alarma.")
     lines.append("")
 
-    async with aiosqlite.connect(bot.db_name) as db:
-        c = await db.execute(
+    # Soporta tanto bot.db (runtime) como conexión efímera (tests que pasan MagicMock).
+    if getattr(bot, "db", None) is not None:
+        rows = await bot.db.fetchall(
             "SELECT map_name FROM map_alarms WHERE guild_id = ? AND user_id = ?",
             (guild_id, user_id),
         )
-        rows = await c.fetchall()
+    else:
+        async with aiosqlite.connect(bot.db_name) as db:
+            c = await db.execute(
+                "SELECT map_name FROM map_alarms WHERE guild_id = ? AND user_id = ?",
+                (guild_id, user_id),
+            )
+            rows = await c.fetchall()
 
     if not rows:
         lines.append("## 💤 Estado Actual")
@@ -101,12 +108,10 @@ class AlarmasPanelView(discord.ui.View):
         user_id = interaction.user.id
 
         # Comprobar si ya está activada para ofrecer la acción correcta
-        async with aiosqlite.connect(self.bot.db_name) as db:
-            c = await db.execute(
-                "SELECT 1 FROM map_alarms WHERE guild_id = ? AND user_id = ? AND map_name = ?",
-                (guild_id, user_id, selected),
-            )
-            already_active = await c.fetchone() is not None
+        already_active = await self.bot.db.fetchone(
+            "SELECT 1 FROM map_alarms WHERE guild_id = ? AND user_id = ? AND map_name = ?",
+            (guild_id, user_id, selected),
+        ) is not None
 
         # Vista efímera con acciones directas para ese mapa concreto
         action_view = AlarmActionView(self.bot, selected, already_active, interaction.message)
@@ -155,12 +160,11 @@ class AlarmActionView(discord.ui.View):
         guild_id = interaction.guild_id
         channel_id = interaction.channel_id
 
-        async with aiosqlite.connect(self.bot.db_name) as db:
-            await db.execute(
-                "INSERT OR REPLACE INTO map_alarms (guild_id, user_id, map_name, channel_id) VALUES (?, ?, ?, ?)",
-                (guild_id, user_id, self.map_name, channel_id),
-            )
-            await db.commit()
+        await self.bot.db.execute(
+            "INSERT OR REPLACE INTO map_alarms (guild_id, user_id, map_name, channel_id) VALUES (?, ?, ?, ?)",
+            (guild_id, user_id, self.map_name, channel_id),
+        )
+        await self.bot.db.commit()
 
         self.btn_on.disabled = True
         self.btn_off.disabled = False
@@ -177,12 +181,11 @@ class AlarmActionView(discord.ui.View):
         user_id = interaction.user.id
         guild_id = interaction.guild_id
 
-        async with aiosqlite.connect(self.bot.db_name) as db:
-            await db.execute(
-                "DELETE FROM map_alarms WHERE guild_id = ? AND user_id = ? AND map_name = ?",
-                (guild_id, user_id, self.map_name),
-            )
-            await db.commit()
+        await self.bot.db.execute(
+            "DELETE FROM map_alarms WHERE guild_id = ? AND user_id = ? AND map_name = ?",
+            (guild_id, user_id, self.map_name),
+        )
+        await self.bot.db.commit()
 
         self.btn_off.disabled = True
         self.btn_on.disabled = False
@@ -253,26 +256,26 @@ class Alarma(commands.Cog):
                 )
                 return
 
-            async with aiosqlite.connect(self.bot.db_name) as db:
-                if estado == "off":
-                    await db.execute(
-                        "DELETE FROM map_alarms WHERE guild_id = ? AND user_id = ? AND map_name = ?",
-                        (guild_id, user_id, mapa),
-                    )
-                    await db.commit()
-                    await interaction.followup.send(
-                        f"🔕 Alarma para **{mapa}** desactivada.", ephemeral=True
-                    )
-                else:
-                    await db.execute(
-                        "INSERT OR REPLACE INTO map_alarms (guild_id, user_id, map_name, channel_id) VALUES (?, ?, ?, ?)",
-                        (guild_id, user_id, mapa, channel_id),
-                    )
-                    await db.commit()
-                    await interaction.followup.send(
-                        f"🚨 **Alarma activada** para `{mapa}`. Te avisaré cuando entre un intruso. 🔔",
-                        ephemeral=True,
-                    )
+            db = self.bot.db
+            if estado == "off":
+                await db.execute(
+                    "DELETE FROM map_alarms WHERE guild_id = ? AND user_id = ? AND map_name = ?",
+                    (guild_id, user_id, mapa),
+                )
+                await db.commit()
+                await interaction.followup.send(
+                    f"🔕 Alarma para **{mapa}** desactivada.", ephemeral=True
+                )
+            else:
+                await db.execute(
+                    "INSERT OR REPLACE INTO map_alarms (guild_id, user_id, map_name, channel_id) VALUES (?, ?, ?, ?)",
+                    (guild_id, user_id, mapa, channel_id),
+                )
+                await db.commit()
+                await interaction.followup.send(
+                    f"🚨 **Alarma activada** para `{mapa}`. Te avisaré cuando entre un intruso. 🔔",
+                    ephemeral=True,
+                )
         except Exception as e:
             logger.error(f"Error en comando /alarma: {e}")
             await interaction.followup.send(

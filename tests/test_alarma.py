@@ -1,6 +1,4 @@
 """Tests del cog Alarma: panel embed y detección de intrusos."""
-from unittest.mock import AsyncMock, MagicMock
-
 import aiosqlite
 import pytest
 
@@ -10,7 +8,8 @@ from db.schema import create_indexes, create_tables, run_migrations
 
 @pytest.fixture
 async def db_path(tmp_path):
-    """Crea una DB temporal con el esquema real."""
+    """Crea una DB temporal con el esquema real (para los tests de detección que
+    necesitan abrir conexiones efímeras directamente)."""
     path = str(tmp_path / "test.db")
     async with aiosqlite.connect(path) as db:
         await create_tables(db)
@@ -20,38 +19,31 @@ async def db_path(tmp_path):
     return path
 
 
-@pytest.fixture
-def bot(db_path):
-    """Mock de bot con db_name apuntando a la DB temporal."""
-    b = MagicMock()
-    b.db_name = db_path
-    return b
-
-
 class TestBuildAlarmasEmbed:
     @pytest.mark.asyncio
-    async def test_empty_state(self, bot):
+    async def test_empty_state(self, mock_bot):
         """Sin alarmas registradas → embed muestra estado vacío."""
-        embed = await alarma_mod.build_alarmas_embed(bot, guild_id=1, user_id=42)
+        await mock_bot.init_mock_db()
+        embed = await alarma_mod.build_alarmas_embed(mock_bot, guild_id=1, user_id=42)
         assert "PANEL DE ALARMAS" in embed.title
         assert "No tienes ninguna alarma" in embed.description
 
     @pytest.mark.asyncio
-    async def test_lists_user_alarms(self, bot, db_path):
+    async def test_lists_user_alarms(self, mock_bot):
         """Sólo se listan las alarmas del usuario actual; no las de otros usuarios o guilds."""
-        async with aiosqlite.connect(db_path) as db:
-            await db.executemany(
-                "INSERT INTO map_alarms (guild_id, user_id, map_name, channel_id) VALUES (?, ?, ?, ?)",
-                [
-                    (1, 42, "Ragnarok", 100),
-                    (1, 42, "TheIsland", 100),
-                    (1, 99, "Aberration", 100),  # Otro usuario
-                    (2, 42, "Extinction", 100),  # Otro guild
-                ],
-            )
-            await db.commit()
+        await mock_bot.init_mock_db()
+        await mock_bot.db.executemany(
+            "INSERT INTO map_alarms (guild_id, user_id, map_name, channel_id) VALUES (?, ?, ?, ?)",
+            [
+                (1, 42, "Ragnarok", 100),
+                (1, 42, "TheIsland", 100),
+                (1, 99, "Aberration", 100),  # Otro usuario
+                (2, 42, "Extinction", 100),  # Otro guild
+            ],
+        )
+        await mock_bot.db.commit()
 
-        embed = await alarma_mod.build_alarmas_embed(bot, guild_id=1, user_id=42)
+        embed = await alarma_mod.build_alarmas_embed(mock_bot, guild_id=1, user_id=42)
         desc = embed.description
         assert "Ragnarok" in desc
         assert "TheIsland" in desc

@@ -10,18 +10,22 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 
 @pytest.fixture
-def mock_bot():
+def mock_bot(tmp_path):
     """Mock básico para representar al bot de Discord.
 
-    El esquema de la DB se carga desde ``db/schema.py`` para garantizar que los tests
-    siempre se ejecutan sobre el esquema real (no una copia divergente).
+    - El esquema de la DB se carga desde ``db/schema.py`` (no copia divergente).
+    - ``init_mock_db()`` (async) inicializa esquema **y** abre ``bot.db``
+      (conexión persistente real) sobre un fichero temporal — los cogs migrados
+      a la fase 3 SQLite la consultan directamente.
     """
+    db_path = str(tmp_path / "mock.db")
 
     class MockBot(commands.Bot):
         def __init__(self):
             intents = discord.Intents.default()
             super().__init__(command_prefix="!", intents=intents)
-            self.db_name = ":memory:"  # SQLite en memoria, aislado por test.
+            self.db_name = db_path
+            self.db = None
 
         @property
         def user(self):
@@ -30,18 +34,20 @@ def mock_bot():
             return u
 
         async def init_mock_db(self):
-            """Crea el esquema real en la conexión :memory: del bot."""
+            """Crea esquema + abre la conexión persistente (bot.db)."""
             import aiosqlite
 
+            from db.database import Database
             from db.schema import create_indexes, create_tables, run_migrations
 
-            # NOTA: para :memory: cada conexión es una BD nueva; en los tests que
-            # reabren el fichero la conexión persistente se gestiona dentro del cog.
             async with aiosqlite.connect(self.db_name) as db:
                 await create_tables(db)
                 await run_migrations(db)
                 await create_indexes(db)
                 await db.commit()
+
+            self.db = Database(self.db_name)
+            await self.db.connect()
 
     return MockBot()
 

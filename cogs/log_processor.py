@@ -36,16 +36,15 @@ class LogProcessor(commands.Cog, name="LogProcessor"):
 
         if guild_id:
             guild_log = get_guild_logger(guild_id)
-            async with aiosqlite.connect(self.bot.db_name) as db:
-                c = await db.execute(
-                    "SELECT log_channel_id, sos_channel_id FROM guild_config WHERE guild_id = ?",
-                    (guild_id,),
-                )
-                config = await c.fetchone()
-                if config:
-                    log_channel_id, sos_channel_id = config
-                    if log_channel_id and message.channel.id == log_channel_id:
-                        is_log_channel = True
+            config = await self.bot.db.fetchone(
+                "SELECT log_channel_id, sos_channel_id FROM guild_config WHERE guild_id = ?",
+                (guild_id,),
+            )
+            if config:
+                log_channel_id = config["log_channel_id"]
+                sos_channel_id = config["sos_channel_id"]
+                if log_channel_id and message.channel.id == log_channel_id:
+                    is_log_channel = True
 
         if is_log_channel:
             # Extraer texto de Embeds enviados por webhooks/bots de logs
@@ -132,137 +131,136 @@ class LogProcessor(commands.Cog, name="LogProcessor"):
                         else:
                             victima_char = generic_death_match.group(1).strip()
 
-                        async with aiosqlite.connect(self.bot.db_name) as db:
-                            # 1. Obtener miembros de la tribu propia para identificación automática
-                            c_own = await db.execute("SELECT members_json FROM k4ultra_fixed_tribes WHERE is_own = 1 AND guild_id = ?", (guild_id,))
-                            own_row = await c_own.fetchone()
-                            own_members = []
-                            if own_row:
-                                try:
-                                    own_members = json.loads(own_row[0])
-                                except (json.JSONDecodeError, TypeError) as e:
-                                    logger.warning(f"[LogProcessor] members_json inválido en tribu propia: {e}")
+                        db = self.bot.db
+                        # 1. Obtener miembros de la tribu propia para identificación automática
+                        own_row = await db.fetchone(
+                            "SELECT members_json FROM k4ultra_fixed_tribes WHERE is_own = 1 AND guild_id = ?",
+                            (guild_id,),
+                        )
+                        own_members = []
+                        if own_row:
+                            try:
+                                own_members = json.loads(own_row["members_json"])
+                            except (json.JSONDecodeError, TypeError) as e:
+                                logger.warning(f"[LogProcessor] members_json inválido en tribu propia: {e}")
 
-                            # 2. Mapeo de víctima (personaje in-game -> jugador real)
-                            c1 = await db.execute(
+                        # 2. Mapeo de víctima (personaje in-game -> jugador real)
+                        victima_res = await db.fetchone(
+                            "SELECT player_name FROM tribe_characters WHERE LOWER(character_name) = LOWER(?) AND guild_id = ?",
+                            (victima_char, guild_id),
+                        )
+                        victima_player = victima_res["player_name"] if victima_res else None
+
+                        # Fallback: si no hay vínculo, mirar si el nombre coincide con un miembro de la tribu propia
+                        if not victima_player:
+                            for m in own_members:
+                                if m.lower() == victima_char.lower():
+                                    victima_player = m
+                                    break
+
+                        # 3. Mapeo de asesino
+                        asesino_player = None
+                        if asesino_char:
+                            asesino_res = await db.fetchone(
                                 "SELECT player_name FROM tribe_characters WHERE LOWER(character_name) = LOWER(?) AND guild_id = ?",
-                                (victima_char, guild_id),
+                                (asesino_char, guild_id),
                             )
-                            victima_res = await c1.fetchone()
-                            victima_player = victima_res[0] if victima_res else None
-                            
-                            # Fallback: si no hay vínculo, mirar si el nombre coincide con un miembro de la tribu propia
-                            if not victima_player:
+                            asesino_player = asesino_res["player_name"] if asesino_res else None
+
+                            # Fallback para el asesino
+                            if not asesino_player:
                                 for m in own_members:
-                                    if m.lower() == victima_char.lower():
-                                        victima_player = m
+                                    if m.lower() == asesino_char.lower():
+                                        asesino_player = m
                                         break
 
-                            # 3. Mapeo de asesino
-                            asesino_player = None
-                            if asesino_char:
-                                c2 = await db.execute(
-                                    "SELECT player_name FROM tribe_characters WHERE LOWER(character_name) = LOWER(?) AND guild_id = ?",
-                                    (asesino_char, guild_id),
-                                )
-                                asesino_res = await c2.fetchone()
-                                asesino_player = asesino_res[0] if asesino_res else None
-                                
-                                # Fallback para el asesino
-                                if not asesino_player:
-                                    for m in own_members:
-                                        if m.lower() == asesino_char.lower():
-                                            asesino_player = m
-                                            break
-
-                            # Solo procesamos muertes de miembros registrados
-                            if victima_player:
-                                if victima_player and asesino_player:
-                                    guild_log.info(
-                                        f"[KDA] Fuego amigo: {asesino_player} mató a {victima_player}. No suma KDA."
-                                    )
-                                else:
-                                    # Incrementar muertes en KDA
-                                    await db.execute(
-                                        "INSERT INTO tribe_kda (guild_id, player_name, deaths) VALUES (?, ?, 1) ON CONFLICT(guild_id, player_name) DO UPDATE SET deaths = deaths + 1",
-                                        (guild_id, victima_player),
-                                    )
-                                # Registrar muerte individual con timestamp para estadísticas pico
-                                await db.execute(
-                                    "INSERT INTO tribe_death_log (guild_id, player_name) VALUES (?, ?)",
-                                    (guild_id, victima_player),
-                                )
-                                
-                                # Obtener el total de muertes actualizado para el sarcasmo
-                                cursor = await db.execute(
-                                    "SELECT deaths FROM tribe_kda WHERE guild_id = ? AND player_name = ?",
-                                    (guild_id, victima_player),
-                                )
-                                d_row = await cursor.fetchone()
-                                num_muertes = d_row[0] if d_row else 1
-                                
-                                # Respuestas sarcásticas variadas e Hitos
-                                hitos = {
-                                    1: ("¡Bienvenido a ARK! Tu primera muerte oficial de muchas... 🎉", "https://tenor.com/view/welcome-to-jurassic-park-gif-11623192"),
-                                    10: ("Doble dígito de muertes... Ya eres un veterano en besar el suelo. 🥉", "https://tenor.com/view/facepalm-picard-star-trek-disappointment-gif-14639209"),
-                                    50: ("¡Medio centenar de muertes! 🥈 Estás a medias de convertirte en el mayor donante de loot del servidor.", "https://tenor.com/view/sarcastic-clapping-golf-clap-cheers-well-done-jon-stewart-gif-16167909"),
-                                    69: ("69 muertes... Nice. Pero sigues estando muerto. 😏", "https://tenor.com/view/nice-south-park-gif-9226462"),
-                                    100: ("¡100 MUERTES! 🥇 Oficialmente eres el jugador más manco de la tribu. Eres leyenda.", "https://tenor.com/view/nuclear-explosion-boom-blast-atomic-bomb-gif-16056637"),
-                                    300: ("¡ESTO ES ESPARTA! Y tú eres el mensajero que acaban de tirar al pozo. 300 muertes.", "https://tenor.com/view/sparta-kick-hole-fall-leonidas-gif-3420829"),
-                                    420: ("420 muertes... 🌿 Demasiado humo en esa base, ¡deja de fumar flor rara!", "https://tenor.com/view/snoop-dogg-smoke-smoke-weed-420-gif-14352528"),
-                                    666: ("666 muertes... 😈 Has invocado al Demonio de la Inutilidad. Vas directo al infierno.", "https://tenor.com/view/hell-elmo-fire-flames-elmo-fire-gif-17631853"),
-                                    777: ("¡VEGETTA777! ⛏️ Muy bonito, pero te acaba de farmear un dodo por la espalda.", "https://tenor.com/view/vegetta777-minecraft-saludo-gif-14546416"),
-                                    1000: ("1000 MUERTES. 🏆 Hemos contactado con Wildcard. Te vamos a borrar el juego de Steam para que dejes de sufrir.", "https://tenor.com/view/mind-blown-explosion-boom-explode-gif-12051642")
-                                }
-                                
-                                final_msg = ""
-                                if num_muertes in hitos:
-                                    texto, gif = hitos[num_muertes]
-                                    final_msg = f"{texto}\n{gif}"
-                                elif num_muertes > 0 and num_muertes % 100 == 0:
-                                    final_msg = f"Sigues sumando de 100 en 100... ¿no te cansas? Ya van **{num_muertes}** muertes. 💀\nhttps://tenor.com/view/confused-john-travolta-pulp-fiction-where-gif-14436531"
-                                else:
-                                    sarcasmos_base = [
-                                        f"Estás pendejo... ya te moriste **{num_muertes}** veces...",
-                                        f"¡Felicidades! Has desbloqueado el logro: *Morir por {num_muertes}ª vez*. 🏆",
-                                        f"¿Otra vez? A este ritmo te van a cobrar alquiler en el respawn. (Muertes: **{num_muertes}**)",
-                                        f"Tranquilo, la **{num_muertes}ª** es la vencida... o no. 🤡",
-                                        f"Eres como un dodo, pero con menos instinto de supervivencia. (Total: **{num_muertes}**)",
-                                        f"¡Míralo! Si es que no se le puede dejar solo... Muertes: **{num_muertes}** 🤦‍♂️",
-                                        f"¿Has probado lo de no morir? Dicen que funciona bastante bien. (Contador: **{num_muertes}**)",
-                                        f"A este paso vas a amansar a los dinos salvajes a base de darles de comer tu propio cadáver. (**{num_muertes}** muertes)",
-                                        f"En el menú del servidor hoy toca: Carpaccio de {victima_player}. Ya llevas **{num_muertes}** muertes.",
-                                        f"Ni un mosco en verano muere tantas veces... Contador sube a **{num_muertes}**.",
-                                        f"Vete preparando saco, porque la cama ya la has derretido del uso. (Total: **{num_muertes}**)",
-                                        f"Tus padres no te criaron para feedear de esta manera tan vergonzosa. (**{num_muertes}** ☠️)",
-                                        f"Si la tribu dependiera de ti, seguiríamos con herramientas de piedra. (**{num_muertes}** veces)",
-                                        f"Muertes totales: **{num_muertes}**. El servidor está empezando a sentir lástima por ti.",
-                                        f"Bob the Builder construía mejor y moría menos que tú. (**{num_muertes}** defunciones)",
-                                        f"Tómate un respiro, ve a beber agua, porque madre mía la que estás liando... (**{num_muertes}**)",
-                                        f"Cuidado de no tropezar con una piedra y resbalar, que igual mueres por **{num_muertes}ª** vez consecutiva.",
-                                        f"Oye, que en este servidor no dan premio por ser el que más veces mira la pantalla de muerte. (**{num_muertes}**)",
-                                        f"Hasta un Triceratops despistado vive más tiempo que tú. Y eso que extinguieron hace milenios. (**{num_muertes}** bajas)",
-                                        f"¿Quién dejó la puerta abierta? Ah, no, que fuiste tú intentando huir... otra vez. (**{num_muertes}** muertes)"
-                                    ]
-                                    final_msg = random.choice(sarcasmos_base)
-                                
-                                sent_msg = await message.reply(final_msg)
-                                
-                                try:
-                                    emojis_muerte = ["💀", "🤡", "🪦", "🥚", "🍗", "🧻", "🗑️"]
-                                    await sent_msg.add_reaction(random.choice(emojis_muerte))
-                                except (discord.Forbidden, discord.HTTPException) as e:
-                                    logger.debug(f"[LogProcessor] add_reaction falló: {e}")
+                        # Solo procesamos muertes de miembros registrados
+                        if victima_player:
+                            if victima_player and asesino_player:
                                 guild_log.info(
-                                    f"[Sarcasmo] Muerte detectada: {victima_player} (#{num_muertes})"
+                                    f"[KDA] Fuego amigo: {asesino_player} mató a {victima_player}. No suma KDA."
                                 )
-                                # Se han eliminado las Kills activas debido a que solo se usan muertes.
-                                await db.commit()
+                            else:
+                                # Incrementar muertes en KDA
+                                await db.execute(
+                                    "INSERT INTO tribe_kda (guild_id, player_name, deaths) VALUES (?, ?, 1) ON CONFLICT(guild_id, player_name) DO UPDATE SET deaths = deaths + 1",
+                                    (guild_id, victima_player),
+                                )
+                            # Registrar muerte individual con timestamp para estadísticas pico
+                            await db.execute(
+                                "INSERT INTO tribe_death_log (guild_id, player_name) VALUES (?, ?)",
+                                (guild_id, victima_player),
+                            )
 
-                            # Actualización global de dashboards si hubo algún cambio
-                            if victima_player or (asesino_player and not victima_player):
-                                # Aviso al cog Warfare vía bus de eventos.
-                                self.bot.dispatch(bus.KDA_UPDATED, guild_id)
+                            # Obtener el total de muertes actualizado para el sarcasmo
+                            d_row = await db.fetchone(
+                                "SELECT deaths FROM tribe_kda WHERE guild_id = ? AND player_name = ?",
+                                (guild_id, victima_player),
+                            )
+                            num_muertes = d_row["deaths"] if d_row else 1
+                                
+                            # Respuestas sarcásticas variadas e Hitos
+                            hitos = {
+                                1: ("¡Bienvenido a ARK! Tu primera muerte oficial de muchas... 🎉", "https://tenor.com/view/welcome-to-jurassic-park-gif-11623192"),
+                                10: ("Doble dígito de muertes... Ya eres un veterano en besar el suelo. 🥉", "https://tenor.com/view/facepalm-picard-star-trek-disappointment-gif-14639209"),
+                                50: ("¡Medio centenar de muertes! 🥈 Estás a medias de convertirte en el mayor donante de loot del servidor.", "https://tenor.com/view/sarcastic-clapping-golf-clap-cheers-well-done-jon-stewart-gif-16167909"),
+                                69: ("69 muertes... Nice. Pero sigues estando muerto. 😏", "https://tenor.com/view/nice-south-park-gif-9226462"),
+                                100: ("¡100 MUERTES! 🥇 Oficialmente eres el jugador más manco de la tribu. Eres leyenda.", "https://tenor.com/view/nuclear-explosion-boom-blast-atomic-bomb-gif-16056637"),
+                                300: ("¡ESTO ES ESPARTA! Y tú eres el mensajero que acaban de tirar al pozo. 300 muertes.", "https://tenor.com/view/sparta-kick-hole-fall-leonidas-gif-3420829"),
+                                420: ("420 muertes... 🌿 Demasiado humo en esa base, ¡deja de fumar flor rara!", "https://tenor.com/view/snoop-dogg-smoke-smoke-weed-420-gif-14352528"),
+                                666: ("666 muertes... 😈 Has invocado al Demonio de la Inutilidad. Vas directo al infierno.", "https://tenor.com/view/hell-elmo-fire-flames-elmo-fire-gif-17631853"),
+                                777: ("¡VEGETTA777! ⛏️ Muy bonito, pero te acaba de farmear un dodo por la espalda.", "https://tenor.com/view/vegetta777-minecraft-saludo-gif-14546416"),
+                                1000: ("1000 MUERTES. 🏆 Hemos contactado con Wildcard. Te vamos a borrar el juego de Steam para que dejes de sufrir.", "https://tenor.com/view/mind-blown-explosion-boom-explode-gif-12051642")
+                            }
+                            
+                            final_msg = ""
+                            if num_muertes in hitos:
+                                texto, gif = hitos[num_muertes]
+                                final_msg = f"{texto}\n{gif}"
+                            elif num_muertes > 0 and num_muertes % 100 == 0:
+                                final_msg = f"Sigues sumando de 100 en 100... ¿no te cansas? Ya van **{num_muertes}** muertes. 💀\nhttps://tenor.com/view/confused-john-travolta-pulp-fiction-where-gif-14436531"
+                            else:
+                                sarcasmos_base = [
+                                    f"Estás pendejo... ya te moriste **{num_muertes}** veces...",
+                                    f"¡Felicidades! Has desbloqueado el logro: *Morir por {num_muertes}ª vez*. 🏆",
+                                    f"¿Otra vez? A este ritmo te van a cobrar alquiler en el respawn. (Muertes: **{num_muertes}**)",
+                                    f"Tranquilo, la **{num_muertes}ª** es la vencida... o no. 🤡",
+                                    f"Eres como un dodo, pero con menos instinto de supervivencia. (Total: **{num_muertes}**)",
+                                    f"¡Míralo! Si es que no se le puede dejar solo... Muertes: **{num_muertes}** 🤦‍♂️",
+                                    f"¿Has probado lo de no morir? Dicen que funciona bastante bien. (Contador: **{num_muertes}**)",
+                                    f"A este paso vas a amansar a los dinos salvajes a base de darles de comer tu propio cadáver. (**{num_muertes}** muertes)",
+                                    f"En el menú del servidor hoy toca: Carpaccio de {victima_player}. Ya llevas **{num_muertes}** muertes.",
+                                    f"Ni un mosco en verano muere tantas veces... Contador sube a **{num_muertes}**.",
+                                    f"Vete preparando saco, porque la cama ya la has derretido del uso. (Total: **{num_muertes}**)",
+                                    f"Tus padres no te criaron para feedear de esta manera tan vergonzosa. (**{num_muertes}** ☠️)",
+                                    f"Si la tribu dependiera de ti, seguiríamos con herramientas de piedra. (**{num_muertes}** veces)",
+                                    f"Muertes totales: **{num_muertes}**. El servidor está empezando a sentir lástima por ti.",
+                                    f"Bob the Builder construía mejor y moría menos que tú. (**{num_muertes}** defunciones)",
+                                    f"Tómate un respiro, ve a beber agua, porque madre mía la que estás liando... (**{num_muertes}**)",
+                                    f"Cuidado de no tropezar con una piedra y resbalar, que igual mueres por **{num_muertes}ª** vez consecutiva.",
+                                    f"Oye, que en este servidor no dan premio por ser el que más veces mira la pantalla de muerte. (**{num_muertes}**)",
+                                    f"Hasta un Triceratops despistado vive más tiempo que tú. Y eso que extinguieron hace milenios. (**{num_muertes}** bajas)",
+                                    f"¿Quién dejó la puerta abierta? Ah, no, que fuiste tú intentando huir... otra vez. (**{num_muertes}** muertes)"
+                                ]
+                                final_msg = random.choice(sarcasmos_base)
+                            
+                            sent_msg = await message.reply(final_msg)
+                            
+                            try:
+                                emojis_muerte = ["💀", "🤡", "🪦", "🥚", "🍗", "🧻", "🗑️"]
+                                await sent_msg.add_reaction(random.choice(emojis_muerte))
+                            except (discord.Forbidden, discord.HTTPException) as e:
+                                logger.debug(f"[LogProcessor] add_reaction falló: {e}")
+                            guild_log.info(
+                                f"[Sarcasmo] Muerte detectada: {victima_player} (#{num_muertes})"
+                            )
+                            # Se han eliminado las Kills activas debido a que solo se usan muertes.
+                            await db.commit()
+
+                        # Actualización global de dashboards si hubo algún cambio
+                        if victima_player or (asesino_player and not victima_player):
+                            # Aviso al cog Warfare vía bus de eventos.
+                            self.bot.dispatch(bus.KDA_UPDATED, guild_id)
 
                 except Exception as e:
                     self.logger.error(f"[KDA] Error parseando kill log: {e}")
