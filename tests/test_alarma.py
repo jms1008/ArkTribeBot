@@ -1,4 +1,5 @@
 """Tests del cog Alarma: panel embed y detección de intrusos."""
+
 import aiosqlite
 import pytest
 

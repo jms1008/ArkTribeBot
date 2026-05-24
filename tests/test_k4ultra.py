@@ -1,8 +1,10 @@
-import pytest
 import asyncio
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
+import pytest
+
 from cogs.k4ultra import K4Ultra
-from cogs.server_status import query_all_servers, _a2s_cache
+from cogs.server_status import _a2s_cache, query_all_servers
 
 # Setup del entorno asíncrono para pytest
 pytestmark = pytest.mark.asyncio
@@ -36,8 +38,8 @@ async def test_query_all_servers_success(mock_bot):
 
     mock_players = [
         MockA2SPlayer("R1OT ", 3600),  # Con espacio final
-        MockA2SPlayer("", 100),         # Jugador anónimo (descartado)
-        MockA2SPlayer("123", 200),      # Nombre normal
+        MockA2SPlayer("", 100),  # Jugador anónimo (descartado)
+        MockA2SPlayer("123", 200),  # Nombre normal
     ]
     mock_info = MockA2SInfo()
 
@@ -61,7 +63,7 @@ async def test_query_all_servers_timeout(mock_bot):
 
     servers = {"Aberration": ("127.0.0.1", 21000)}
 
-    with patch("cogs.server_status.a2s.info", side_effect=asyncio.TimeoutError("Timeout")):
+    with patch("cogs.server_status.a2s.info", side_effect=TimeoutError("Timeout")):
         results = await query_all_servers(mock_bot, 12345, servers)
 
     assert "Aberration" in results
@@ -79,9 +81,7 @@ async def test_generate_k4ultra_embed(k4ultra_cog, mock_bot, mocker):
 
     # Sobrescribir retorno del execute fetch
     mock_execute = mocker.AsyncMock()
-    mock_execute.fetchall.return_value = [
-        ("R1OT", "Gen2", "2026-03-08T12:00:00.000000", 1)
-    ]
+    mock_execute.fetchall.return_value = [("R1OT", "Gen2", "2026-03-08T12:00:00.000000", 1)]
     mock_db.return_value.execute.return_value = mock_execute
 
     pages, top_players, aliases = await k4ultra_cog.generate_k4ultra_embed(123456, mode="radar")

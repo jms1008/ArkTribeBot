@@ -16,12 +16,12 @@ No toca:
 
 Uso: ``python scripts/migrate_to_bot_db.py <archivo.py> [...]``
 """
+
 from __future__ import annotations
 
 import re
 import sys
 from pathlib import Path
-
 
 ASYNC_WITH_RE = re.compile(
     r"^(?P<indent>\s*)async with aiosqlite\.connect\((?P<bot>self\.bot|bot)\.db_name\) as (?P<name>\w+):\s*$"
@@ -70,7 +70,7 @@ def migrate(source: str) -> tuple[str, int]:
             if current_indent < body_min_indent:
                 break
             # Desindentar 4 espacios.
-            out.append(body_line[len(body_indent_str):])
+            out.append(body_line[len(body_indent_str) :])
             j += 1
 
         migrated += 1

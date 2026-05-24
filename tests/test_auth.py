@@ -1,4 +1,5 @@
 """Tests de is_authorized_admin (función crítica de seguridad)."""
+
 import importlib
 
 import aiosqlite

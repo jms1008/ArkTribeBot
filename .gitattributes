@@ -1,0 +1,21 @@
+# Normalizar a LF en el repo. Resuelve los warnings "CRLF will be replaced by LF"
+# que aparecen al commitear desde Windows.
+* text=auto eol=lf
+
+# Tipos donde el line-ending importa explícitamente.
+*.py        text eol=lf
+*.toml      text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+*.json      text eol=lf
+*.md        text eol=lf
+*.sh        text eol=lf
+
+# Binarios — no aplicar conversión.
+*.db        binary
+*.sqlite3   binary
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gif       binary
+*.ico       binary

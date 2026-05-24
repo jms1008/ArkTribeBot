@@ -1,15 +1,16 @@
-import discord
-from discord.ext import commands
-import aiosqlite
-import re
-import random
 import json
 import logging
+import random
+import re
+
+import discord
+from discord.ext import commands
 
 from main import PoliciaSosView, get_guild_logger
 from utils import bus
 
 logger = logging.getLogger("ArkTribeBot")
+
 
 class LogProcessor(commands.Cog, name="LogProcessor"):
     """
@@ -17,6 +18,7 @@ class LogProcessor(commands.Cog, name="LogProcessor"):
     Saca la lógica fuera de main.py para mantener el código modular.
     Incluye el KDA Tracker, SOS Policía y sarcasmos de muerte.
     """
+
     def __init__(self, bot):
         self.bot = bot
         self.logger = logging.getLogger("ArkTribeBot.LogProcessor")
@@ -69,11 +71,7 @@ class LogProcessor(commands.Cog, name="LogProcessor"):
             if contains_knife:
                 # Extraer contenido original formateado
                 texto_original = message.content
-                if (
-                    not texto_original
-                    and message.embeds
-                    and message.embeds[0].description
-                ):
+                if not texto_original and message.embeds and message.embeds[0].description:
                     texto_original = message.embeds[0].description
 
                 # Procesamiento de SOS de Policía
@@ -81,9 +79,9 @@ class LogProcessor(commands.Cog, name="LogProcessor"):
                     map_match = re.search(r"\((.*?)\)", texto_original)
                     map_name = map_match.group(1) if map_match else "Desconocido"
                     try:
-                        sos_channel = self.bot.get_channel(
+                        sos_channel = self.bot.get_channel(sos_channel_id) or await self.bot.fetch_channel(
                             sos_channel_id
-                        ) or await self.bot.fetch_channel(sos_channel_id)
+                        )
                         if sos_channel:
                             view = PoliciaSosView()
                             await sos_channel.send(
@@ -124,7 +122,7 @@ class LogProcessor(commands.Cog, name="LogProcessor"):
                     if player_death_match or generic_death_match:
                         victima_char = ""
                         asesino_char = None
-                        
+
                         if player_death_match:
                             victima_char = player_death_match.group(1).strip()
                             asesino_char = player_death_match.group(2).strip()
@@ -198,21 +196,51 @@ class LogProcessor(commands.Cog, name="LogProcessor"):
                                 (guild_id, victima_player),
                             )
                             num_muertes = d_row["deaths"] if d_row else 1
-                                
+
                             # Respuestas sarcásticas variadas e Hitos
                             hitos = {
-                                1: ("¡Bienvenido a ARK! Tu primera muerte oficial de muchas... 🎉", "https://tenor.com/view/welcome-to-jurassic-park-gif-11623192"),
-                                10: ("Doble dígito de muertes... Ya eres un veterano en besar el suelo. 🥉", "https://tenor.com/view/facepalm-picard-star-trek-disappointment-gif-14639209"),
-                                50: ("¡Medio centenar de muertes! 🥈 Estás a medias de convertirte en el mayor donante de loot del servidor.", "https://tenor.com/view/sarcastic-clapping-golf-clap-cheers-well-done-jon-stewart-gif-16167909"),
-                                69: ("69 muertes... Nice. Pero sigues estando muerto. 😏", "https://tenor.com/view/nice-south-park-gif-9226462"),
-                                100: ("¡100 MUERTES! 🥇 Oficialmente eres el jugador más manco de la tribu. Eres leyenda.", "https://tenor.com/view/nuclear-explosion-boom-blast-atomic-bomb-gif-16056637"),
-                                300: ("¡ESTO ES ESPARTA! Y tú eres el mensajero que acaban de tirar al pozo. 300 muertes.", "https://tenor.com/view/sparta-kick-hole-fall-leonidas-gif-3420829"),
-                                420: ("420 muertes... 🌿 Demasiado humo en esa base, ¡deja de fumar flor rara!", "https://tenor.com/view/snoop-dogg-smoke-smoke-weed-420-gif-14352528"),
-                                666: ("666 muertes... 😈 Has invocado al Demonio de la Inutilidad. Vas directo al infierno.", "https://tenor.com/view/hell-elmo-fire-flames-elmo-fire-gif-17631853"),
-                                777: ("¡VEGETTA777! ⛏️ Muy bonito, pero te acaba de farmear un dodo por la espalda.", "https://tenor.com/view/vegetta777-minecraft-saludo-gif-14546416"),
-                                1000: ("1000 MUERTES. 🏆 Hemos contactado con Wildcard. Te vamos a borrar el juego de Steam para que dejes de sufrir.", "https://tenor.com/view/mind-blown-explosion-boom-explode-gif-12051642")
+                                1: (
+                                    "¡Bienvenido a ARK! Tu primera muerte oficial de muchas... 🎉",
+                                    "https://tenor.com/view/welcome-to-jurassic-park-gif-11623192",
+                                ),
+                                10: (
+                                    "Doble dígito de muertes... Ya eres un veterano en besar el suelo. 🥉",
+                                    "https://tenor.com/view/facepalm-picard-star-trek-disappointment-gif-14639209",
+                                ),
+                                50: (
+                                    "¡Medio centenar de muertes! 🥈 Estás a medias de convertirte en el mayor donante de loot del servidor.",
+                                    "https://tenor.com/view/sarcastic-clapping-golf-clap-cheers-well-done-jon-stewart-gif-16167909",
+                                ),
+                                69: (
+                                    "69 muertes... Nice. Pero sigues estando muerto. 😏",
+                                    "https://tenor.com/view/nice-south-park-gif-9226462",
+                                ),
+                                100: (
+                                    "¡100 MUERTES! 🥇 Oficialmente eres el jugador más manco de la tribu. Eres leyenda.",
+                                    "https://tenor.com/view/nuclear-explosion-boom-blast-atomic-bomb-gif-16056637",
+                                ),
+                                300: (
+                                    "¡ESTO ES ESPARTA! Y tú eres el mensajero que acaban de tirar al pozo. 300 muertes.",
+                                    "https://tenor.com/view/sparta-kick-hole-fall-leonidas-gif-3420829",
+                                ),
+                                420: (
+                                    "420 muertes... 🌿 Demasiado humo en esa base, ¡deja de fumar flor rara!",
+                                    "https://tenor.com/view/snoop-dogg-smoke-smoke-weed-420-gif-14352528",
+                                ),
+                                666: (
+                                    "666 muertes... 😈 Has invocado al Demonio de la Inutilidad. Vas directo al infierno.",
+                                    "https://tenor.com/view/hell-elmo-fire-flames-elmo-fire-gif-17631853",
+                                ),
+                                777: (
+                                    "¡VEGETTA777! ⛏️ Muy bonito, pero te acaba de farmear un dodo por la espalda.",
+                                    "https://tenor.com/view/vegetta777-minecraft-saludo-gif-14546416",
+                                ),
+                                1000: (
+                                    "1000 MUERTES. 🏆 Hemos contactado con Wildcard. Te vamos a borrar el juego de Steam para que dejes de sufrir.",
+                                    "https://tenor.com/view/mind-blown-explosion-boom-explode-gif-12051642",
+                                ),
                             }
-                            
+
                             final_msg = ""
                             if num_muertes in hitos:
                                 texto, gif = hitos[num_muertes]
@@ -240,20 +268,18 @@ class LogProcessor(commands.Cog, name="LogProcessor"):
                                     f"Cuidado de no tropezar con una piedra y resbalar, que igual mueres por **{num_muertes}ª** vez consecutiva.",
                                     f"Oye, que en este servidor no dan premio por ser el que más veces mira la pantalla de muerte. (**{num_muertes}**)",
                                     f"Hasta un Triceratops despistado vive más tiempo que tú. Y eso que extinguieron hace milenios. (**{num_muertes}** bajas)",
-                                    f"¿Quién dejó la puerta abierta? Ah, no, que fuiste tú intentando huir... otra vez. (**{num_muertes}** muertes)"
+                                    f"¿Quién dejó la puerta abierta? Ah, no, que fuiste tú intentando huir... otra vez. (**{num_muertes}** muertes)",
                                 ]
                                 final_msg = random.choice(sarcasmos_base)
-                            
+
                             sent_msg = await message.reply(final_msg)
-                            
+
                             try:
                                 emojis_muerte = ["💀", "🤡", "🪦", "🥚", "🍗", "🧻", "🗑️"]
                                 await sent_msg.add_reaction(random.choice(emojis_muerte))
                             except (discord.Forbidden, discord.HTTPException) as e:
                                 logger.debug(f"[LogProcessor] add_reaction falló: {e}")
-                            guild_log.info(
-                                f"[Sarcasmo] Muerte detectada: {victima_player} (#{num_muertes})"
-                            )
+                            guild_log.info(f"[Sarcasmo] Muerte detectada: {victima_player} (#{num_muertes})")
                             # Se han eliminado las Kills activas debido a que solo se usan muertes.
                             await db.commit()
 
@@ -267,6 +293,7 @@ class LogProcessor(commands.Cog, name="LogProcessor"):
 
         # Importante: Como es un listener en un Cog, no debe llamar a await self.bot.process_commands(message)
         # ya que la propia clase Bot lo maneja.
+
 
 async def setup(bot):
     await bot.add_cog(LogProcessor(bot))

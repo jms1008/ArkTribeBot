@@ -1,9 +1,9 @@
+import asyncio
+import logging
+
 import discord
 from discord import app_commands
 from discord.ext import commands
-import aiosqlite
-import asyncio
-import logging
 
 from utils import bus
 
@@ -16,7 +16,7 @@ class TodoView(discord.ui.View):
         self.bot = bot
         self.page = page
         self.total_rows = total_rows
-        
+
         # Deshabilitar botones de paginación si procede
         total_pages = max(1, (self.total_rows + 10 - 1) // 10)
         self.prev_btn.disabled = self.page == 0
@@ -27,9 +27,7 @@ class TodoView(discord.ui.View):
         style=discord.ButtonStyle.success,
         custom_id="todo_add_btn",
     )
-    async def add_task_btn(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
+    async def add_task_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(AddTaskModal(self.bot))
 
     @discord.ui.button(
@@ -37,9 +35,7 @@ class TodoView(discord.ui.View):
         style=discord.ButtonStyle.primary,
         custom_id="todo_claim",
     )
-    async def claim_task(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
+    async def claim_task(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(ClaimTaskModal(self.bot))
 
     @discord.ui.button(
@@ -47,9 +43,7 @@ class TodoView(discord.ui.View):
         style=discord.ButtonStyle.danger,
         custom_id="todo_delete",
     )
-    async def delete_task(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
+    async def delete_task(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(DeleteTaskModal(self.bot))
 
     @discord.ui.button(
@@ -59,6 +53,7 @@ class TodoView(discord.ui.View):
     )
     async def prev_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         import re
+
         current_page = 0
         if interaction.message.embeds and interaction.message.embeds[0].footer.text:
             m = re.search(r"Página (\d+)/\d+", interaction.message.embeds[0].footer.text)
@@ -74,6 +69,7 @@ class TodoView(discord.ui.View):
     )
     async def next_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         import re
+
         current_page = 0
         total_pages = 1
         if interaction.message.embeds and interaction.message.embeds[0].footer.text:
@@ -88,7 +84,7 @@ class TodoView(discord.ui.View):
         db = self.bot.db
         cursor = await db.execute("SELECT * FROM todos WHERE guild_id = ?", (interaction.guild_id,))
         rows = await cursor.fetchall()
-        
+
         embed, page, view = build_todo_embed_view(self.bot, rows, new_page)
         await interaction.response.edit_message(embed=embed, view=view)
 
@@ -98,7 +94,7 @@ def build_todo_embed_view(bot, rows: list, page: int = 0):
     total = len(rows)
     total_pages = max(1, (total + page_size - 1) // page_size)
     page = max(0, min(page, total_pages - 1))
-    
+
     start = page * page_size
     chunk = rows[start : start + page_size]
 
@@ -108,13 +104,13 @@ def build_todo_embed_view(bot, rows: list, page: int = 0):
     else:
         n_pending = sum(1 for r in rows if r["estado"] == "Pendiente")
         n_progress = total - n_pending
-        
+
         lines = []
         lines.append(f"⏳ `{n_pending}` Pendientes  ·  🔨 `{n_progress}` En Progreso  ·  📊 `{total}` Total")
         lines.append("")
-        
+
         for row in chunk:
-            raw_asignado = str(row['asignado_a']) if row["asignado_a"] else ""
+            raw_asignado = str(row["asignado_a"]) if row["asignado_a"] else ""
             if not raw_asignado:
                 asignado = "*Sin asignar*"
             else:
@@ -136,7 +132,7 @@ def build_todo_embed_view(bot, rows: list, page: int = 0):
                 lines.append(f"> `#{row['id']}` {icon} **{row['tarea']}**")
                 lines.append(f">  ╰ 👤 {asignado}")
             lines.append("")
-        
+
         embed.description = "\n".join(lines).strip()
         embed.set_footer(text=f"Página {page + 1}/{total_pages} • {total} tareas en total")
 
@@ -162,18 +158,14 @@ async def update_all_dashboards(bot, guild_id: int, page: int = 0):
 
     for row in msg_rows:
         try:
-            channel = bot.get_channel(row["channel_id"]) or await bot.fetch_channel(
-                row["channel_id"]
-            )
+            channel = bot.get_channel(row["channel_id"]) or await bot.fetch_channel(row["channel_id"])
             if channel:
                 message = await channel.fetch_message(row["message_id"])
                 await message.edit(embed=embed, view=view)
             else:
                 messages_to_remove.append(row["id"])
         except (discord.NotFound, discord.Forbidden):
-            messages_to_remove.append(
-                row["id"]
-            )  # Inaccesible (borrado o sin permisos)
+            messages_to_remove.append(row["id"])  # Inaccesible (borrado o sin permisos)
         except Exception as e:
             logger.error(f"[Management] Error actualizando dashboard {row['id']}: {e}")
 
@@ -198,12 +190,16 @@ class AddTaskModal(discord.ui.Modal, title="Añadir Nueva Tarea"):
     async def on_submit(self, interaction: discord.Interaction):
         tarea = self.tarea_content.value
         db = self.bot.db
-        await db.execute("INSERT INTO todos (guild_id, tarea) VALUES (?, ?)", (interaction.guild_id, tarea,))
+        await db.execute(
+            "INSERT INTO todos (guild_id, tarea) VALUES (?, ?)",
+            (
+                interaction.guild_id,
+                tarea,
+            ),
+        )
         await db.commit()
 
-        await interaction.response.send_message(
-            f"✅ Tarea añadida: **{tarea}**", ephemeral=False
-        )
+        await interaction.response.send_message(f"✅ Tarea añadida: **{tarea}**", ephemeral=False)
         await update_all_dashboards(self.bot, interaction.guild_id)
 
         await asyncio.sleep(5)
@@ -215,9 +211,7 @@ class AddTaskModal(discord.ui.Modal, title="Añadir Nueva Tarea"):
 
 
 class ClaimTaskModal(discord.ui.Modal, title="Reclamar Tarea"):
-    task_id = discord.ui.TextInput(
-        label="ID de la Tarea", placeholder="Introduce el número ID"
-    )
+    task_id = discord.ui.TextInput(label="ID de la Tarea", placeholder="Introduce el número ID")
 
     def __init__(self, bot):
         super().__init__()
@@ -228,9 +222,7 @@ class ClaimTaskModal(discord.ui.Modal, title="Reclamar Tarea"):
         try:
             tid_int = int(t_id)
         except ValueError:
-            await interaction.response.send_message(
-                "❌ El ID debe ser un número.", ephemeral=True
-            )
+            await interaction.response.send_message("❌ El ID debe ser un número.", ephemeral=True)
             return
 
         db = self.bot.db
@@ -246,15 +238,15 @@ class ClaimTaskModal(discord.ui.Modal, title="Reclamar Tarea"):
                 ephemeral=True,
             )
             return
-            
+
         actual_assignee = row["asignado_a"]
         actual_assignee_str = str(actual_assignee) if actual_assignee else ""
         user_mention = f"<@{interaction.user.id}>"
         user_id_str = str(interaction.user.id)
         user_name = interaction.user.display_name
-            
+
         assignees = [a.strip() for a in actual_assignee_str.split(",") if a.strip()]
-            
+
         encontrado = False
         for a in assignees:
             core = a.replace("<@", "").replace(">", "")
@@ -262,10 +254,10 @@ class ClaimTaskModal(discord.ui.Modal, title="Reclamar Tarea"):
                 assignees.remove(a)
                 encontrado = True
                 break
-                    
+
         if not encontrado:
             assignees.append(user_mention)
-                
+
         new_assignee = ", ".join(assignees)
 
         await db.execute(
@@ -275,9 +267,7 @@ class ClaimTaskModal(discord.ui.Modal, title="Reclamar Tarea"):
         await db.commit()
 
         # Envío de feedback temporal
-        await interaction.response.send_message(
-            f"✅ Has reclamado la tarea **#{t_id}**.", ephemeral=False
-        )
+        await interaction.response.send_message(f"✅ Has reclamado la tarea **#{t_id}**.", ephemeral=False)
 
         # Actualización de dashboards
         await update_all_dashboards(self.bot, interaction.guild_id)
@@ -292,9 +282,7 @@ class ClaimTaskModal(discord.ui.Modal, title="Reclamar Tarea"):
 
 
 class DeleteTaskModal(discord.ui.Modal, title="Eliminar Tarea"):
-    task_id = discord.ui.TextInput(
-        label="ID de la Tarea a Eliminar", placeholder="Introduce el número ID"
-    )
+    task_id = discord.ui.TextInput(label="ID de la Tarea a Eliminar", placeholder="Introduce el número ID")
 
     def __init__(self, bot):
         super().__init__()
@@ -305,9 +293,7 @@ class DeleteTaskModal(discord.ui.Modal, title="Eliminar Tarea"):
         try:
             tid_int = int(t_id)
         except ValueError:
-            await interaction.response.send_message(
-                "❌ El ID debe ser un número.", ephemeral=True
-            )
+            await interaction.response.send_message("❌ El ID debe ser un número.", ephemeral=True)
             return
 
         db = self.bot.db
@@ -323,12 +309,16 @@ class DeleteTaskModal(discord.ui.Modal, title="Eliminar Tarea"):
             )
             return
 
-        await db.execute("DELETE FROM todos WHERE id = ? AND guild_id = ?", (tid_int, interaction.guild_id,))
+        await db.execute(
+            "DELETE FROM todos WHERE id = ? AND guild_id = ?",
+            (
+                tid_int,
+                interaction.guild_id,
+            ),
+        )
         await db.commit()
 
-        await interaction.response.send_message(
-            f"🗑️ Tarea **#{t_id}** eliminada.", ephemeral=False
-        )
+        await interaction.response.send_message(f"🗑️ Tarea **#{t_id}** eliminada.", ephemeral=False)
 
         await update_all_dashboards(self.bot, interaction.guild_id)
 
@@ -355,7 +345,6 @@ Este canal es para **EMERGENCIAS REALES**. Úsalo con responsabilidad.
 Tenemos implementado un sistema pasivo de alarma. Si alguien dentro del juego mata a un dino que se llame o contenga `@policia` en el nombre, el bot leerá la línea de muerte en los *logs* de la tribu y mandará automáticamente un mensaje de alarma en este canal para avisar de infiltrados.
 
 > :warning: **IMPORTANTE:** El abuso del comando `/sos` para bromas está feo. Úsalos solo si nos están atacando.""",
-
     "todo_list": """# :pencil: TO-DO List
 
 Añade tareas pendientes, reclama las que vayas a hacer tú y bórralas cuando estén completas.
@@ -375,7 +364,6 @@ El panel tiene botones para gestionar las tareas sin usar comandos:
 4. :arrow_backward: y :arrow_forward: **(Paginación)**: Si hay más de 10 tareas pendientes, puedes navegar por las diferentes páginas de las listas de tareas.
 
 > :bell: Revisa este canal antes de preguntar "¿Qué hay que hacer?".""",
-
     "lineas": """# :dna: Líneas de Genética
 
 Aquí registramos y controlamos las líneas (Top Stats) de nuestra tribu.
@@ -397,7 +385,6 @@ El panel de `/lineas` ahora incluye herramientas clickeables:
 3. **Alarmas:** Programa temporizadores para que el bot te avise de la impronta o el crecimiento.
 4. **Ver Logs Muta:** Log que informa de qué stat y de qué dino se modificaron los puntos.
 5. **Selector Individual:** Usa el menú desplegable inferior para aislar a un dino concreto y ver su ficha detallada de forma privada.""",
-
     "blacklist": """# :skull_crossbones: Blacklist
 
 Jugadores "Kill on Sight" (KOS). Si están aquí, son enemigos confirmados, cuanta más info mejor.
@@ -415,7 +402,6 @@ Jugadores "Kill on Sight" (KOS). Si están aquí, son enemigos confirmados, cuan
 El panel incorpora iconos inteligentes:
 - :red_circle: **ENEMIGOS:** Jugadores a neutralizar sí o sí.
 - :white_circle: **REGISTROS (NEUTRALES):** Jugadores auto-detectados por el radar que todavía no nos han hecho nada (sólo control y seguimiento de pasaportes).""",
-
     "scouting": """# :satellite_orbital: Scouting
 
 Reporte de bases enemigas. La información es poder.
@@ -432,7 +418,6 @@ Reporte de bases enemigas. La información es poder.
 - **/scout_delete**: Elimina un reporte obsoleto o de una base limpia. Requiere el ID del reporte.
 
 > :bulb: **Tip:** Desde el propio panel con botones generado por `/scout_list` también puedes Añadir, Modificar o Eliminar bases completando el formulario.""",
-
     "status": """# :green_circle: Estado de los Servidores
 
 Monitorea en tiempo real si los servidores están online, quién está conectado y qué ping tienen.
@@ -445,7 +430,6 @@ Monitorea en tiempo real si los servidores están online, quién está conectado
 - **/status_permanente**: Genera y ancla un mensaje que se actualiza a sí mismo indefinidamente.
 
 > :arrows_counterclockwise: **Auto-Update:** Los mensajes estáticos de `/status_permanente` cambian de color a :red_circle: Rojo si el servidor cae bajo un Timeout, :yellow_circle: Amarillo si está vivo pero Vacío y :green_circle: Verde si hay gente dentro, listándolos abajo.""",
-
     "k4ultra": """# :eye: Tracker de Inteligencia (K4Ultra)
 
 K4Ultra monitoriza de forma pasiva las redes para calcular el comportamiento y sesiones enemigas basándose en conexiones en Battlemetrics.
@@ -460,7 +444,6 @@ K4Ultra monitoriza de forma pasiva las redes para calcular el comportamiento y s
 Selecciona a un jugador del menú inferior de K4Ultra para ver su expediente interactivo sin tirar comandos:
 1. **Últimas Bajas:** Registros de mapas donde más pisa el enemigo.
 2. **Sessions:** Tiempos de conexión exactos y minutos jugados in-game.""",
-
     "ranking": """# ☠️ EL SALÓN DE LA INFAMIA (Rancómetro)
 
 El bot usa un sofisticado **Log Processor** para escuchar 24/7 el canal de Logs del servidor y parsear cada vez que alguien lee la pantalla de muerte.
@@ -472,13 +455,13 @@ El bot usa un sofisticado **Log Processor** para escuchar 24/7 el canal de Logs 
 - **Configuración de Tribu:** Obligatorio para todos los miembros, usa `/perfil_tribu` para registrar tu nombre in-game, Steam ID y Apodo en una sola vez.
 - **/ranking**: Dashboard de mortalidad puro (Death Counter activo).
 - **Sistema de Puntos Opcional:** Activado por el admin de la tribu, usa `/puntos_daily_suscribir` para recibir resumenes privados por MD cada día.""",
-
     "eventos": """# 📅 GESTIÓN DE EVENTOS LFG
 
 Planifica asaltos, defensas o farmeos masivos con facilidad.
 Usa el comando `/evento_crear` indicando título y opciones.
-El sistema despliega botones para que la tribu se apunte, vote horas preferidas, y un administrador pueda notificar la alarma cuando el grupo esté listo."""
+El sistema despliega botones para que la tribu se apunte, vote horas preferidas, y un administrador pueda notificar la alarma cuando el grupo esté listo.""",
 }
+
 
 class Management(commands.Cog, name="Management"):
     def __init__(self, bot):
@@ -494,9 +477,8 @@ class Management(commands.Cog, name="Management"):
 
     async def setup_dashboard(self, guild_id: int, channel: discord.TextChannel):
         """Inicializa el dashboard del To-Do List y almacena su ID."""
-        import aiosqlite
         import asyncio
-        
+
         info_embed = discord.Embed(
             description=INFO_TEXTS["todo_list"],
             color=discord.Color.from_rgb(43, 45, 49),
@@ -510,9 +492,7 @@ class Management(commands.Cog, name="Management"):
         )
         rows = await cursor.fetchall()
 
-        todo_embed = discord.Embed(
-            title="📝 Lista de Tareas", color=discord.Color.orange()
-        )
+        todo_embed = discord.Embed(title="📝 Lista de Tareas", color=discord.Color.orange())
         if not rows:
             todo_embed.description = "No hay tareas pendientes. ¡Buen trabajo! 🎉"
         else:
@@ -537,19 +517,21 @@ class Management(commands.Cog, name="Management"):
         )
         await db.commit()
 
-    @app_commands.command(
-        name="todo_add", description="Añade una nueva tarea a la lista."
-    )
+    @app_commands.command(name="todo_add", description="Añade una nueva tarea a la lista.")
     @app_commands.describe(tarea="Descripción de la tarea")
     async def todo_add(self, interaction: discord.Interaction, tarea: str):
         db = self.bot.db
-        await db.execute("INSERT INTO todos (guild_id, tarea) VALUES (?, ?)", (interaction.guild_id, tarea,))
+        await db.execute(
+            "INSERT INTO todos (guild_id, tarea) VALUES (?, ?)",
+            (
+                interaction.guild_id,
+                tarea,
+            ),
+        )
         await db.commit()
 
         # Envío de feedback
-        await interaction.response.send_message(
-            f"✅ Tarea añadida: **{tarea}**", ephemeral=False
-        )
+        await interaction.response.send_message(f"✅ Tarea añadida: **{tarea}**", ephemeral=False)
 
         # Actualización de listas (dashboards)
         await update_all_dashboards(self.bot, interaction.guild_id)
@@ -562,9 +544,7 @@ class Management(commands.Cog, name="Management"):
         except (discord.NotFound, discord.Forbidden) as e:
             logger.debug(f"[Management] Auto-delete falló (feedback): {e}")
 
-    @app_commands.command(
-        name="todo_list", description="Crea un panel de tareas auto-actualizable."
-    )
+    @app_commands.command(name="todo_list", description="Crea un panel de tareas auto-actualizable.")
     async def todo_list(self, interaction: discord.Interaction):
         # Generación del Embed inicial
         db = self.bot.db
@@ -615,7 +595,7 @@ class Management(commands.Cog, name="Management"):
     async def info(self, interaction: discord.Interaction, modulo: app_commands.Choice[str]):
         embed = discord.Embed(
             description=INFO_TEXTS.get(modulo.value, "Información no encontrada."),
-            color=discord.Color.from_rgb(43, 45, 49)  # Color invisible de Discord (oscuro)
+            color=discord.Color.from_rgb(43, 45, 49),  # Color invisible de Discord (oscuro)
         )
         await interaction.response.send_message(embed=embed)
 
@@ -648,9 +628,7 @@ class Management(commands.Cog, name="Management"):
         enemigo: app_commands.Choice[str] = None,
     ):
         if not await interaction.client.is_authorized_admin(interaction):
-            await interaction.response.send_message(
-                "❌ Acceso denegado.", ephemeral=True
-            )
+            await interaction.response.send_message("❌ Acceso denegado.", ephemeral=True)
             return
 
         db = self.bot.db
@@ -665,6 +643,7 @@ class Management(commands.Cog, name="Management"):
         # Si no está en la blacklist, lo añadimos automáticamente
         if not bl_row:
             from datetime import datetime
+
             await db.execute(
                 "INSERT INTO blacklist (guild_id, player, tribe, map, notes, is_enemy, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (
@@ -696,7 +675,7 @@ class Management(commands.Cog, name="Management"):
                 # Defensa en profundidad: verificar columnas contra whitelist antes de interpolar.
                 from utils.parsing import ALLOWED_BLACKLIST_FIELDS
 
-                safe_keys = [k for k in updates.keys() if k in ALLOWED_BLACKLIST_FIELDS]
+                safe_keys = [k for k in updates if k in ALLOWED_BLACKLIST_FIELDS]
                 if safe_keys:
                     set_clause = ", ".join(f"{k} = ?" for k in safe_keys)
                     values = [updates[k] for k in safe_keys] + [bl_row["id"], interaction.guild_id]
@@ -752,101 +731,126 @@ class Management(commands.Cog, name="Management"):
 
     @app_commands.command(
         name="fusionar_perfiles",
-        description="Une todo el historial cronológico y mapas visitados de un Nombre Antiguo a uno Nuevo (Principal)."
+        description="Une todo el historial cronológico y mapas visitados de un Nombre Antiguo a uno Nuevo (Principal).",
     )
     @app_commands.describe(
         secundario="Nombre de Steam antiguo o secundario que ya no se usa",
-        primario="Nombre de Steam oficial y definitivo del jugador"
+        primario="Nombre de Steam oficial y definitivo del jugador",
     )
     async def fusionar_perfiles(self, interaction: discord.Interaction, secundario: str, primario: str):
         if not await interaction.client.is_authorized_admin(interaction):
             await interaction.response.send_message("❌ Acceso denegado.", ephemeral=True)
             return
-            
+
         secundario = secundario.strip()
         primario = primario.strip()
-        
+
         if secundario.lower() == primario.lower():
-            await interaction.response.send_message("❌ El nombre original y secundario no pueden ser iguales.", ephemeral=True)
+            await interaction.response.send_message(
+                "❌ El nombre original y secundario no pueden ser iguales.", ephemeral=True
+            )
             return
-            
+
         await interaction.response.defer(ephemeral=False)
         guild_id = interaction.guild_id
-        
+
         db = self.bot.db
         # 1. Resolver el encadenamiento (Si Z se convierte en Y, actualizar todos los X apuntando a Z para que apunten a Y)
         await db.execute(
             "UPDATE player_identities_link SET primary_name = ? WHERE primary_name = ? AND guild_id = ?",
-            (primario, secundario, guild_id)
+            (primario, secundario, guild_id),
         )
-            
+
         # 2. Insertar el nuevo alias
         await db.execute(
             "INSERT OR REPLACE INTO player_identities_link (guild_id, secondary_name, primary_name) VALUES (?, ?, ?)",
-            (guild_id, secundario, primario)
+            (guild_id, secundario, primario),
         )
-            
+
         # 3. Trasladar registro de sesiones completas (radar activo e inactivo)
         await db.execute(
             "UPDATE k4ultra_sessions SET player_name = ? WHERE player_name = ? AND guild_id = ?",
-            (primario, secundario, guild_id)
+            (primario, secundario, guild_id),
         )
-            
+
         # 4. Fusión de Playtimes
-        c_play = await db.execute("SELECT map_name, total_minutes, last_seen FROM k4ultra_playtime WHERE player_name = ? AND guild_id = ?", (secundario, guild_id))
+        c_play = await db.execute(
+            "SELECT map_name, total_minutes, last_seen FROM k4ultra_playtime WHERE player_name = ? AND guild_id = ?",
+            (secundario, guild_id),
+        )
         old_playtimes = await c_play.fetchall()
-            
+
         for map_name, mins, last_seen in old_playtimes:
-            c_prim = await db.execute("SELECT total_minutes FROM k4ultra_playtime WHERE player_name = ? AND map_name = ? AND guild_id = ?", (primario, map_name, guild_id))
+            c_prim = await db.execute(
+                "SELECT total_minutes FROM k4ultra_playtime WHERE player_name = ? AND map_name = ? AND guild_id = ?",
+                (primario, map_name, guild_id),
+            )
             prim_row = await c_prim.fetchone()
             if prim_row:
                 new_mins = prim_row[0] + mins
-                await db.execute("UPDATE k4ultra_playtime SET total_minutes = ?, last_seen = max(last_seen, ?) WHERE player_name = ? AND map_name = ? AND guild_id = ?", (new_mins, last_seen, primario, map_name, guild_id))
+                await db.execute(
+                    "UPDATE k4ultra_playtime SET total_minutes = ?, last_seen = max(last_seen, ?) WHERE player_name = ? AND map_name = ? AND guild_id = ?",
+                    (new_mins, last_seen, primario, map_name, guild_id),
+                )
             else:
-                await db.execute("INSERT INTO k4ultra_playtime (guild_id, player_name, map_name, total_minutes, last_seen) VALUES (?, ?, ?, ?, ?)", (guild_id, primario, map_name, mins, last_seen))
-            
-        await db.execute("DELETE FROM k4ultra_playtime WHERE player_name = ? AND guild_id = ?", (secundario, guild_id))
-            
+                await db.execute(
+                    "INSERT INTO k4ultra_playtime (guild_id, player_name, map_name, total_minutes, last_seen) VALUES (?, ?, ?, ?, ?)",
+                    (guild_id, primario, map_name, mins, last_seen),
+                )
+
+        await db.execute(
+            "DELETE FROM k4ultra_playtime WHERE player_name = ? AND guild_id = ?", (secundario, guild_id)
+        )
+
         # 5. Trasladar alts en In-Game
         await db.execute(
             "UPDATE tribe_characters SET player_name = ? WHERE player_name = ? AND guild_id = ?",
-            (primario, secundario, guild_id)
+            (primario, secundario, guild_id),
         )
-            
+
         # 6. Para blacklist, simplemente si tenía notas antiguas, no queremos perderlas
-        c_bl = await db.execute("SELECT notes FROM blacklist WHERE player = ? AND guild_id = ?", (secundario, guild_id))
+        c_bl = await db.execute(
+            "SELECT notes FROM blacklist WHERE player = ? AND guild_id = ?", (secundario, guild_id)
+        )
         row_bl = await c_bl.fetchone()
         if row_bl:
             old_note = row_bl[0]
-            c_p_bl = await db.execute("SELECT id, notes FROM blacklist WHERE player = ? AND guild_id = ?", (primario, guild_id))
+            c_p_bl = await db.execute(
+                "SELECT id, notes FROM blacklist WHERE player = ? AND guild_id = ?", (primario, guild_id)
+            )
             row_p_bl = await c_p_bl.fetchone()
             if row_p_bl:
                 combined_notes = f"{row_p_bl[1]} | [De {secundario}]: {old_note}"
                 await db.execute("UPDATE blacklist SET notes = ? WHERE id = ?", (combined_notes, row_p_bl[0]))
             else:
                 new_note = f"[Heredado de {secundario}]: {old_note}"
-                await db.execute("UPDATE blacklist SET player = ?, notes = ? WHERE player = ? AND guild_id = ?", (primario, new_note, secundario, guild_id))
-            
+                await db.execute(
+                    "UPDATE blacklist SET player = ?, notes = ? WHERE player = ? AND guild_id = ?",
+                    (primario, new_note, secundario, guild_id),
+                )
+
         await db.execute("DELETE FROM blacklist WHERE player = ? AND guild_id = ?", (secundario, guild_id))
-            
+
         # Eliminar duplicados en tribe_characters en caso de que ambos tuviesen ya los mismos in-games asignados
         await db.execute("""
-            DELETE FROM tribe_characters 
+            DELETE FROM tribe_characters
             WHERE rowid NOT IN (
                 SELECT max(rowid) FROM tribe_characters GROUP BY player_name, character_name, guild_id
             )
         """)
-            
+
         await db.commit()
-            
+
         # Mensaje de confirmación detallado
         embed = discord.Embed(
             title="✅ Identidades Fusionadas",
             description=f"El perfil histórico de **{secundario}** ha sido traspasado y fusionado de manera perpetua a **{primario}**.",
-            color=discord.Color.brand_green()
+            color=discord.Color.brand_green(),
         )
-        embed.set_footer(text="A partir de ahora, el bot convertirá automáticamente a este jugador si se conecta usando su viejo nombre de Steam.")
-        
+        embed.set_footer(
+            text="A partir de ahora, el bot convertirá automáticamente a este jugador si se conecta usando su viejo nombre de Steam."
+        )
+
         await interaction.followup.send(embed=embed)
 
         self.bot.dispatch(bus.BLACKLIST_UPDATED, guild_id)
@@ -862,7 +866,12 @@ class Management(commands.Cog, name="Management"):
         apodo="Apodo interno (Se usará de forma predeterminada si no se indica)",
     )
     async def perfil_tribu(
-        self, interaction: discord.Interaction, usuario: discord.Member, personaje: str, steam: str = None, apodo: str = None
+        self,
+        interaction: discord.Interaction,
+        usuario: discord.Member,
+        personaje: str,
+        steam: str = None,
+        apodo: str = None,
     ):
         if not await interaction.client.is_authorized_admin(interaction):
             await interaction.response.send_message("❌ Acceso denegado.", ephemeral=True)
@@ -884,14 +893,17 @@ class Management(commands.Cog, name="Management"):
                 UNIQUE(guild_id, discord_id)
             )
         """)
-        await db.execute("""
+        await db.execute(
+            """
             INSERT INTO tribe_profiles (guild_id, discord_id, ark_character, steam_id, alias)
             VALUES (?, ?, ?, ?, ?)
-            ON CONFLICT(guild_id, discord_id) DO UPDATE SET 
+            ON CONFLICT(guild_id, discord_id) DO UPDATE SET
                 ark_character=excluded.ark_character,
                 steam_id=excluded.steam_id,
                 alias=excluded.alias
-        """, (interaction.guild_id, usuario.id, personaje, steam_safe, apodo_final))
+        """,
+            (interaction.guild_id, usuario.id, personaje, steam_safe, apodo_final),
+        )
 
         # 2. Vínculo del Rancómetro (Warfare: tracker de muertes)
         await db.execute(
@@ -913,21 +925,21 @@ class Management(commands.Cog, name="Management"):
             "INSERT INTO k4ultra_aliases (guild_id, player_name, alias) VALUES (?, ?, ?) ON CONFLICT(guild_id, player_name) DO UPDATE SET alias=excluded.alias",
             (interaction.guild_id, personaje, apodo_final),
         )
-            
+
         await db.commit()
 
         embed = discord.Embed(
             title="✅ Perfil de Tribu Configurado",
             description=f"El jugador {usuario.mention} ha sido registrado globalmente en la base de datos.",
-            color=discord.Color.green()
+            color=discord.Color.green(),
         )
         embed.add_field(name="📛 In-Game", value=f"`{personaje}`", inline=True)
         embed.add_field(name="👤 Apodo", value=f"`{apodo_final}`", inline=True)
         embed.add_field(name="🎮 Steam", value=f"`{steam_safe}`", inline=True)
         embed.set_footer(text="Vinculado al Rancómetro y al Radar K4Ultra con éxito.")
-        
+
         await interaction.response.send_message(embed=embed, ephemeral=False)
-        
+
         # Puesto que actualizamos records, recargamos el dashboard de muertes vía bus.
         self.bot.dispatch(bus.KDA_UPDATED, interaction.guild_id)
 
@@ -937,6 +949,7 @@ class Management(commands.Cog, name="Management"):
     )
     async def guia(self, interaction: discord.Interaction):
         """Muestra una guía interactiva con los textos de ayuda del bot."""
+
         class GuiaView(discord.ui.View):
             def __init__(self):
                 super().__init__(timeout=180)
@@ -955,7 +968,7 @@ class Management(commands.Cog, name="Management"):
                 ]
                 self.select = discord.ui.Select(
                     placeholder="Selecciona una sección de la guía...",
-                    options=[opt for opt in options if opt.value in INFO_TEXTS]
+                    options=[opt for opt in options if opt.value in INFO_TEXTS],
                 )
                 self.select.callback = self.select_callback
                 self.add_item(self.select)
@@ -963,19 +976,15 @@ class Management(commands.Cog, name="Management"):
             async def select_callback(self, i: discord.Interaction):
                 val = self.select.values[0]
                 text = INFO_TEXTS.get(val, "Sección en construcción.")
-                emb = discord.Embed(
-                    description=text,
-                    color=discord.Color.blurple()
-                )
+                emb = discord.Embed(description=text, color=discord.Color.blurple())
                 await i.response.edit_message(embed=emb, view=self)
 
         embed_inicial = discord.Embed(
             title="📚 Manual de Usuario - ArkTribeBot",
             description="Selecciona una de las categorías del menú inferior para conocer los comandos y funcionamiento de cada módulo.\n\nRecuerda usar `/perfil_tribu` si acabas de llegar para registrarte en el sistema de la red.",
-            color=discord.Color.blurple()
+            color=discord.Color.blurple(),
         )
         await interaction.response.send_message(embed=embed_inicial, view=GuiaView(), ephemeral=True)
-
 
 
 async def setup(bot):

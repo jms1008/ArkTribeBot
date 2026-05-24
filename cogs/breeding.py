@@ -1,9 +1,10 @@
+import asyncio
+import datetime
+import logging
+
+import aiosqlite
 import discord
 from discord import app_commands
-import aiosqlite
-import asyncio
-import logging
-import datetime
 from discord.ext import commands, tasks
 
 logger = logging.getLogger("ArkTribeBot")
@@ -52,14 +53,16 @@ class StatSelectView(discord.ui.View):
         stat_selected = self.select.values[0]
         # Defensa anti-inyección: stat_selected viene del Select, pero validamos por si acaso.
         if stat_selected not in ALLOWED_DINO_STATS:
-            await interaction.response.send_message(
-                "❌ Estadística no permitida.", ephemeral=True
-            )
+            await interaction.response.send_message("❌ Estadística no permitida.", ephemeral=True)
             return
 
         db = self.bot.db
         cursor = await db.execute(
-            "SELECT * FROM dinos WHERE especie = ? AND guild_id = ?", (self.dino, interaction.guild_id,)
+            "SELECT * FROM dinos WHERE especie = ? AND guild_id = ?",
+            (
+                self.dino,
+                interaction.guild_id,
+            ),
         )
         row = await cursor.fetchone()
 
@@ -68,7 +71,11 @@ class StatSelectView(discord.ui.View):
             new_val = old_val + 2
             await db.execute(
                 f"UPDATE dinos SET {stat_selected} = ? WHERE especie = ? AND guild_id = ?",
-                (new_val, self.dino, interaction.guild_id,),
+                (
+                    new_val,
+                    self.dino,
+                    interaction.guild_id,
+                ),
             )
 
             # Registro de mutación en log
@@ -168,46 +175,51 @@ class AlarmSelectView(discord.ui.View):
 
 class BreedingDinoSelectMenu(discord.ui.Select):
     """Menú desplegable persistente para seleccionar un dino del dashboard y ver sus stats en privado."""
+
     def __init__(self, bot, current_dinos):
         self.bot = bot
-        
+
         options = []
         if not current_dinos:
             options.append(discord.SelectOption(label="Sin dinos", value="none"))
         else:
             for dino in current_dinos[:25]:
                 options.append(discord.SelectOption(label=dino, value=dino, emoji="🦖"))
-            
+
         super().__init__(
             custom_id="breeding_dino_select",
             placeholder="Selecciona un dino para verlo en detalle...",
             min_values=1,
             max_values=1,
             options=options,
-            row=1
+            row=1,
         )
 
     async def callback(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         dino_name = self.values[0]
-        
+
         if dino_name == "none":
             await interaction.followup.send("No hay dinos disponibles.", ephemeral=True)
             return
 
         db = self.bot.db
         cursor = await db.execute(
-            "SELECT * FROM dinos WHERE especie = ? AND guild_id = ?", (dino_name, interaction.guild_id,)
+            "SELECT * FROM dinos WHERE especie = ? AND guild_id = ?",
+            (
+                dino_name,
+                interaction.guild_id,
+            ),
         )
         row = await cursor.fetchone()
 
         if not row:
-            await interaction.followup.send(f"❌ No se encontraron datos para **{dino_name}**.", ephemeral=True)
+            await interaction.followup.send(
+                f"❌ No se encontraron datos para **{dino_name}**.", ephemeral=True
+            )
             return
 
-        embed = discord.Embed(
-            title=f"🧬 Stats Detalladas: {row['especie']}", color=discord.Color.green()
-        )
+        embed = discord.Embed(title=f"🧬 Stats Detalladas: {row['especie']}", color=discord.Color.green())
 
         hp = row["hp"] or 0
         stam = row["stam"] or 0
@@ -217,19 +229,19 @@ class BreedingDinoSelectMenu(discord.ui.Select):
         food = row["food"] or 0
         speed = row["speed"] or 0
 
-        if hp > 0: 
+        if hp > 0:
             embed.add_field(name="❤️ Vida (HP)", value=str(hp), inline=True)
-        if stam > 0: 
+        if stam > 0:
             embed.add_field(name="⚡ Estamina", value=str(stam), inline=True)
-        if weight > 0: 
+        if weight > 0:
             embed.add_field(name="⚖️ Peso", value=str(weight), inline=True)
-        if melee > 0: 
+        if melee > 0:
             embed.add_field(name="⚔️ Daño (Melee)", value=str(melee), inline=True)
-        if oxy > 0: 
+        if oxy > 0:
             embed.add_field(name="🫧 Oxígeno", value=str(oxy), inline=True)
-        if food > 0: 
+        if food > 0:
             embed.add_field(name="🍖 Comida", value=str(food), inline=True)
-        if speed > 0: 
+        if speed > 0:
             embed.add_field(name="💨 Velocidad", value=str(speed), inline=True)
 
         embed.set_footer(text=f"ID Interno: {row['especie']}")
@@ -242,10 +254,11 @@ class BreedingDashboardView(discord.ui.View):
         self.bot = bot
         self.rows = rows or []
         self.page = page
-        
+
         items_per_page = 10
         total_rows = len(self.rows)
         import math
+
         total_pages = math.ceil(total_rows / items_per_page) if total_rows > 0 else 1
 
         # Select de Dinos para esta página
@@ -264,12 +277,11 @@ class BreedingDashboardView(discord.ui.View):
         custom_id="breeding_nueva_muta_btn",
         emoji="🧬",
     )
-    async def nueva_muta_btn(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
+    async def nueva_muta_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         db = self.bot.db
         cursor = await db.execute(
-            "SELECT DISTINCT especie FROM dinos WHERE guild_id = ? ORDER BY especie ASC", (interaction.guild_id,)
+            "SELECT DISTINCT especie FROM dinos WHERE guild_id = ? ORDER BY especie ASC",
+            (interaction.guild_id,),
         )
         rows = await cursor.fetchall()
 
@@ -293,9 +305,7 @@ class BreedingDashboardView(discord.ui.View):
         custom_id="breeding_alarms_btn",
         emoji="⏰",
     )
-    async def alarmas_btn(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
+    async def alarmas_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         view = AlarmSelectView(self.bot)
         await interaction.response.send_message(
             "Selecciona el tiempo de la alarma para este canal:",
@@ -309,16 +319,16 @@ class BreedingDashboardView(discord.ui.View):
         custom_id="breeding_log_mutas_btn",
         emoji="📜",
     )
-    async def ver_logs_mutas_btn(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
+    async def ver_logs_mutas_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         import os
 
         # Determinar el directorio de logs de mutaciones de este servidor
         if not self.bot.log_filename:
-            await interaction.response.send_message("El sistema de logs no está configurado de forma estática.", ephemeral=True)
+            await interaction.response.send_message(
+                "El sistema de logs no está configurado de forma estática.", ephemeral=True
+            )
             return
-            
+
         log_dir = os.path.join(os.path.dirname(self.bot.log_filename), str(interaction.guild_id))
         mutations = []
 
@@ -333,7 +343,7 @@ class BreedingDashboardView(discord.ui.View):
             for filename in os.listdir(log_dir):
                 if filename.endswith(".log"):
                     filepath = os.path.join(log_dir, filename)
-                    with open(filepath, "r", encoding="utf-8") as f:
+                    with open(filepath, encoding="utf-8") as f:
                         for line in f:
                             if "MUTATION:" in line:
                                 parts = line.split("MUTATION:")
@@ -362,9 +372,7 @@ class BreedingDashboardView(discord.ui.View):
                                         )
                                 except Exception as e:
                                     logger.debug(f"[Breeding] Parseo de mutación falló, usando raw: {e}")
-                                    mutations.append(
-                                        (timestamp, f"`{timestamp}`: {content}")
-                                    )
+                                    mutations.append((timestamp, f"`{timestamp}`: {content}"))
 
             if not mutations:
                 await interaction.response.send_message(
@@ -382,32 +390,16 @@ class BreedingDashboardView(discord.ui.View):
                 )
                 await interaction.response.send_message(embed=embed, ephemeral=True)
         except Exception as e:
-            await interaction.response.send_message(
-                f"Error al leer logs: {e}", ephemeral=True
-            )
+            await interaction.response.send_message(f"Error al leer logs: {e}", ephemeral=True)
 
-    @discord.ui.button(
-        style=discord.ButtonStyle.secondary,
-        custom_id="breeding_prev_btn",
-        emoji="◀️",
-        row=2
-    )
-    async def prev_btn(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
+    @discord.ui.button(style=discord.ButtonStyle.secondary, custom_id="breeding_prev_btn", emoji="◀️", row=2)
+    async def prev_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Página anterior de líneas."""
         new_page = max(0, self.page - 1)
         await self._update_page(interaction, new_page)
 
-    @discord.ui.button(
-        style=discord.ButtonStyle.secondary,
-        custom_id="breeding_next_btn",
-        emoji="▶️",
-        row=2
-    )
-    async def next_btn(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
+    @discord.ui.button(style=discord.ButtonStyle.secondary, custom_id="breeding_next_btn", emoji="▶️", row=2)
+    async def next_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Página siguiente de líneas."""
         items_per_page = 10
         total_pages = max(1, (len(self.rows) + items_per_page - 1) // items_per_page)
@@ -433,22 +425,20 @@ def build_breeding_embed(rows, page=0):
     items_per_page = 10
     total_rows = len(rows)
     import math
+
     total_pages = math.ceil(total_rows / items_per_page) if total_rows > 0 else 1
-    
+
     if page < 0:
         page = 0
     if page >= total_pages:
         page = total_pages - 1
-    
+
     start_idx = page * items_per_page
     end_idx = start_idx + items_per_page
     display_rows = rows[start_idx:end_idx]
-    
-    embed = discord.Embed(
-        title="🧬 LÍNEAS DE CRIANZA (Top Stats)", 
-        color=discord.Color.from_rgb(255, 215, 0)
-    )
-    
+
+    embed = discord.Embed(title="🧬 LÍNEAS DE CRIANZA (Top Stats)", color=discord.Color.from_rgb(255, 215, 0))
+
     if not rows:
         embed.description = "No hay líneas registradas aún.\n💡 Usa `/linea_add` para empezar."
         return embed, [], page, total_pages
@@ -470,11 +460,11 @@ def build_breeding_embed(rows, page=0):
             stats.append(f"🍖 `{row['food']}`")
         if row["speed"]:
             stats.append(f"💨 `{row['speed']}`")
-        
+
         stats_text = " ".join(stats) if stats else "*Stats base*"
         lines.append(f"### 🦖 {row['especie']}")
         lines.append(f"> ╰ {stats_text}")
-    
+
     embed.description = "\n".join(lines).strip()
     embed.set_footer(text=f"Página {page + 1}/{total_pages} • {total_rows} total | 💡 /linea_add")
     return embed, [r["especie"] for r in display_rows], page, total_pages
@@ -485,7 +475,13 @@ async def update_breeding_dashboards(bot, guild_id: int, specific_message_id=Non
 
     db = bot.db
     if specific_message_id:
-        cursor = await db.execute("SELECT * FROM breeding_messages WHERE message_id = ? AND guild_id = ?", (specific_message_id, guild_id,))
+        cursor = await db.execute(
+            "SELECT * FROM breeding_messages WHERE message_id = ? AND guild_id = ?",
+            (
+                specific_message_id,
+                guild_id,
+            ),
+        )
     else:
         cursor = await db.execute("SELECT * FROM breeding_messages WHERE guild_id = ?", (guild_id,))
     dashboards = await cursor.fetchall()
@@ -504,23 +500,24 @@ async def update_breeding_dashboards(bot, guild_id: int, specific_message_id=Non
             if not channel:
                 messages_to_remove.append(dash["id"])
                 continue
-                
+
             message = await channel.fetch_message(dash["message_id"])
-            
+
             # Determinar qué página mostrar para este mensaje concreto
             target_page = page
             if target_page is None:
                 target_page = 0
                 if message.embeds and message.embeds[0].footer and message.embeds[0].footer.text:
                     import re
+
                     m = re.search(r"Página (\d+)/(\d+)", message.embeds[0].footer.text)
                     if m:
-                        target_page = int(m.group(1)) - 1 # Convertir a 0-indexed
+                        target_page = int(m.group(1)) - 1  # Convertir a 0-indexed
 
             new_embed, _, current_page, _ = build_breeding_embed(rows, target_page)
             new_view = BreedingDashboardView(bot, rows, current_page)
             await message.edit(embed=new_embed, view=new_view)
-            
+
         except (discord.NotFound, discord.Forbidden):
             messages_to_remove.append(dash["id"])
         except Exception as e:
@@ -552,10 +549,10 @@ class Breeding(commands.Cog):
 
     async def setup_dashboard(self, guild_id: int, channel: discord.TextChannel):
         """Inicializa el dashboard de Líneas Genéticas y almacena su ID."""
-        import aiosqlite
         import asyncio
+
         from cogs.management import INFO_TEXTS
-        
+
         info_embed = discord.Embed(
             description=INFO_TEXTS["lineas"],
             color=discord.Color.from_rgb(43, 45, 49),
@@ -568,7 +565,7 @@ class Breeding(commands.Cog):
             (guild_id,),
         )
         rows = await cursor.fetchall()
-            
+
         embed, _, _, _ = build_breeding_embed(rows, 0)
         view = BreedingDashboardView(self.bot, rows)
         msg = await channel.send(embed=embed, view=view)
@@ -586,9 +583,7 @@ class Breeding(commands.Cog):
         try:
             now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             db = self.bot.db
-            alarms = await db.fetchall(
-                "SELECT * FROM breeding_alarms WHERE alert_time <= ?", (now_str,)
-            )
+            alarms = await db.fetchall("SELECT * FROM breeding_alarms WHERE alert_time <= ?", (now_str,))
             if not alarms:
                 return
 
@@ -598,9 +593,9 @@ class Breeding(commands.Cog):
 
             for alarm in alarms:
                 try:
-                    channel = self.bot.get_channel(
+                    channel = self.bot.get_channel(alarm["channel_id"]) or await self.bot.fetch_channel(
                         alarm["channel_id"]
-                    ) or await self.bot.fetch_channel(alarm["channel_id"])
+                    )
                     if channel:
                         view = DismissAlarmView()
                         await channel.send(
@@ -635,7 +630,9 @@ class Breeding(commands.Cog):
                 os.makedirs(guild_dir)
 
             handler = logging.FileHandler(os.path.join(guild_dir, timestamp_name), encoding="utf-8")
-            handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S"))
+            handler.setFormatter(
+                logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+            )
             guild_logger.addHandler(handler)
             guild_logger.setLevel(logging.INFO)
             guild_logger.propagate = True
@@ -652,7 +649,13 @@ class Breeding(commands.Cog):
         db = self.bot.db
         # Verificación de existencia
         db.row_factory = aiosqlite.Row
-        cursor = await db.execute("SELECT * FROM dinos WHERE especie = ? AND guild_id = ?", (dino, guild_id,))
+        cursor = await db.execute(
+            "SELECT * FROM dinos WHERE especie = ? AND guild_id = ?",
+            (
+                dino,
+                guild_id,
+            ),
+        )
         row = await cursor.fetchone()
 
         if row:
@@ -661,7 +664,12 @@ class Breeding(commands.Cog):
             diff = puntos - old_val
 
             await db.execute(
-                f"UPDATE dinos SET {stat_col} = ? WHERE especie = ? AND guild_id = ?", (puntos, dino, guild_id,)
+                f"UPDATE dinos SET {stat_col} = ? WHERE especie = ? AND guild_id = ?",
+                (
+                    puntos,
+                    dino,
+                    guild_id,
+                ),
             )
             action = "stats actualizados"
 
@@ -720,7 +728,10 @@ class Breeding(commands.Cog):
         db = self.bot.db
         cursor = await db.execute(
             "SELECT DISTINCT especie FROM dinos WHERE especie LIKE ? AND guild_id = ? ORDER BY especie ASC LIMIT 25",
-            (f"%{current}%", interaction.guild_id,),
+            (
+                f"%{current}%",
+                interaction.guild_id,
+            ),
         )
         rows = await cursor.fetchall()
 
@@ -767,12 +778,14 @@ class Breeding(commands.Cog):
     async def lineas(self, interaction: discord.Interaction):
         # Generación de contenido inicial usando la lógica centralizada
         db = self.bot.db
-        cursor = await db.execute("SELECT * FROM dinos WHERE guild_id = ? ORDER BY especie ASC", (interaction.guild_id,))
+        cursor = await db.execute(
+            "SELECT * FROM dinos WHERE guild_id = ? ORDER BY especie ASC", (interaction.guild_id,)
+        )
         rows = await cursor.fetchall()
 
         embed, _, page, total_pages = build_breeding_embed(rows, 0)
         view = BreedingDashboardView(self.bot, rows, page)
-        
+
         await interaction.response.send_message(embed=embed, view=view)
         message = await interaction.original_response()
 
@@ -784,14 +797,18 @@ class Breeding(commands.Cog):
         )
         await db.commit()
 
-    @app_commands.command(
-        name="linea_ver", description="Consulta las stats de una especie (Epímero)."
-    )
+    @app_commands.command(name="linea_ver", description="Consulta las stats de una especie (Epímero).")
     @app_commands.describe(dino="Especie a consultar")
     @app_commands.autocomplete(dino=dino_autocomplete)
     async def linea_ver(self, interaction: discord.Interaction, dino: str):
         db = self.bot.db
-        cursor = await db.execute("SELECT * FROM dinos WHERE especie = ? AND guild_id = ?", (dino, interaction.guild_id,))
+        cursor = await db.execute(
+            "SELECT * FROM dinos WHERE especie = ? AND guild_id = ?",
+            (
+                dino,
+                interaction.guild_id,
+            ),
+        )
         row = await cursor.fetchone()
 
         if not row:
@@ -851,7 +868,7 @@ class Breeding(commands.Cog):
             for filename in os.listdir(log_dir):
                 if filename.endswith(".log"):
                     filepath = os.path.join(log_dir, filename)
-                    with open(filepath, "r", encoding="utf-8") as f:
+                    with open(filepath, encoding="utf-8") as f:
                         for line in f:
                             if "MUTATION:" in line:
                                 parts = line.split("MUTATION:")
@@ -880,9 +897,7 @@ class Breeding(commands.Cog):
                                         )
                                 except Exception as e:
                                     logger.debug(f"[Breeding] Parseo de mutación falló, usando raw: {e}")
-                                    mutations.append(
-                                        (timestamp, f"`{timestamp}`: {content}")
-                                    )
+                                    mutations.append((timestamp, f"`{timestamp}`: {content}"))
 
             if not mutations:
                 await interaction.response.send_message(
@@ -904,9 +919,7 @@ class Breeding(commands.Cog):
                 await interaction.response.send_message(embed=embed, ephemeral=True)
 
         except Exception as e:
-            await interaction.response.send_message(
-                f"Error leyendo logs: {e}", ephemeral=True
-            )
+            await interaction.response.send_message(f"Error leyendo logs: {e}", ephemeral=True)
 
 
 async def setup(bot):

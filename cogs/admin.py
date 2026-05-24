@@ -1,10 +1,10 @@
+import asyncio
+import logging
+
+import aiosqlite
 import discord
 from discord import app_commands
 from discord.ext import commands
-import logging
-import aiosqlite
-import asyncio
-import typing
 
 logger = logging.getLogger("ArkTribeBot")
 
@@ -25,13 +25,9 @@ class Admin(commands.Cog):
         message_id="ID del mensaje a asociar",
         channel_id="Opcional. ID del canal si el mensaje está en otro sitio.",
     )
-    async def bind_k4ultra(
-        self, interaction: discord.Interaction, message_id: str, channel_id: str = None
-    ):
+    async def bind_k4ultra(self, interaction: discord.Interaction, message_id: str, channel_id: str = None):
         if not await interaction.client.is_authorized_admin(interaction):
-            await interaction.response.send_message(
-                "❌ Acceso denegado.", ephemeral=True
-            )
+            await interaction.response.send_message("❌ Acceso denegado.", ephemeral=True)
             return
 
         try:
@@ -40,9 +36,7 @@ class Admin(commands.Cog):
             # Uso del canal actual si no se provee ID
             if channel_id:
                 ch_id_int = int(channel_id)
-                target_channel = self.bot.get_channel(
-                    ch_id_int
-                ) or await self.bot.fetch_channel(ch_id_int)
+                target_channel = self.bot.get_channel(ch_id_int) or await self.bot.fetch_channel(ch_id_int)
             else:
                 target_channel = interaction.channel
                 ch_id_int = interaction.channel_id
@@ -72,9 +66,7 @@ class Admin(commands.Cog):
 
         k_cog = self.bot.get_cog("K4Ultra")
         if k_cog:
-            pages, top_players, k4_aliases = await k_cog.generate_k4ultra_embed(
-                interaction.guild_id
-            )
+            pages, top_players, k4_aliases = await k_cog.generate_k4ultra_embed(interaction.guild_id)
             view = K4UltraView(self.bot, interaction.guild_id, top_players, k4_aliases)
             await message.edit(embed=pages[0], view=view)
 
@@ -117,7 +109,6 @@ class Admin(commands.Cog):
             return
 
         guild_id = interaction.guild_id
-        db_name = self.bot.db_name
 
         # Si hay parámetros, actualizar primero
         updates = []
@@ -160,9 +151,7 @@ class Admin(commands.Cog):
             await interaction.response.defer(ephemeral=False)
 
         # Consultar configuración actual para el embed
-        config = await db.fetchone(
-            "SELECT * FROM guild_config WHERE guild_id = ?", (guild_id,)
-        )
+        config = await db.fetchone("SELECT * FROM guild_config WHERE guild_id = ?", (guild_id,))
 
         # Miembros registrados
         count_res = await db.fetchone(
@@ -182,7 +171,7 @@ class Admin(commands.Cog):
     async def sync(
         self,
         ctx: commands.Context,
-        spec: typing.Optional[str] = None,
+        spec: str | None = None,
     ):
         """Sincroniza los comandos slash. Uso: !sync [global|guild|clear]"""
         if spec == "global":
@@ -190,16 +179,12 @@ class Admin(commands.Cog):
                 "🌐 **Sincronizando comandos globalmente...** (Puede tardar hasta 1 hora en propagarse)"
             )
             synced = await self.bot.tree.sync()
-            await ctx.send(
-                f"✅ Se han sincronizado **{len(synced)}** comandos globalmente."
-            )
+            await ctx.send(f"✅ Se han sincronizado **{len(synced)}** comandos globalmente.")
         elif spec == "clear":
             await ctx.send("🗑️ **Limpiando comandos en este servidor...**")
             self.bot.tree.clear_commands(guild=ctx.guild)
             await self.bot.tree.sync(guild=ctx.guild)
-            await ctx.send(
-                "✅ Comandos de servidor eliminados (se usarán los globales)."
-            )
+            await ctx.send("✅ Comandos de servidor eliminados (se usarán los globales).")
         else:
             await ctx.send(f"🔄 **Sincronizando comandos en '{ctx.guild.name}'...**")
             try:
@@ -208,9 +193,7 @@ class Admin(commands.Cog):
                 await ctx.send(
                     f"✅ **{len(synced)}** comandos sincronizados instantáneamente en este servidor."
                 )
-                logger.info(
-                    f"Comandos sincronizados manualmente en {ctx.guild.name} ({ctx.guild.id})"
-                )
+                logger.info(f"Comandos sincronizados manualmente en {ctx.guild.name} ({ctx.guild.id})")
             except discord.HTTPException as e:
                 if e.status == 429:
                     await ctx.send(
@@ -308,9 +291,7 @@ class Admin(commands.Cog):
         await db.commit()
 
         # Consultar configuración final para el embed (asegurar datos frescos)
-        config_fresh = await db.fetchone(
-            "SELECT * FROM guild_config WHERE guild_id = ?", (guild_id,)
-        )
+        config_fresh = await db.fetchone("SELECT * FROM guild_config WHERE guild_id = ?", (guild_id,))
         count_res = await db.fetchone(
             "SELECT COUNT(*) AS n FROM tribe_characters WHERE guild_id = ?", (guild_id,)
         )
@@ -319,7 +300,9 @@ class Admin(commands.Cog):
         if config_fresh:
             embed = build_config_embed(config_fresh, num_miembros, guild_id)
             embed.title = "✅ ArkTribeBot Configurado Correctamente"
-            embed.description = "El servidor ha sido vinculado con éxito. Aquí tienes el resumen de tu configuración:"
+            embed.description = (
+                "El servidor ha sido vinculado con éxito. Aquí tienes el resumen de tu configuración:"
+            )
             await interaction.followup.send(embed=embed)
         else:
             await interaction.followup.send("✅ Configuración guardada correctamente.")
@@ -327,6 +310,7 @@ class Admin(commands.Cog):
         # ------------------- AUTO-SETUP DE CANALES OPCIONALES -------------------
         # Enviar info de SOS al canal SOS obligatorio
         from cogs.management import INFO_TEXTS
+
         info_sos_embed = discord.Embed(
             description=INFO_TEXTS["sos"], color=discord.Color.from_rgb(43, 45, 49)
         )
@@ -345,7 +329,7 @@ class Admin(commands.Cog):
             "K4Ultra": canal_k4ultra,
             "ServerStatus": canal_status,
         }
-        
+
         for cog_name, ch in canales.items():
             if ch:
                 try:
@@ -355,9 +339,7 @@ class Admin(commands.Cog):
                 except Exception as e:
                     logger.error(f"Error inicializando dashboard de {cog_name}: {e}")
 
-    @app_commands.command(
-        name="wipe_db", description="☢️ BORRA TODOS LOS DATOS (Solo Admin)."
-    )
+    @app_commands.command(name="wipe_db", description="☢️ BORRA TODOS LOS DATOS (Solo Admin).")
     async def wipe_db(self, interaction: discord.Interaction):
         # Verificación de permisos de administrador
         if not await interaction.client.is_authorized_admin(interaction):
@@ -391,9 +373,7 @@ class Admin(commands.Cog):
             guild_id = interaction.guild_id
             db = self.bot.db
             for table in tables:
-                await db.execute(
-                    f"DELETE FROM {table} WHERE guild_id = ?", (guild_id,)
-                )
+                await db.execute(f"DELETE FROM {table} WHERE guild_id = ?", (guild_id,))
                 # Exclusión explícita de `sqlite_sequence` para proteger el autoincremental de datos unificados.
             await db.commit()
 
@@ -404,9 +384,7 @@ class Admin(commands.Cog):
             logger.warning(f"☢️ BASE DE DATOS BORRADA por {interaction.user.name}")
 
         except Exception as e:
-            await interaction.followup.send(
-                f"❌ Error al borrar DB: {e}", ephemeral=True
-            )
+            await interaction.followup.send(f"❌ Error al borrar DB: {e}", ephemeral=True)
             logger.error(f"Error en WIPE DB: {e}")
 
     @app_commands.command(
@@ -438,9 +416,7 @@ class Admin(commands.Cog):
             guild_id = interaction.guild_id
             db = self.bot.db
             for table in tables:
-                await db.execute(
-                    f"DELETE FROM {table} WHERE guild_id = ?", (guild_id,)
-                )
+                await db.execute(f"DELETE FROM {table} WHERE guild_id = ?", (guild_id,))
                 # Vaciado estructural simple preservando el conteo incremental.
             await db.commit()
 
@@ -451,9 +427,7 @@ class Admin(commands.Cog):
             logger.info(f"DASHBOARDS LIMPIADOS por {interaction.user.name}")
 
         except Exception as e:
-            await interaction.followup.send(
-                f"❌ Error al limpiar dashboards: {e}", ephemeral=True
-            )
+            await interaction.followup.send(f"❌ Error al limpiar dashboards: {e}", ephemeral=True)
             logger.error(f"Error en CLEAR UPDATES: {e}")
 
     @app_commands.command(
@@ -473,7 +447,7 @@ class Admin(commands.Cog):
         logs = []
 
         try:
-            with open(log_file, "r", encoding="utf-8") as f:
+            with open(log_file, encoding="utf-8") as f:
                 for line in f:
                     if "EJECUCIDN:" in line or "EJECUCIÓN:" in line:
                         # Format: yyyy-mm-dd hh:mm:ss [INFO] EJECUCIÓN: User='Name' | Cmd='/cmd' | Args=[...]
@@ -494,9 +468,7 @@ class Admin(commands.Cog):
                 await interaction.response.send_message(formatted_text, ephemeral=True)
 
         except Exception as e:
-            await interaction.response.send_message(
-                f"Error leyendo logs: {e}", ephemeral=True
-            )
+            await interaction.response.send_message(f"Error leyendo logs: {e}", ephemeral=True)
 
 
 def build_config_embed(config: aiosqlite.Row, num_miembros: int, guild_id: int) -> discord.Embed:
@@ -522,8 +494,9 @@ def build_config_embed(config: aiosqlite.Row, num_miembros: int, guild_id: int) 
     embed.add_field(
         name="🛡️ Autorización",
         value=(
-            f"👤 **Owner:** <@{config['bot_owner_id']}>\n"
-            f"🛡️ **Admin Role:** <@&{config['admin_role_id']}>" if config['admin_role_id'] else "🛡️ **Admin Role:** No configurado"
+            f"👤 **Owner:** <@{config['bot_owner_id']}>\n🛡️ **Admin Role:** <@&{config['admin_role_id']}>"
+            if config["admin_role_id"]
+            else "🛡️ **Admin Role:** No configurado"
         ),
         inline=True,
     )
@@ -543,7 +516,7 @@ def build_config_embed(config: aiosqlite.Row, num_miembros: int, guild_id: int) 
         inline=True,
     )
 
-    bm_urls = config['battlemetrics_urls'] or "Sin servidores vinculados"
+    bm_urls = config["battlemetrics_urls"] or "Sin servidores vinculados"
     if len(bm_urls) > 1024:
         bm_urls = bm_urls[:1021] + "..."
     embed.add_field(

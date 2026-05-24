@@ -1,4 +1,5 @@
 """Tests del wrapper Database (db/database.py)."""
+
 import pytest
 
 from db.database import Database
@@ -28,9 +29,7 @@ async def test_helpers_roundtrip(tmp_path):
         )
         await db.commit()
 
-        row = await db.fetchone(
-            "SELECT update_interval FROM guild_config WHERE guild_id = ?", (42,)
-        )
+        row = await db.fetchone("SELECT update_interval FROM guild_config WHERE guild_id = ?", (42,))
         assert row is not None
         assert row["update_interval"] == 5
 
@@ -49,15 +48,11 @@ async def test_transaction_rolls_back_on_error(tmp_path):
 
         with pytest.raises(RuntimeError):
             async with db.transaction() as conn:
-                await conn.execute(
-                    "INSERT INTO guild_config (guild_id) VALUES (?)", (1,)
-                )
+                await conn.execute("INSERT INTO guild_config (guild_id) VALUES (?)", (1,))
                 raise RuntimeError("simulated failure")
 
         # La fila no debe haberse persistido.
-        row = await db.fetchone(
-            "SELECT guild_id FROM guild_config WHERE guild_id = ?", (1,)
-        )
+        row = await db.fetchone("SELECT guild_id FROM guild_config WHERE guild_id = ?", (1,))
         assert row is None
     finally:
         await db.close()
@@ -71,13 +66,9 @@ async def test_transaction_commits_on_success(tmp_path):
         await create_tables(db.conn)
 
         async with db.transaction() as conn:
-            await conn.execute(
-                "INSERT INTO guild_config (guild_id) VALUES (?)", (2,)
-            )
+            await conn.execute("INSERT INTO guild_config (guild_id) VALUES (?)", (2,))
 
-        row = await db.fetchone(
-            "SELECT guild_id FROM guild_config WHERE guild_id = ?", (2,)
-        )
+        row = await db.fetchone("SELECT guild_id FROM guild_config WHERE guild_id = ?", (2,))
         assert row is not None
     finally:
         await db.close()

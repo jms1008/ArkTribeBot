@@ -1,9 +1,9 @@
+import json
+import logging
+
 import discord
 from discord import app_commands
 from discord.ext import commands
-import aiosqlite
-import json
-import logging
 
 logger = logging.getLogger("ArkTribeBot")
 
@@ -61,9 +61,7 @@ class EventPollView(discord.ui.View):
             )
             view.add_item(btn)
 
-        btn_remove = RemoveVoteButton(
-            event_view=view, custom_id=f"event_rm_{event_id}"
-        )
+        btn_remove = RemoveVoteButton(event_view=view, custom_id=f"event_rm_{event_id}")
         view.add_item(btn_remove)
         return view
 
@@ -203,12 +201,9 @@ class Events(commands.Cog):
         opcion_4: str = None,
     ):
 
-
         # Validar opciones
         opciones_validas = [
-            opt
-            for opt in [opcion_1, opcion_2, opcion_3, opcion_4]
-            if opt is not None and opt.strip() != ""
+            opt for opt in [opcion_1, opcion_2, opcion_3, opcion_4] if opt is not None and opt.strip() != ""
         ]
 
         if len(opciones_validas) < 2:

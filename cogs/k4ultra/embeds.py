@@ -6,6 +6,7 @@ La función es standalone (recibe ``bot``) en lugar de método.
 Constantes:
 - ``MAP_ACRONYMS``: tabla de abreviaturas de mapas para el modo radar.
 """
+
 from __future__ import annotations
 
 import json
@@ -65,9 +66,7 @@ async def generate_k4ultra_embed(
     p_maps: dict[str, list[dict]] = defaultdict(list)
     for row in all_playtimes:
         p_totals[row["player_name"]] += row["total_minutes"]
-        p_maps[row["player_name"]].append(
-            {"map": row["map_name"], "mins": row["total_minutes"]}
-        )
+        p_maps[row["player_name"]].append({"map": row["map_name"], "mins": row["total_minutes"]})
 
     # Obtención de alias para mostrar nombres legibles.
     aliases: dict[str, str] = {}
@@ -83,9 +82,7 @@ async def generate_k4ultra_embed(
     pages: list[discord.Embed] = []
 
     if mode == "radar":
-        pages = await _build_radar_pages(
-            db, guild_id, p_totals, p_maps, aliases, top_player_names
-        )
+        pages = await _build_radar_pages(db, guild_id, p_totals, p_maps, aliases, top_player_names)
     elif mode == "tribus":
         pages = await _build_tribes_page(db, guild_id, aliases)
 
@@ -118,9 +115,7 @@ async def _build_radar_pages(
             p_name = s["player_name"]
             alias_tag = f" [{aliases[p_name]}]" if p_name in aliases else ""
             since = s["start_time"][11:16] if s["start_time"] else "?"
-            online_lines.append(
-                f"🟢 **{p_name}{alias_tag}** — {s['map_name']} (desde {since})"
-            )
+            online_lines.append(f"🟢 **{p_name}{alias_tag}** — {s['map_name']} (desde {since})")
         online_text = "\n".join(online_lines)
         if len(online_text) > 900:
             online_text = online_text[:897] + "..."
@@ -152,17 +147,13 @@ async def _build_radar_pages(
             pct = int((mm["mins"] / total_m) * 100) if total_m > 0 else 0
             if pct > 0:
                 raw_map = mm["map"]
-                acronym = MAP_ACRONYMS.get(
-                    raw_map, raw_map.replace(" ", "")[:4].capitalize()
-                )
+                acronym = MAP_ACRONYMS.get(raw_map, raw_map.replace(" ", "")[:4].capitalize())
                 map_str_list.append(f"*{pct}% {acronym}*")
 
         map_joined = ", ".join(map_str_list)
         online_marker = "🟢 " if p_name in active_players else ""
         alias_tag = f" [{aliases[p_name]}]" if p_name in aliases else ""
-        players_text += (
-            f"- **{online_marker}{p_name}{alias_tag}** ⏱️ {time_str}: {map_joined}\n"
-        )
+        players_text += f"- **{online_marker}{p_name}{alias_tag}** ⏱️ {time_str}: {map_joined}\n"
 
     chunks: list[str] = []
     if players_text:
@@ -202,9 +193,7 @@ async def _build_radar_pages(
             pages.append(p_next)
 
     for i, p in enumerate(pages):
-        p.set_footer(
-            text=f"Radar | Página {i + 1}/{len(pages)} — Usa ◀️ ▶️ para navegar"
-        )
+        p.set_footer(text=f"Radar | Página {i + 1}/{len(pages)} — Usa ◀️ ▶️ para navegar")
 
     return pages
 
@@ -235,9 +224,7 @@ async def _build_tribes_page(db, guild_id: int, aliases: dict[str, str]) -> list
         for m in members:
             fixed_players.add(m)
 
-        tribe_str = ", ".join(
-            f"{m} [{aliases[m]}]" if m in aliases else m for m in members
-        )
+        tribe_str = ", ".join(f"{m} [{aliases[m]}]" if m in aliases else m for m in members)
         placeholders = ", ".join(["?"] * len(members))
         cursor = await db.execute(
             f"""
@@ -252,14 +239,10 @@ async def _build_tribes_page(db, guild_id: int, aliases: dict[str, str]) -> list
 
         if is_own:
             own_tribe_text += (
-                f"**{tribe_name}** [🏰 Nuestra Tribu] ({len(members)}){map_info}\n"
-                f"└ {tribe_str}\n"
+                f"**{tribe_name}** [🏰 Nuestra Tribu] ({len(members)}){map_info}\n└ {tribe_str}\n"
             )
         else:
-            fixed_tribes_text += (
-                f"**{tribe_name}** [🛡️ Fijada] ({len(members)}){map_info}\n"
-                f"└ {tribe_str}\n"
-            )
+            fixed_tribes_text += f"**{tribe_name}** [🛡️ Fijada] ({len(members)}){map_info}\n└ {tribe_str}\n"
 
     cursor = await db.execute(
         "SELECT player1, player2 FROM k4ultra_relationships "
@@ -300,9 +283,7 @@ async def _build_tribes_page(db, guild_id: int, aliases: dict[str, str]) -> list
     dyn_text = ""
     for i, tribe in enumerate(dynamic_tribes[:8]):
         tribe_label = f"Grupo {i + 1}"
-        tribe_str = ", ".join(
-            f"{m} [{aliases[m]}]" if m in aliases else m for m in tribe
-        )
+        tribe_str = ", ".join(f"{m} [{aliases[m]}]" if m in aliases else m for m in tribe)
         if len(tribe_str) > 150:
             tribe_str = tribe_str[:147] + "..."
         placeholders = ", ".join(["?"] * len(tribe))

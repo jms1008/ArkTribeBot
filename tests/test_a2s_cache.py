@@ -1,4 +1,5 @@
 """Tests del caché compartido de consultas A2S en cogs.server_status."""
+
 import pytest
 
 from cogs import server_status as ss
@@ -64,6 +65,7 @@ async def test_refetches_when_cache_expired(mocker):
 @pytest.mark.asyncio
 async def test_records_error_when_fetch_fails(mocker):
     """Si la consulta A2S explota, se devuelve un dict con 'error' no nulo."""
+
     async def _boom(name, ip, port):
         raise TimeoutError("simulated")
 

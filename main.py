@@ -1,18 +1,19 @@
-import discord
-from discord.ext import commands
-from discord import app_commands
-from cogs.management import TodoView
-from cogs.warfare import BlacklistView
-from cogs.scouting import ScoutView
-from cogs.breeding import BreedingDashboardView
-import os
-import aiosqlite
 import asyncio
-from dotenv import load_dotenv
 import logging
-from logging.handlers import TimedRotatingFileHandler
+import os
 from datetime import datetime
+from logging.handlers import TimedRotatingFileHandler
 
+import aiosqlite
+import discord
+from discord import app_commands
+from discord.ext import commands
+from dotenv import load_dotenv
+
+from cogs.breeding import BreedingDashboardView
+from cogs.management import TodoView
+from cogs.scouting import ScoutView
+from cogs.warfare import BlacklistView
 
 # --- CONFIGURACIÓN DE LOGGING ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -25,9 +26,7 @@ timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 log_filename = os.path.join(LOG_DIR, "bot_system.log")
 
 # Rotación diaria, conservando 14 archivos (~2 semanas).
-_root_handler = TimedRotatingFileHandler(
-    log_filename, when="midnight", backupCount=14, encoding="utf-8"
-)
+_root_handler = TimedRotatingFileHandler(log_filename, when="midnight", backupCount=14, encoding="utf-8")
 _root_handler.setFormatter(
     logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
 )
@@ -58,19 +57,13 @@ def get_guild_logger(guild_id: int) -> logging.Logger:
     # Rotación diaria con 14 días de retención (consistente con el logger global).
     if not guild_logger.handlers:
         guild_log_file = os.path.join(guild_log_dir, "server_event.log")
-        handler = TimedRotatingFileHandler(
-            guild_log_file, when="midnight", backupCount=14, encoding="utf-8"
-        )
+        handler = TimedRotatingFileHandler(guild_log_file, when="midnight", backupCount=14, encoding="utf-8")
         handler.setFormatter(
-            logging.Formatter(
-                "%(asctime)s [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
-            )
+            logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
         )
         guild_logger.addHandler(handler)
         guild_logger.setLevel(logging.INFO)
-        guild_logger.propagate = (
-            True  # Reenviar al logger raíz (y al StreamHandler del servidor)
-        )
+        guild_logger.propagate = True  # Reenviar al logger raíz (y al StreamHandler del servidor)
 
     return guild_logger
 
@@ -95,13 +88,9 @@ class PoliciaSosView(discord.ui.View):
         custom_id="policia_sos_solucionado",
         emoji="✅",
     )
-    async def solucionado_btn(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
+    async def solucionado_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.message.delete()
-        await interaction.response.send_message(
-            "SOS marcado como solucionado.", ephemeral=True
-        )
+        await interaction.response.send_message("SOS marcado como solucionado.", ephemeral=True)
 
 
 class DismissAlarmView(discord.ui.View):
@@ -114,15 +103,11 @@ class DismissAlarmView(discord.ui.View):
         custom_id="dismiss_alarm_btn",
         emoji="✅",
     )
-    async def dismiss_btn(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
+    async def dismiss_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         # Eliminar mensaje de alarma
         await interaction.message.delete()
         # Respuesta efímera para evitar error de interacción en Discord
-        await interaction.response.send_message(
-            "Alarma silenciada y eliminada.", ephemeral=True
-        )
+        await interaction.response.send_message("Alarma silenciada y eliminada.", ephemeral=True)
 
 
 # Clase del Bot
@@ -166,9 +151,7 @@ class ArkTribeBot(commands.Bot):
         from cogs.k4ultra import K4UltraView
 
         try:
-            active_guilds = await self.db.fetchall(
-                "SELECT DISTINCT guild_id FROM k4ultra_messages"
-            )
+            active_guilds = await self.db.fetchall("SELECT DISTINCT guild_id FROM k4ultra_messages")
             for row in active_guilds:
                 self.add_view(K4UltraView(self, row["guild_id"]))
         except Exception as e:
@@ -184,9 +167,7 @@ class ArkTribeBot(commands.Bot):
         try:
             from cogs.events import EventPollView
 
-            active_events = await self.db.fetchall(
-                "SELECT id FROM events WHERE status = 'active'"
-            )
+            active_events = await self.db.fetchall("SELECT id FROM events WHERE status = 'active'")
             for row in active_events:
                 view = await EventPollView.build(self, row["id"])
                 self.add_view(view)
@@ -261,9 +242,7 @@ class ArkTribeBot(commands.Bot):
             await asyncio.sleep(5)
 
             if hasattr(self, "is_syncing") and self.is_syncing:
-                logger.warning(
-                    f"[Bot] Sincronización omitida en {guild.name}: Ya hay un sync en curso."
-                )
+                logger.warning(f"[Bot] Sincronización omitida en {guild.name}: Ya hay un sync en curso.")
                 return
 
             self.is_syncing = True
@@ -278,9 +257,7 @@ class ArkTribeBot(commands.Bot):
                         f"Rate limit en sync de {guild.name}. Discord reintentará automáticamente."
                     )
                 else:
-                    logger.error(
-                        f"Error HTTP sincronizando comandos en {guild.name}: {e}"
-                    )
+                    logger.error(f"Error HTTP sincronizando comandos en {guild.name}: {e}")
             except Exception as e:
                 logger.error(f"Error sincronizando comandos en {guild.name}: {e}")
             finally:
@@ -312,12 +289,12 @@ class ArkTribeBot(commands.Bot):
             parse_options(interaction.data["options"])
 
         args_str = ", ".join(args_list) if args_list else "Sin argumentos"
-        
+
         # Redirigir log a la guild si existe
         target_log = logger
         if interaction.guild_id:
             target_log = get_guild_logger(interaction.guild_id)
-            
+
         target_log.info(f"EJECUCIÓN: User='{user}' | Cmd='/{cmd_name}' | Args=[{args_str}]")
 
     async def is_authorized_admin(self, interaction: discord.Interaction) -> bool:
@@ -361,10 +338,8 @@ class ArkTribeBot(commands.Bot):
     async def on_ready(self):
         logger.info(f"Conectado como {self.user} (ID: {self.user.id})")
         # Activity personalizado corto para evitar recortes
-        await self.change_presence(
-            activity=discord.CustomActivity(name="ARK | By @K4NEKIs")
-        )
-        
+        await self.change_presence(activity=discord.CustomActivity(name="ARK | By @K4NEKIs"))
+
         # Refrescar todos los dashboards al arrancar disparando el bus de eventos.
         # Cada cog dueño escucha su evento y refresca su UI — sin imports cruzados.
         try:

@@ -1,11 +1,13 @@
-import os
-import discord
-from discord import app_commands
-from discord.ext import commands
-import aiosqlite
 import asyncio
 import datetime
 import logging
+import os
+
+import aiosqlite
+import discord
+from discord import app_commands
+from discord.ext import commands
+
 from cogs.server_status import get_guild_servers
 
 logger = logging.getLogger("ArkTribeBot")
@@ -55,21 +57,27 @@ def build_blacklist_embed(rows: list, page: int = 0) -> discord.Embed:
 
             # Ocultar notas genéricas de K4Ultra que son repetitivas
             raw_note = row["notes"] or ""
-            is_k4_default = raw_note.lower().startswith("auto-detectado") or raw_note.lower().startswith("pasaporte registrado")
-            
+            is_k4_default = raw_note.lower().startswith("auto-detectado") or raw_note.lower().startswith(
+                "pasaporte registrado"
+            )
+
             nota_corta = ""
             if raw_note and not is_k4_default:
                 nota_corta = (raw_note[:35] + "...") if len(raw_note) > 35 else raw_note
-            
+
             tribe_txt = row["tribe"] or "???"
             map_txt = row["map"] or "???"
 
             if is_enemy == 1:
-                lines.append(f"> `#{str(row['id']).zfill(3)}` 🔴 **{row['player']}** · {tribe_txt} · {map_txt}")
+                lines.append(
+                    f"> `#{str(row['id']).zfill(3)}` 🔴 **{row['player']}** · {tribe_txt} · {map_txt}"
+                )
                 if nota_corta:
                     lines.append(f">  ╰ 📝 *{nota_corta}*")
             else:
-                lines.append(f"> `#{str(row['id']).zfill(3)}` ⚪ **{row['player']}** · {tribe_txt} · {map_txt}")
+                lines.append(
+                    f"> `#{str(row['id']).zfill(3)}` ⚪ **{row['player']}** · {tribe_txt} · {map_txt}"
+                )
                 if nota_corta:
                     lines.append(f">  ╰ 📝 *{nota_corta}*")
 
@@ -85,9 +93,7 @@ async def update_blacklist_dashboards(bot, guild_id: int, page: int = 0):
     """Actualiza todos los mensajes de lista negra (dashboards)."""
 
     db = bot.db
-    cursor = await db.execute(
-        "SELECT * FROM blacklist_messages WHERE guild_id = ?", (guild_id,)
-    )
+    cursor = await db.execute("SELECT * FROM blacklist_messages WHERE guild_id = ?", (guild_id,))
     dashboards = await cursor.fetchall()
 
     if not dashboards:
@@ -107,9 +113,7 @@ async def update_blacklist_dashboards(bot, guild_id: int, page: int = 0):
 
     for dash in dashboards:
         try:
-            channel = bot.get_channel(dash["channel_id"]) or await bot.fetch_channel(
-                dash["channel_id"]
-            )
+            channel = bot.get_channel(dash["channel_id"]) or await bot.fetch_channel(dash["channel_id"])
             if channel:
                 message = await channel.fetch_message(dash["message_id"])
                 await message.edit(embed=embed, view=view)
@@ -131,9 +135,7 @@ async def update_blacklist_dashboards(bot, guild_id: int, page: int = 0):
 async def update_kda_dashboards(bot, guild_id: int):
     """Actualiza todos los mensajes persistentes del Rancómetro (Cazador de Mancos)."""
     db = bot.db
-    cursor = await db.execute(
-        "SELECT * FROM kda_messages WHERE guild_id = ?", (guild_id,)
-    )
+    cursor = await db.execute("SELECT * FROM kda_messages WHERE guild_id = ?", (guild_id,))
     dashboards = await cursor.fetchall()
 
     if not dashboards:
@@ -151,18 +153,18 @@ async def update_kda_dashboards(bot, guild_id: int):
         (guild_id,),
     )
     rows = await cursor.fetchall()
-        
+
     # Calcular total de muertes de la tribu para las barras
     total_tribe_deaths = sum(row["deaths"] for row in rows) if rows else 0
-        
+
     # Obtener pico de muertes/hora por jugador (máximo de muertes en cualquier ventana de 1h)
     peak_dph_map = {}
     try:
         c_peak = await db.execute(
             """
-            SELECT player_name, strftime('%Y-%m-%d %H', died_at) as hora, COUNT(*) as cnt 
-            FROM tribe_death_log 
-            WHERE guild_id = ? 
+            SELECT player_name, strftime('%Y-%m-%d %H', died_at) as hora, COUNT(*) as cnt
+            FROM tribe_death_log
+            WHERE guild_id = ?
             GROUP BY player_name, hora
             """,
             (guild_id,),
@@ -230,16 +232,18 @@ async def update_kda_dashboards(bot, guild_id: int):
         top1_rank, top1_emoji = get_mortality_rank(top1["deaths"])
         top1_pct = (top1["deaths"] / total_tribe_deaths * 100) if total_tribe_deaths > 0 else 0
         top1_peak = peak_dph_map.get(top1["player_name"])
-        
+
         lines = []
         lines.append(f"## 🏆 Rey de los Mancos: **{top1_name}**")
         lines.append(f"> Con **{top1['deaths']}** muertes ostenta el trono de la vergüenza.")
         peak_txt = f" · 🔥 Pico: `{top1_peak}`/h" if top1_peak else ""
-        lines.append(f"> {top1_emoji} **{top1_rank}** — `{get_bar(top1['deaths'], total_tribe_deaths)}` {top1_pct:.0f}%{peak_txt}")
+        lines.append(
+            f"> {top1_emoji} **{top1_rank}** — `{get_bar(top1['deaths'], total_tribe_deaths)}` {top1_pct:.0f}%{peak_txt}"
+        )
         lines.append("")
         lines.append(f"Muertes totales de la tribu: **{total_tribe_deaths}** 📉")
         lines.append("─────────────────────────────")
-        
+
         # Resto de jugadores en texto compacto
         for idx, row in enumerate(rows[1:15], start=2):
             deaths = row["deaths"]
@@ -248,13 +252,13 @@ async def update_kda_dashboards(bot, guild_id: int):
             bar = get_bar(deaths, total_tribe_deaths)
             pct = (deaths / total_tribe_deaths * 100) if total_tribe_deaths > 0 else 0
             peak = peak_dph_map.get(row["player_name"])
-            
+
             medalla = "🥈" if idx == 2 else "🥉" if idx == 3 else "☠️"
             peak_str = f" · 🔥`{peak}`/h" if peak else ""
-            
+
             lines.append(f"**{medalla} #{idx} {player}**")
             lines.append(f"  {rank_emoji} *{rank_title}*  ·  `{bar}` **{deaths}** ({pct:.0f}%){peak_str}")
-            lines.append("")      
+            lines.append("")
 
         embed = discord.Embed(
             title="☠️ EL SALÓN DE LA INFAMIA",
@@ -271,17 +275,13 @@ async def update_kda_dashboards(bot, guild_id: int):
             "Tribu líder en donación involuntaria de inventario.",
             "Respawneamos más rápido que los dinos salvajes.",
         ]
-        embed.set_footer(
-            text=f"💡 {_rng.choice(footer_frases)} • 🔥/h = pico máximo en 1 hora"
-        )
+        embed.set_footer(text=f"💡 {_rng.choice(footer_frases)} • 🔥/h = pico máximo en 1 hora")
 
     messages_to_remove = []
 
     for dash in dashboards:
         try:
-            channel = bot.get_channel(dash["channel_id"]) or await bot.fetch_channel(
-                dash["channel_id"]
-            )
+            channel = bot.get_channel(dash["channel_id"]) or await bot.fetch_channel(dash["channel_id"])
             if channel:
                 message = await channel.fetch_message(dash["message_id"])
                 await message.edit(embed=embed)
@@ -301,15 +301,9 @@ async def update_kda_dashboards(bot, guild_id: int):
 
 
 class AddBlacklistModal(discord.ui.Modal, title="Añadir a Blacklist"):
-    player = discord.ui.TextInput(
-        label="Nombre del Jugador", placeholder="Ej: xXDarkHunterXx"
-    )
-    tribe = discord.ui.TextInput(
-        label="Tribu", placeholder="Ej: Los Malos", required=False
-    )
-    map_name = discord.ui.TextInput(
-        label="Mapa", placeholder="Ej: Fjordur", required=False
-    )
+    player = discord.ui.TextInput(label="Nombre del Jugador", placeholder="Ej: xXDarkHunterXx")
+    tribe = discord.ui.TextInput(label="Tribu", placeholder="Ej: Los Malos", required=False)
+    map_name = discord.ui.TextInput(label="Mapa", placeholder="Ej: Fjordur", required=False)
     notes = discord.ui.TextInput(
         label="Notas",
         placeholder="Razón del ban o información relevante",
@@ -370,9 +364,7 @@ class ModifyBlacklistModal(discord.ui.Modal, title="Modificar entrada de Blackli
         try:
             bid = int(self.entry_id.value)
         except ValueError:
-            await interaction.response.send_message(
-                "❌ El ID debe ser un número.", ephemeral=True
-            )
+            await interaction.response.send_message("❌ El ID debe ser un número.", ephemeral=True)
             return
 
         valor = self.nuevo_valor.value
@@ -413,9 +405,7 @@ class ModifyBlacklistModal(discord.ui.Modal, title="Modificar entrada de Blackli
 
 
 class DeleteBlacklistModal(discord.ui.Modal, title="Eliminar de Blacklist"):
-    entry_id = discord.ui.TextInput(
-        label="ID de la Entrada", placeholder="Número ID", min_length=1
-    )
+    entry_id = discord.ui.TextInput(label="ID de la Entrada", placeholder="Número ID", min_length=1)
 
     def __init__(self, bot):
         super().__init__()
@@ -425,9 +415,7 @@ class DeleteBlacklistModal(discord.ui.Modal, title="Eliminar de Blacklist"):
         try:
             bid = int(self.entry_id.value)
         except ValueError:
-            await interaction.response.send_message(
-                "❌ El ID debe ser un número.", ephemeral=True
-            )
+            await interaction.response.send_message("❌ El ID debe ser un número.", ephemeral=True)
             return
 
         db = self.bot.db
@@ -440,28 +428,25 @@ class DeleteBlacklistModal(discord.ui.Modal, title="Eliminar de Blacklist"):
         )
         await db.commit()
 
-        await interaction.response.send_message(
-            f"🗑️ Entrada ID {bid} eliminada.", ephemeral=True
-        )
+        await interaction.response.send_message(f"🗑️ Entrada ID {bid} eliminada.", ephemeral=True)
         await update_blacklist_dashboards(self.bot, interaction.guild_id)
 
 
-async def build_player_detail_embed(
-    bot, player_name: str, guild_id: int
-) -> discord.Embed:
+async def build_player_detail_embed(bot, player_name: str, guild_id: int) -> discord.Embed:
     """Construye un embed detallado para un jugador, cruzando datos de Blacklist, K4Ultra y KDA."""
-    embed = discord.Embed(
-        title=f"👤 Expediente: {player_name}", color=discord.Color.dark_orange()
-    )
+    embed = discord.Embed(title=f"👤 Expediente: {player_name}", color=discord.Color.dark_orange())
 
     db = bot.db
 
     # --- Check si es Miembro de la Tribu Propia ---
-    c_own = await db.execute("SELECT members_json FROM k4ultra_fixed_tribes WHERE guild_id = ? AND is_own = 1", (guild_id,))
+    c_own = await db.execute(
+        "SELECT members_json FROM k4ultra_fixed_tribes WHERE guild_id = ? AND is_own = 1", (guild_id,)
+    )
     own_row = await c_own.fetchone()
     is_tribe_member = False
     if own_row:
         import json
+
         try:
             own_members = {m.lower() for m in json.loads(own_row["members_json"])}
             if player_name.lower() in own_members:
@@ -477,13 +462,18 @@ async def build_player_detail_embed(
     alias_row = await cursor.fetchone()
     if alias_row:
         embed.title = f"👤 Expediente: {player_name} [{alias_row['alias']}]"
-            
+
     desc = []
-    c_ids = await db.execute("SELECT secondary_name FROM player_identities_link WHERE primary_name = ? AND guild_id = ?", (player_name, guild_id))
+    c_ids = await db.execute(
+        "SELECT secondary_name FROM player_identities_link WHERE primary_name = ? AND guild_id = ?",
+        (player_name, guild_id),
+    )
     old_ids = await c_ids.fetchall()
     if old_ids:
         old_lst = ", ".join([r["secondary_name"] for r in old_ids])
-        desc.append(f"⚠️ **Antiguos nombres de Steam:** `{old_lst}`\n*(Progreso fusionado automáticamente a este perfil)*")
+        desc.append(
+            f"⚠️ **Antiguos nombres de Steam:** `{old_lst}`\n*(Progreso fusionado automáticamente a este perfil)*"
+        )
     embed.description = "\n\n".join(desc) if desc else ""
 
     # --- 1. Datos de Blacklist ---
@@ -515,17 +505,13 @@ async def build_player_detail_embed(
             # Limpiar texto autogenerado si hay notas escritas manualmente por el jugador
             notes_str = notes_str.replace("Pasaporte registrado (K4Ultra) | ", "")
             notes_str = notes_str.replace("Pasaporte registrado (K4Ultra)", "").strip()
-            if notes_str.startswith("|"): 
+            if notes_str.startswith("|"):
                 notes_str = notes_str[1:].strip()
-            if notes_str.startswith("["): 
+            if notes_str.startswith("["):
                 # El delimitador manual de notas a veces es | [De Alias]:
                 pass
-        embed.add_field(
-            name="🏠 Tribu", value=bl_row["tribe"] or "Desconocida", inline=True
-        )
-        embed.add_field(
-            name="🗺️ Mapa Origen", value=bl_row["map"] or "Desconocido", inline=True
-        )
+        embed.add_field(name="🏠 Tribu", value=bl_row["tribe"] or "Desconocida", inline=True)
+        embed.add_field(name="🗺️ Mapa Origen", value=bl_row["map"] or "Desconocido", inline=True)
         embed.add_field(name="📝 Notas", value=notes_str, inline=False)
     else:
         if embed.description is None or embed.description == "":
@@ -542,11 +528,7 @@ async def build_player_detail_embed(
         ),
     )
     playtime_row = await cursor.fetchone()
-    total_hours = (
-        (playtime_row["t_mins"] / 60)
-        if playtime_row and playtime_row["t_mins"]
-        else 0.0
-    )
+    total_hours = (playtime_row["t_mins"] / 60) if playtime_row and playtime_row["t_mins"] else 0.0
 
     # --- 3. Estado Online y Map Orbit ---
     cursor = await db.execute(
@@ -559,19 +541,16 @@ async def build_player_detail_embed(
     active_session = await cursor.fetchone()
 
     if active_session:
-        since = (
-            active_session["start_time"][11:16]
-            if active_session["start_time"]
-            else "?"
-        )
-        online_str = (
-            f"🟢 **En línea** (en {active_session['map_name']} desde {since})"
-        )
+        since = active_session["start_time"][11:16] if active_session["start_time"] else "?"
+        online_str = f"🟢 **En línea** (en {active_session['map_name']} desde {since})"
     else:
         # Buscar el último mapa en el que estuvo conectado
         cursor = await db.execute(
             "SELECT map_name FROM k4ultra_sessions WHERE player_name = ? AND is_active = 0 AND guild_id = ? ORDER BY end_time DESC LIMIT 1",
-            (player_name, guild_id,)
+            (
+                player_name,
+                guild_id,
+            ),
         )
         offline_session = await cursor.fetchone()
         if offline_session:
@@ -580,9 +559,7 @@ async def build_player_detail_embed(
             online_str = "🔴 **Desconectado**"
 
     embed.add_field(name="🔌 Estado Actual", value=online_str, inline=True)
-    embed.add_field(
-        name="⏱️ Tiempo Total", value=f"{total_hours:.1f} horas", inline=True
-    )
+    embed.add_field(name="⏱️ Tiempo Total", value=f"{total_hours:.1f} horas", inline=True)
 
     # Historial de Desplazamiento (Últimos 3 mapas visitados cronológicamente)
     cursor = await db.execute(
@@ -593,7 +570,7 @@ async def build_player_detail_embed(
         ),
     )
     recent_sessions = await cursor.fetchall()
-        
+
     orbit_list = []
     for r in recent_sessions:
         m_name = r["map_name"]
@@ -602,14 +579,12 @@ async def build_player_detail_embed(
             orbit_list.append(m_name)
         if len(orbit_list) >= 3:
             break
-                
+
     if orbit_list:
         # Invertimos el orden para mostrar la ruta cronológicamente (Pasado -> Reciente)
         orbit_list.reverse()
         orbit_str = " -> ".join(orbit_list)
-        embed.add_field(
-            name="🛰️ Órbita (Últimos Mapas)", value=f"`{orbit_str}`", inline=False
-        )
+        embed.add_field(name="🛰️ Órbita (Últimos Mapas)", value=f"`{orbit_str}`", inline=False)
 
     # --- 4. Análisis Horario y Predicción ---
     from datetime import datetime
@@ -654,9 +629,7 @@ async def build_player_detail_embed(
                 # Ejemplo: 03:00 - 07:00
                 vulnerability_window = f"Entre {min(inactive_hours):02d}:00 y {max(inactive_hours):02d}:00"
 
-    embed.add_field(
-        name="🕒 Ventana Vulnerable", value=vulnerability_window, inline=True
-    )
+    embed.add_field(name="🕒 Ventana Vulnerable", value=vulnerability_window, inline=True)
     embed.add_field(name="📈 Prob. Conexión (1h)", value=f"{prob}%", inline=True)
 
     # --- 5. PVP y Alts ---
@@ -672,11 +645,7 @@ async def build_player_detail_embed(
         (player_name, guild_id),
     )
     chars = await cursor.fetchall()
-    chars_str = (
-        ", ".join([f"`{c['character_name']}`" for c in chars])
-        if chars
-        else "Ninguno"
-    )
+    chars_str = ", ".join([f"`{c['character_name']}`" for c in chars]) if chars else "Ninguno"
 
     embed.add_field(
         name="⚔️ Ficha de Muertes",
@@ -695,9 +664,7 @@ async def build_player_detail_embed(
         threat += 1
 
     threat_str = "💀" * threat + "▫️" * (5 - threat)
-    embed.add_field(
-        name="🔥 Grado de Peligro", value=f"`{threat_str}`", inline=True
-    )
+    embed.add_field(name="🔥 Grado de Peligro", value=f"`{threat_str}`", inline=True)
     embed.add_field(name="📑 Tipo de Registro", value=status_msg, inline=True)
 
     # --- 7. Aliados ---
@@ -717,9 +684,7 @@ async def build_player_detail_embed(
     )
     allies = await cursor.fetchall()
     ally_text = (
-        "\n".join(
-            [f"• **{a['ally']}** ({a['probability_score']}%)" for a in allies]
-        )
+        "\n".join([f"• **{a['ally']}** ({a['probability_score']}%)" for a in allies])
         if allies
         else "Sin aliados conocidos."
     )
@@ -734,9 +699,7 @@ class PlayerDetailSelect(discord.ui.Select):
         options = []
         if not rows:
             # Opcion dummy necesaria para poder registrar la vista persistente al inicio
-            options.append(
-                discord.SelectOption(label="Cargando...", value="none_dummy_value")
-            )
+            options.append(discord.SelectOption(label="Cargando...", value="none_dummy_value"))
         else:
             for row in rows:
                 name = row["player"]
@@ -801,9 +764,7 @@ class BlacklistView(discord.ui.View):
         emoji="➕",
         row=0,
     )
-    async def add_btn(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
+    async def add_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(AddBlacklistModal(self.bot))
 
     @discord.ui.button(
@@ -813,27 +774,26 @@ class BlacklistView(discord.ui.View):
         emoji="📝",
         row=0,
     )
-    async def modify_btn(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
+    async def modify_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer(ephemeral=True)
         try:
             # Buscar el comando global para obtener su ID
             cmds = await self.bot.tree.fetch_commands()
             cmd_id = next((c.id for c in cmds if c.name == "bl_editar"), None)
-            
+
             if cmd_id:
                 await interaction.followup.send(
-                    f"Haz clic para ver el comando y modificar: </bl_editar:{cmd_id}>",
-                    ephemeral=True
+                    f"Haz clic para ver el comando y modificar: </bl_editar:{cmd_id}>", ephemeral=True
                 )
             else:
                 await interaction.followup.send(
                     "📝 Escribe el comando **`/bl_editar`** en el chat para modificar a un jugador.",
-                    ephemeral=True
+                    ephemeral=True,
                 )
         except Exception:
-            await interaction.followup.send("📝 Escribe el comando **`/bl_editar`** en el chat.", ephemeral=True)
+            await interaction.followup.send(
+                "📝 Escribe el comando **`/bl_editar`** en el chat.", ephemeral=True
+            )
 
     @discord.ui.button(
         label="Eliminar",
@@ -842,9 +802,7 @@ class BlacklistView(discord.ui.View):
         emoji="🗑️",
         row=0,
     )
-    async def delete_btn(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
+    async def delete_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(DeleteBlacklistModal(self.bot))
 
     @discord.ui.button(
@@ -853,9 +811,7 @@ class BlacklistView(discord.ui.View):
         custom_id="blacklist_prev_btn",
         row=2,
     )
-    async def prev_btn(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
+    async def prev_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Página anterior de la Blacklist."""
         new_page = max(0, self.page - 1)
         await self._update_page(interaction, new_page)
@@ -866,9 +822,7 @@ class BlacklistView(discord.ui.View):
         custom_id="blacklist_next_btn",
         row=2,
     )
-    async def next_btn(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
+    async def next_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Página siguiente de la Blacklist."""
         total_pages = max(1, (len(self.rows) + PAGE_SIZE - 1) // PAGE_SIZE)
         new_page = min(total_pages - 1, self.page + 1)
@@ -912,9 +866,8 @@ class Warfare(commands.Cog):
 
     async def setup_dashboard(self, guild_id: int, channel: discord.TextChannel):
         """Inicializa el dashboard interactivo de Blacklist."""
-        import aiosqlite
         from cogs.management import INFO_TEXTS
-        
+
         info_embed = discord.Embed(
             description=INFO_TEXTS["blacklist"],
             color=discord.Color.from_rgb(43, 45, 49),
@@ -927,7 +880,7 @@ class Warfare(commands.Cog):
             (guild_id,),
         )
         rows = await cursor.fetchall()
-            
+
         embed, _, _ = build_blacklist_embed(rows, 0)
         view = BlacklistView(self.bot, rows)
         msg = await channel.send(embed=embed, view=view)
@@ -950,13 +903,9 @@ class Warfare(commands.Cog):
             await db.execute("SELECT id FROM blacklist LIMIT 1")
         except aiosqlite.OperationalError:
             # Falla de lectura: Detectado esquema antiguo
-            logger.warning(
-                "⚠️ Detectada versión antigua de Blacklist. Migrando tabla..."
-            )
+            logger.warning("⚠️ Detectada versión antigua de Blacklist. Migrando tabla...")
             try:
-                backup_name = (
-                    f"blacklist_backup_{int(datetime.datetime.now().timestamp())}"
-                )
+                backup_name = f"blacklist_backup_{int(datetime.datetime.now().timestamp())}"
                 await db.execute(f"ALTER TABLE blacklist RENAME TO {backup_name}")
                 logger.info(f"✅ Tabla antigua renombrada a {backup_name}")
 
@@ -989,9 +938,7 @@ class Warfare(commands.Cog):
         )
         rows = await cursor.fetchall()
 
-        choices = [
-            app_commands.Choice(name=row[0], value=row[0]) for row in rows if row[0]
-        ]
+        choices = [app_commands.Choice(name=row[0], value=row[0]) for row in rows if row[0]]
         # Retorno de coincidencias o permite texto libre por defecto (Discord behavior)
         return choices
 
@@ -1015,9 +962,7 @@ class Warfare(commands.Cog):
         )  # Aplazamiento de respuesta para prevenir Timeout de la interacción
 
         # Generación del placeholder inicial (Actualización sincrónica inminente)
-        embed = discord.Embed(
-            title="Cargando Blacklist...", color=discord.Color.dark_grey()
-        )
+        embed = discord.Embed(title="Cargando Blacklist...", color=discord.Color.dark_grey())
         await interaction.followup.send(embed=embed)
         message = await interaction.original_response()
 
@@ -1032,9 +977,7 @@ class Warfare(commands.Cog):
 
     # /blacklist_add y /blacklist_mod eliminados — cubiertos por botones del dashboard
 
-    @app_commands.command(
-        name="sos", description="¡ALERTA DE RAID! Envía una señal de ayuda."
-    )
+    @app_commands.command(name="sos", description="¡ALERTA DE RAID! Envía una señal de ayuda.")
     @app_commands.describe(
         tipo="Tipo de amenaza (Opcional)",
         mapa="Mapa del ataque (Opcional)",
@@ -1075,9 +1018,7 @@ class Warfare(commands.Cog):
             embed.set_footer(text="⚠️ Alerta de Prioridad MÁXIMA")
         else:
             # Dispatch: SOS Estructurado y Detallado
-            titulo = (
-                f"🚨 ALERTA: {tipo.value.upper()}" if tipo else "🚨 ALERTA DE COMBATE"
-            )
+            titulo = f"🚨 ALERTA: {tipo.value.upper()}" if tipo else "🚨 ALERTA DE COMBATE"
             color = discord.Color.red()
 
             embed = discord.Embed(title=titulo, color=color)
@@ -1104,9 +1045,7 @@ class Warfare(commands.Cog):
 
         # Broadcast de la alerta al canal de registro
         await interaction.channel.send(content=role_mention, embed=embed)
-        await interaction.response.send_message(
-            "✅ Alerta SOS enviada.", ephemeral=True
-        )
+        await interaction.response.send_message("✅ Alerta SOS enviada.", ephemeral=True)
 
     # --- K/D/A Tracker (Ranking Manco) ---
 
@@ -1117,9 +1056,7 @@ class Warfare(commands.Cog):
     async def ranking(self, interaction: discord.Interaction):
         await interaction.response.defer()
 
-        embed = discord.Embed(
-            title="Cargando Ranking...", color=discord.Color.dark_red()
-        )
+        embed = discord.Embed(title="Cargando Ranking...", color=discord.Color.dark_red())
         await interaction.followup.send(embed=embed)
         message = await interaction.original_response()
 

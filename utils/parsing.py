@@ -2,6 +2,7 @@
 
 Aisladas en módulo propio para facilitar tests unitarios.
 """
+
 from __future__ import annotations
 
 

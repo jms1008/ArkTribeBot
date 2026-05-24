@@ -1,11 +1,13 @@
-import discord
-from discord.ext import commands, tasks
-from discord import app_commands
 import asyncio
-import aiosqlite
+import json
 import logging
 from datetime import datetime, timedelta
-import json
+
+import aiosqlite
+import discord
+from discord import app_commands
+from discord.ext import commands, tasks
+
 from cogs.k4ultra.ui import K4UltraView
 from utils import bus
 
@@ -19,11 +21,9 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
 
     async def setup_dashboard(self, guild_id: int, channel: discord.TextChannel):
         """Inicializa el dashboard interactivo de K4Ultra."""
-        import aiosqlite
-        import asyncio
-        from cogs.management import INFO_TEXTS
         from cogs.k4ultra.ui import K4UltraView
-        
+        from cogs.management import INFO_TEXTS
+
         info_embed = discord.Embed(
             description=INFO_TEXTS["k4ultra"],
             color=discord.Color.from_rgb(43, 45, 49),
@@ -113,12 +113,14 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
                 if data.get("error"):
                     continue
                 for p in data["players"]:
-                    all_fetched_raw.append({
-                        "guild_id": guild_id,
-                        "map": map_name,
-                        "raw_name": p["name"],
-                        "duration": p["duration"],
-                    })
+                    all_fetched_raw.append(
+                        {
+                            "guild_id": guild_id,
+                            "map": map_name,
+                            "raw_name": p["name"],
+                            "duration": p["duration"],
+                        }
+                    )
 
         # Registro de qué servidores (guild, mapa) fueron consultados con éxito
         successfully_queried = set(all_guild_servers_set)
@@ -144,16 +146,17 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
                 continue
             # Verificamos si este nombre fue fusionado alguna vez a otra cuenta principal
             true_name = g_identities.get(raw_name.lower(), raw_name)
-            
-            all_fetched.append({
-                "guild_id": fp["guild_id"], 
-                "map": fp["map"], 
-                "raw_name": true_name, 
-                "duration": fp["duration"]
-            })
+
+            all_fetched.append(
+                {
+                    "guild_id": fp["guild_id"],
+                    "map": fp["map"],
+                    "raw_name": true_name,
+                    "duration": fp["duration"],
+                }
+            )
 
         db = self.bot.db
-
 
         cursor = await db.execute(
             "SELECT id, player_name, map_name, guild_id, start_time, end_time, last_duration FROM k4ultra_sessions WHERE is_active = 1"
@@ -209,9 +212,7 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
             # Verificación de desconexiones recientes (transferencias o reconexiones)
             # Exclusión de identidades ya procesadas en este ciclo (multicuenta rápida)
             identities_already_online = [
-                active_pool_dict[sid]["player_name"]
-                for sid in seen_identities
-                if sid in active_pool_dict
+                active_pool_dict[sid]["player_name"] for sid in seen_identities if sid in active_pool_dict
             ]
 
             generic_names = {"123", "human", "humano", "survivor", "player", "bob"}
@@ -321,7 +322,7 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
                         "id": new_id,
                         "player_name": true_identity,
                         "map_name": map_m,
-                        "guild_id": fp["guild_id"]
+                        "guild_id": fp["guild_id"],
                     }
                     fp["true_identity"] = true_identity
                     break
@@ -338,11 +339,7 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
                     max_suffix = 0
                     for e in existing:
                         parts = e["player_name"].rsplit("_", 1)
-                        if (
-                            len(parts) == 2
-                            and parts[1].isdigit()
-                            and parts[0] == raw_name
-                        ):
+                        if len(parts) == 2 and parts[1].isdigit() and parts[0] == raw_name:
                             val = int(parts[1])
                             if val > max_suffix:
                                 max_suffix = val
@@ -376,7 +373,7 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
                     "id": new_id,
                     "player_name": true_identity,
                     "map_name": map_m,
-                    "guild_id": fp["guild_id"]
+                    "guild_id": fp["guild_id"],
                 }
                 fp["true_identity"] = true_identity
 
@@ -422,10 +419,9 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
                 logger.error(f"[K4Ultra] Error enriqueciendo blacklist para {t_identity}: {e}")
 
         # Identidades confirmadas como online en este ciclo (para detectar transfers)
-        identities_online_now = set(
-            (fp["guild_id"], fp["true_identity"]) 
-            for fp in all_fetched if fp.get("true_identity")
-        )
+        identities_online_now = {
+            (fp["guild_id"], fp["true_identity"]) for fp in all_fetched if fp.get("true_identity")
+        }
 
         # Marcado de inactividad de sesiones cerradas
         # SOLO para servidores que han sido consultados con éxito en este ciclo
@@ -435,7 +431,7 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
                     # Si el jugador ha sido visto en OTRO mapa este mismo ciclo (Transfer)
                     # cerramos la sesión antigua inmediatamente sin margen de gracia.
                     is_transfer = (s["guild_id"], s["player_name"]) in identities_online_now
-                        
+
                     if is_transfer:
                         await db.execute("UPDATE k4ultra_sessions SET is_active = 0 WHERE id = ?", (sid,))
                     else:
@@ -444,7 +440,9 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
                         try:
                             last_seen = datetime.strptime(s["end_time"], "%Y-%m-%d %H:%M:%S")
                             if (now - last_seen).total_seconds() > 600:
-                                await db.execute("UPDATE k4ultra_sessions SET is_active = 0 WHERE id = ?", (sid,))
+                                await db.execute(
+                                    "UPDATE k4ultra_sessions SET is_active = 0 WHERE id = ?", (sid,)
+                                )
                         except Exception:
                             # Fallback si el tiempo está corrupto
                             await db.execute("UPDATE k4ultra_sessions SET is_active = 0 WHERE id = ?", (sid,))
@@ -457,19 +455,21 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
             for guild_id in [gr[0] for gr in guild_rows]:
                 cursor = await db.execute(
                     "SELECT members_json FROM k4ultra_fixed_tribes WHERE is_own = 1 AND guild_id = ?",
-                    (guild_id,)
+                    (guild_id,),
                 )
                 unnamed_row = await cursor.fetchone()
-                    
+
                 if unnamed_row:
-                    import json
                     import datetime as dt
+                    import json
 
                     unnamed_members = {m.lower() for m in json.loads(unnamed_row["members_json"])}
 
                     blacklisted = set()
                     try:
-                        cursor = await db.execute("SELECT player FROM blacklist WHERE guild_id = ?", (guild_id,))
+                        cursor = await db.execute(
+                            "SELECT player FROM blacklist WHERE guild_id = ?", (guild_id,)
+                        )
                         blacklisted = {r["player"].lower() for r in await cursor.fetchall()}
                     except aiosqlite.OperationalError:
                         pass
@@ -482,14 +482,11 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
                             s_info = active_pool_dict[sid]
                             if s_info["guild_id"] != guild_id:
                                 continue
-                                    
+
                             t_name = s_info["player_name"]
                             t_map = s_info["map_name"]
 
-                            if (
-                                t_name.lower() not in unnamed_members
-                                and t_name.lower() not in blacklisted
-                            ):
+                            if t_name.lower() not in unnamed_members and t_name.lower() not in blacklisted:
                                 try:
                                     await db.execute(
                                         "INSERT INTO blacklist (guild_id, player, tribe, map, notes, created_at, is_enemy) VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -517,9 +514,7 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
 
         # --- Actualización de Dashboards K4Ultra ---
         db.row_factory = aiosqlite.Row
-        cursor = await db.execute(
-            "SELECT id, guild_id, channel_id, message_id, mode FROM k4ultra_messages"
-        )
+        cursor = await db.execute("SELECT id, guild_id, channel_id, message_id, mode FROM k4ultra_messages")
         rows = await cursor.fetchall()
 
         if rows:
@@ -535,9 +530,7 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
                 pages, top_players, k4_aliases = await self.generate_k4ultra_embed(guild_id, mode)
 
                 try:
-                    channel = self.bot.get_channel(
-                        channel_id
-                    ) or await self.bot.fetch_channel(channel_id)
+                    channel = self.bot.get_channel(channel_id) or await self.bot.fetch_channel(channel_id)
                     if not channel:
                         messages_to_remove.append(row_id)
                         continue
@@ -551,26 +544,28 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
                         await message.edit(embed=pages[0], view=None)
                     else:
                         # Reconexión de la vista interactiva (View) del Embed
-                        view = K4UltraView(self.bot, guild_id, top_players, k4_aliases, pages=pages, current_page=use_page_index, mode=mode)
+                        view = K4UltraView(
+                            self.bot,
+                            guild_id,
+                            top_players,
+                            k4_aliases,
+                            pages=pages,
+                            current_page=use_page_index,
+                            mode=mode,
+                        )
                         await message.edit(embed=pages[use_page_index], view=view)
                 except discord.NotFound:
                     messages_to_remove.append(row_id)
                 except discord.Forbidden:
                     pass
                 except discord.HTTPException as e:
-                    logger.error(
-                        f"[K4Ultra Debug] Error actualizando mensaje persistente {row_id}: {e}"
-                    )
+                    logger.error(f"[K4Ultra Debug] Error actualizando mensaje persistente {row_id}: {e}")
                 except Exception as e:
-                    logger.error(
-                        f"[K4Ultra] Error actualizando mensaje persistente {row_id}: {e}"
-                    )
+                    logger.error(f"[K4Ultra] Error actualizando mensaje persistente {row_id}: {e}")
 
             if messages_to_remove:
                 for msg_id in messages_to_remove:
-                    await db.execute(
-                        "DELETE FROM k4ultra_messages WHERE id = ?", (msg_id,)
-                    )
+                    await db.execute("DELETE FROM k4ultra_messages WHERE id = ?", (msg_id,))
                 await db.commit()
 
     @gather_player_data.error
@@ -586,9 +581,7 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
         await self.bot.wait_until_ready()
 
         now = datetime.now()
-        yesterday_start = (now - timedelta(days=1)).replace(
-            hour=0, minute=0, second=0, microsecond=0
-        )
+        yesterday_start = (now - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
         yesterday_end = yesterday_start + timedelta(days=1)
         ys_str = yesterday_start.strftime("%Y-%m-%d %H:%M:%S")
         ye_str = yesterday_end.strftime("%Y-%m-%d %H:%M:%S")
@@ -603,24 +596,21 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
             "UPDATE k4ultra_relationships SET probability_score = CAST(probability_score * 0.95 AS INTEGER) WHERE is_manual = 0"
         )
         # Limpieza de relaciones residuales con puntuación insignificante
-        await db.execute(
-            "DELETE FROM k4ultra_relationships WHERE probability_score < 2 AND is_manual = 0"
-        )
+        await db.execute("DELETE FROM k4ultra_relationships WHERE probability_score < 2 AND is_manual = 0")
 
         # Extracción de todos los gremios configurados
         cursor = await db.execute("SELECT guild_id FROM guild_config")
         guild_rows = await cursor.fetchall()
-            
+
         for g_row in guild_rows:
             guild_id = g_row["guild_id"]
-                
+
             # Prevención de doble ejecución tras reinicios bruscos (Aislado por gremio)
             await db.execute(
                 "CREATE TABLE IF NOT EXISTS k4ultra_config (guild_id INTEGER, key TEXT, value TEXT, PRIMARY KEY (guild_id, key))"
             )
             cursor = await db.execute(
-                "SELECT value FROM k4ultra_config WHERE key = 'last_calc_date' AND guild_id = ?",
-                (guild_id,)
+                "SELECT value FROM k4ultra_config WHERE key = 'last_calc_date' AND guild_id = ?", (guild_id,)
             )
             row = await cursor.fetchone()
             today_str = now.strftime("%Y-%m-%d")
@@ -657,9 +647,7 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
                 if end_str > ye_str:
                     end_str = ye_str
                 et = datetime.strptime(end_str, "%Y-%m-%d %H:%M:%S")
-                parsed_sessions.append(
-                    {"p": s["player_name"], "m": s["map_name"], "st": st, "et": et}
-                )
+                parsed_sessions.append({"p": s["player_name"], "m": s["map_name"], "st": st, "et": et})
 
             from collections import defaultdict
 
@@ -687,21 +675,12 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
                                 overlap_start = max(s1["st"], s2["st"])
                                 overlap_end = min(s1["et"], s2["et"])
                                 if overlap_end > overlap_start:
-                                    mins = int(
-                                        (overlap_end - overlap_start).total_seconds()
-                                        / 60
-                                    )
+                                    mins = int((overlap_end - overlap_start).total_seconds() / 60)
                                     add_mins(p1, p2, mins)
 
                     # Regla C: Sincronía en Login Y Logout (margen <= 3 mins, ambas condiciones)
-                    login_sync = (
-                        abs((s1_list[0]["st"] - s2_list[0]["st"]).total_seconds())
-                        <= 180
-                    )
-                    logout_sync = (
-                        abs((s1_list[-1]["et"] - s2_list[-1]["et"]).total_seconds())
-                        <= 180
-                    )
+                    login_sync = abs((s1_list[0]["st"] - s2_list[0]["st"]).total_seconds()) <= 180
+                    logout_sync = abs((s1_list[-1]["et"] - s2_list[-1]["et"]).total_seconds()) <= 180
                     if login_sync and logout_sync:
                         add_points(p1, p2, 2)
 
@@ -712,9 +691,7 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
                         t1_start2 = s1_list[k1 + 1]["st"]
                         t1_map2 = s1_list[k1 + 1]["m"]
 
-                        if (
-                            t1_map1 != t1_map2
-                        ):  # Confirmación de transferencia de mapa aislada
+                        if t1_map1 != t1_map2:  # Confirmación de transferencia de mapa aislada
                             for k2 in range(len(s2_list) - 1):
                                 t2_end = s2_list[k2]["et"]
                                 t2_map1 = s2_list[k2]["m"]
@@ -724,8 +701,7 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
                                 if t2_map1 == t1_map1 and t2_map2 == t1_map2:
                                     if (
                                         abs((t1_end - t2_end).total_seconds()) <= 300
-                                        and abs((t1_start2 - t2_start2).total_seconds())
-                                        <= 300
+                                        and abs((t1_start2 - t2_start2).total_seconds()) <= 300
                                     ):
                                         add_points(p1, p2, 5)
 
@@ -739,9 +715,7 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
                     pts_to_add = points_to_add.get((p1, p2), 0)
 
                     if row:
-                        old_mins = (
-                            row["shared_minutes"] if "shared_minutes" in row.keys() else 0
-                        )
+                        old_mins = row["shared_minutes"] if "shared_minutes" in row.keys() else 0
                         new_mins = old_mins + mins
                         # Cálculo de puntos adicionales derivados de Regla A
                         pts_to_add += (new_mins // 180) - (old_mins // 180)
@@ -786,20 +760,18 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
                 (guild_id, today_str),
             )
         # Limpieza mensual de registros crudos (Logs) para preservación de DB
-        await db.execute(
-            "DELETE FROM k4ultra_players_log WHERE timestamp < datetime('now', '-30 days')"
-        )
+        await db.execute("DELETE FROM k4ultra_players_log WHERE timestamp < datetime('now', '-30 days')")
 
         await db.commit()
 
         # Captura de Snapshot semanal (Lunes)
         if now.weekday() == 0:  # Lunes
             current_week = now.isocalendar()[1]
-                
+
             # Fetch all guilds that have K4Ultra active (by checking playtime)
             cursor = await db.execute("SELECT DISTINCT guild_id FROM k4ultra_playtime")
             guilds = await cursor.fetchall()
-                
+
             for guild_row in guilds:
                 g_id = guild_row["guild_id"]
                 cursor = await db.execute(
@@ -808,15 +780,11 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
                 )
                 if not await cursor.fetchone():
                     # Generación de Embed para guardado en Snapshot
-                    pages, _ , _a = await self.generate_k4ultra_embed(g_id)
+                    pages, _, _a = await self.generate_k4ultra_embed(g_id)
                     embed = pages[0]
-                    embed.title = (
-                        f"🌐 Tracker de Jugadores K4Ultra - Semana {current_week}"
-                    )
+                    embed.title = f"🌐 Tracker de Jugadores K4Ultra - Semana {current_week}"
                     embed.description = "Registro inmutable de la semana."
-                    embed.set_footer(
-                        text=f"Guardado automáticamente: {now.strftime('%Y-%m-%d')}"
-                    )
+                    embed.set_footer(text=f"Guardado automáticamente: {now.strftime('%Y-%m-%d')}")
 
                     embed_json = json.dumps(embed.to_dict())
                     await db.execute(
@@ -831,19 +799,18 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
 
         return await generate_k4ultra_embed(self.bot, guild_id, mode)
 
-
     @app_commands.command(
         name="k4ultra",
         description="Muestra información detallada de jugadores, tiempos y relaciones.",
     )
     @app_commands.describe(
         semana="Opcional. Número de semana para ver el histórico de esa semana.",
-        modo="Opcional. Selecciona si ver radar o tribus (por defecto radar)."
+        modo="Opcional. Selecciona si ver radar o tribus (por defecto radar).",
     )
     @app_commands.choices(
         modo=[
             app_commands.Choice(name="Radar y Ranking", value="radar"),
-            app_commands.Choice(name="Explorador de Tribus", value="tribus")
+            app_commands.Choice(name="Explorador de Tribus", value="tribus"),
         ]
     )
     async def k4ultra_command(
@@ -852,9 +819,7 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
 
         # Validación de permisos (Admin o ID autorizado)
         if not await interaction.client.is_authorized_admin(interaction):
-            await interaction.response.send_message(
-                "❌ **ACCESO DENEGADO.**", ephemeral=True
-            )
+            await interaction.response.send_message("❌ **ACCESO DENEGADO.**", ephemeral=True)
             return
 
         if semana:
@@ -880,7 +845,11 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
             # Visualización de estadísticas en vivo y guardado como mensaje persistente
             await interaction.response.defer(ephemeral=False)
             pages, top_players, k4_aliases = await self.generate_k4ultra_embed(interaction.guild_id, modo)
-            view = K4UltraView(self.bot, interaction.guild_id, top_players, k4_aliases, pages=pages) if modo != "tribus" else None
+            view = (
+                K4UltraView(self.bot, interaction.guild_id, top_players, k4_aliases, pages=pages)
+                if modo != "tribus"
+                else None
+            )
 
             try:
                 if view:
@@ -908,9 +877,7 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
     )
     async def k4ultra_cleanup(self, interaction: discord.Interaction):
         if not await interaction.client.is_authorized_admin(interaction):
-            await interaction.response.send_message(
-                "❌ Acceso denegado.", ephemeral=True
-            )
+            await interaction.response.send_message("❌ Acceso denegado.", ephemeral=True)
             return
 
         await interaction.response.defer(ephemeral=True)
@@ -921,8 +888,7 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
         import re
 
         cursor = await db.execute(
-            "SELECT DISTINCT player_name FROM k4ultra_playtime WHERE guild_id = ?",
-            (interaction.guild_id,)
+            "SELECT DISTINCT player_name FROM k4ultra_playtime WHERE guild_id = ?", (interaction.guild_id,)
         )
         all_players = [r["player_name"] for r in await cursor.fetchall()]
 
@@ -984,7 +950,8 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
                     )
 
             await db.execute(
-                "DELETE FROM k4ultra_playtime WHERE player_name = ? AND guild_id = ?", (dup_name, interaction.guild_id)
+                "DELETE FROM k4ultra_playtime WHERE player_name = ? AND guild_id = ?",
+                (dup_name, interaction.guild_id),
             )
 
             # 2. Actualización de Sesiones
@@ -1007,13 +974,16 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
             # Limpieza de auto-relaciones generadas por la fusión
             await db.execute(
                 "DELETE FROM k4ultra_relationships WHERE player1 = player2 AND guild_id = ?",
-                (interaction.guild_id,)
+                (interaction.guild_id,),
             )
 
             # 4. Limpieza en Blacklist y Alias
-            await db.execute("DELETE FROM blacklist WHERE player = ? AND guild_id = ?", (dup_name, interaction.guild_id))
             await db.execute(
-                "DELETE FROM k4ultra_aliases WHERE player_name = ? AND guild_id = ?", (dup_name, interaction.guild_id)
+                "DELETE FROM blacklist WHERE player = ? AND guild_id = ?", (dup_name, interaction.guild_id)
+            )
+            await db.execute(
+                "DELETE FROM k4ultra_aliases WHERE player_name = ? AND guild_id = ?",
+                (dup_name, interaction.guild_id),
             )
             await db.execute(
                 "UPDATE k4ultra_players_log SET player_name = ? WHERE player_name = ? AND guild_id = ?",
@@ -1036,24 +1006,18 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
     @app_commands.describe(
         nombre="Nombre de la tribu",
         jugadores="Nombres de los jugadores separados por coma",
-        propia="Opcional. Marca True si esta es tu tribu (aparecerá destacada)."
+        propia="Opcional. Marca True si esta es tu tribu (aparecerá destacada).",
     )
     async def fijar_tribu(
         self, interaction: discord.Interaction, nombre: str, jugadores: str, propia: bool = False
     ):
         if not await interaction.client.is_authorized_admin(interaction):
-            await interaction.response.send_message(
-                "❌ Acceso denegado.", ephemeral=True
-            )
+            await interaction.response.send_message("❌ Acceso denegado.", ephemeral=True)
             return
 
         # Saneamiento de comillas accidentales y espacios
         nombre = nombre.strip().strip("'\"")
-        miembros = [
-            m.strip().strip("'\"")
-            for m in jugadores.split(",")
-            if m.strip().strip("'\"")
-        ]
+        miembros = [m.strip().strip("'\"") for m in jugadores.split(",") if m.strip().strip("'\"")]
 
         if len(miembros) < 2:
             await interaction.response.send_message(
@@ -1068,7 +1032,9 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
         is_own = 1 if propia else 0
         if is_own == 1:
             # Quitar is_own a todas las de la guild para que solo haya 1 propia
-            await db.execute("UPDATE k4ultra_fixed_tribes SET is_own = 0 WHERE guild_id = ?", (interaction.guild_id,))
+            await db.execute(
+                "UPDATE k4ultra_fixed_tribes SET is_own = 0 WHERE guild_id = ?", (interaction.guild_id,)
+            )
 
         await db.execute(
             "INSERT INTO k4ultra_fixed_tribes (guild_id, name, members_json, is_own) VALUES (?, ?, ?, ?)",
@@ -1111,12 +1077,17 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
 
         db = self.bot.db
         import json
+
         # Desmarcar las anteriores para evitar conflictos
-        await db.execute("UPDATE k4ultra_fixed_tribes SET is_own = 0 WHERE guild_id = ?", (interaction.guild_id,))
-            
+        await db.execute(
+            "UPDATE k4ultra_fixed_tribes SET is_own = 0 WHERE guild_id = ?", (interaction.guild_id,)
+        )
+
         # Buscamos si existía una con el mismo nombre para sobrescribirla limpiamente
-        await db.execute("DELETE FROM k4ultra_fixed_tribes WHERE name = ? AND guild_id = ?", (nombre, interaction.guild_id))
-            
+        await db.execute(
+            "DELETE FROM k4ultra_fixed_tribes WHERE name = ? AND guild_id = ?", (nombre, interaction.guild_id)
+        )
+
         await db.execute(
             "INSERT INTO k4ultra_fixed_tribes (guild_id, name, members_json, is_own) VALUES (?, ?, ?, 1)",
             (interaction.guild_id, nombre, json.dumps(miembros)),
@@ -1153,44 +1124,65 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
 
         db = self.bot.db
         import json
+
         db.row_factory = aiosqlite.Row
-        cursor = await db.execute("SELECT id, name, members_json FROM k4ultra_fixed_tribes WHERE is_own = 1 AND guild_id = ?", (interaction.guild_id,))
+        cursor = await db.execute(
+            "SELECT id, name, members_json FROM k4ultra_fixed_tribes WHERE is_own = 1 AND guild_id = ?",
+            (interaction.guild_id,),
+        )
         row = await cursor.fetchone()
 
         if not row:
-            await interaction.response.send_message("❌ No hay tribu propia configurada. Usa `/tribu_propia crear` primero.", ephemeral=True)
+            await interaction.response.send_message(
+                "❌ No hay tribu propia configurada. Usa `/tribu_propia crear` primero.", ephemeral=True
+            )
             return
 
         if opcion.value == "nombre":
             await db.execute("UPDATE k4ultra_fixed_tribes SET name = ? WHERE id = ?", (valor, row["id"]))
             await db.commit()
-            await interaction.response.send_message(f"✅ Se cambió el nombre de la tribu propia a **{valor}**.", ephemeral=True)
+            await interaction.response.send_message(
+                f"✅ Se cambió el nombre de la tribu propia a **{valor}**.", ephemeral=True
+            )
             return
-            
+
         miembros: list = json.loads(row["members_json"])
-            
+
         if opcion.value == "add":
             if [m.lower() for m in miembros].count(valor.lower()) > 0:
-                await interaction.response.send_message(f"⚠️ **{valor}** ya está en la tribu propia (**{row['name']}**).", ephemeral=True)
+                await interaction.response.send_message(
+                    f"⚠️ **{valor}** ya está en la tribu propia (**{row['name']}**).", ephemeral=True
+                )
                 return
             miembros.append(valor)
-            await db.execute("UPDATE k4ultra_fixed_tribes SET members_json = ? WHERE id = ?", (json.dumps(miembros), row["id"]))
+            await db.execute(
+                "UPDATE k4ultra_fixed_tribes SET members_json = ? WHERE id = ?",
+                (json.dumps(miembros), row["id"]),
+            )
             await db.commit()
-            await interaction.response.send_message(f"✅ Se añadió a **{valor}** a la tribu propia (**{row['name']}**).", ephemeral=True)
+            await interaction.response.send_message(
+                f"✅ Se añadió a **{valor}** a la tribu propia (**{row['name']}**).", ephemeral=True
+            )
 
         elif opcion.value == "remove":
             original_len = len(miembros)
             miembros = [m for m in miembros if m.lower() != valor.lower()]
             if len(miembros) == original_len:
-                await interaction.response.send_message(f"❌ **{valor}** no fue encontrado en la tribu propia (**{row['name']}**).", ephemeral=True)
+                await interaction.response.send_message(
+                    f"❌ **{valor}** no fue encontrado en la tribu propia (**{row['name']}**).",
+                    ephemeral=True,
+                )
                 return
-            await db.execute("UPDATE k4ultra_fixed_tribes SET members_json = ? WHERE id = ?", (json.dumps(miembros), row["id"]))
+            await db.execute(
+                "UPDATE k4ultra_fixed_tribes SET members_json = ? WHERE id = ?",
+                (json.dumps(miembros), row["id"]),
+            )
             await db.commit()
-            await interaction.response.send_message(f"✅ Se eliminó a **{valor}** de la tribu propia (**{row['name']}**).", ephemeral=True)
+            await interaction.response.send_message(
+                f"✅ Se eliminó a **{valor}** de la tribu propia (**{row['name']}**).", ephemeral=True
+            )
 
-    @tribu_propia_group.command(
-        name="borrar", description="[Admin] Elimina la tribu propia del registro."
-    )
+    @tribu_propia_group.command(name="borrar", description="[Admin] Elimina la tribu propia del registro.")
     @app_commands.describe(seguro="True si estás seguro de que deseas borrarla por completo.")
     async def tribu_propia_borrar(self, interaction: discord.Interaction, seguro: bool):
         if not await interaction.client.is_authorized_admin(interaction):
@@ -1198,18 +1190,26 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
             return
 
         if not seguro:
-            await interaction.response.send_message("❌ Debes seleccionar `seguro: True` para borrar la tribu propia definitivamente.", ephemeral=True)
+            await interaction.response.send_message(
+                "❌ Debes seleccionar `seguro: True` para borrar la tribu propia definitivamente.",
+                ephemeral=True,
+            )
             return
 
         db = self.bot.db
-        cursor = await db.execute("DELETE FROM k4ultra_fixed_tribes WHERE is_own = 1 AND guild_id = ?", (interaction.guild_id,))
+        cursor = await db.execute(
+            "DELETE FROM k4ultra_fixed_tribes WHERE is_own = 1 AND guild_id = ?", (interaction.guild_id,)
+        )
         if cursor.rowcount == 0:
-            await interaction.response.send_message("❌ No hay tribu propia registrada actualmente.", ephemeral=True)
+            await interaction.response.send_message(
+                "❌ No hay tribu propia registrada actualmente.", ephemeral=True
+            )
             return
         await db.commit()
 
-        await interaction.response.send_message("✅ Has borrado permanentemente la tribu propia del servidor.", ephemeral=True)
-
+        await interaction.response.send_message(
+            "✅ Has borrado permanentemente la tribu propia del servidor.", ephemeral=True
+        )
 
     @app_commands.command(
         name="unfijar_tribu",
@@ -1218,9 +1218,7 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
     @app_commands.describe(nombre="Nombre exacto de la tribu a eliminar")
     async def unfijar_tribu(self, interaction: discord.Interaction, nombre: str):
         if not await interaction.client.is_authorized_admin(interaction):
-            await interaction.response.send_message(
-                "❌ Acceso denegado.", ephemeral=True
-            )
+            await interaction.response.send_message("❌ Acceso denegado.", ephemeral=True)
             return
 
         nombre = nombre.strip()
@@ -1243,7 +1241,6 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
                 ephemeral=True,
             )
 
-
     @app_commands.command(
         name="k4ultra_merge",
         description="[Admin] Fusiona MANUALMENTE un perfil duplicado (origen) hacia un perfil base (destino).",
@@ -1252,13 +1249,9 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
         origen="Perfil a eliminar y fusionar (ej: 123_1)",
         destino="Perfil base que absorberá las horas (ej: 123)",
     )
-    async def k4ultra_merge(
-        self, interaction: discord.Interaction, origen: str, destino: str
-    ):
+    async def k4ultra_merge(self, interaction: discord.Interaction, origen: str, destino: str):
         if not await interaction.client.is_authorized_admin(interaction):
-            await interaction.response.send_message(
-                "❌ Acceso denegado.", ephemeral=True
-            )
+            await interaction.response.send_message("❌ Acceso denegado.", ephemeral=True)
             return
 
         origen = origen.strip()
@@ -1309,7 +1302,8 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
                 )
 
         await db.execute(
-            "DELETE FROM k4ultra_playtime WHERE player_name = ? AND guild_id = ?", (origen, interaction.guild_id)
+            "DELETE FROM k4ultra_playtime WHERE player_name = ? AND guild_id = ?",
+            (origen, interaction.guild_id),
         )
 
         # 2. Update Sessions
@@ -1329,13 +1323,16 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
         )
         await db.execute(
             "DELETE FROM k4ultra_relationships WHERE player1 = player2 AND guild_id = ?",
-            (interaction.guild_id,)
+            (interaction.guild_id,),
         )
 
         # 4. Cleanup Blacklist and Aliases
-        await db.execute("DELETE FROM blacklist WHERE player = ? AND guild_id = ?", (origen, interaction.guild_id))
         await db.execute(
-            "DELETE FROM k4ultra_aliases WHERE player_name = ? AND guild_id = ?", (origen, interaction.guild_id)
+            "DELETE FROM blacklist WHERE player = ? AND guild_id = ?", (origen, interaction.guild_id)
+        )
+        await db.execute(
+            "DELETE FROM k4ultra_aliases WHERE player_name = ? AND guild_id = ?",
+            (origen, interaction.guild_id),
         )
         await db.execute(
             "UPDATE k4ultra_players_log SET player_name = ? WHERE player_name = ? AND guild_id = ?",
@@ -1357,13 +1354,9 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
         origen="Jugador que está conectado AHORA (ej: 123_1)",
         destino="Nuevo perfil donde moverlo (ej: 123_2)",
     )
-    async def k4ultra_split(
-        self, interaction: discord.Interaction, origen: str, destino: str
-    ):
+    async def k4ultra_split(self, interaction: discord.Interaction, origen: str, destino: str):
         if not await interaction.client.is_authorized_admin(interaction):
-            await interaction.response.send_message(
-                "❌ Acceso denegado.", ephemeral=True
-            )
+            await interaction.response.send_message("❌ Acceso denegado.", ephemeral=True)
             return
 
         origen = origen.strip()

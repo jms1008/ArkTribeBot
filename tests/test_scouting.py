@@ -1,4 +1,5 @@
 import pytest
+
 from cogs.scouting import Scouting
 
 

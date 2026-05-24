@@ -19,6 +19,7 @@ Consumidor (cog dueño del dashboard)::
     async def on_blacklist_updated(self, guild_id: int):
         await update_blacklist_dashboards(self.bot, guild_id)
 """
+
 from __future__ import annotations
 
 # --- Nombres de evento (lo que se pasa a bot.dispatch) -------------------

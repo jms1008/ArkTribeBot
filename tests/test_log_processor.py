@@ -3,10 +3,10 @@
 Los regex en log_processor.py son los que detectan muertes en los logs del
 servidor de juego. Si rompen, dejamos de contar muertes / actualizar KDA.
 """
+
 import re
 
 import pytest
-
 
 # Patrones reproducidos del cog para test aislado (cualquier cambio aquí debe
 # acompañarse del mismo cambio en cogs/log_processor.py — son la "fuente de verdad"
@@ -23,11 +23,7 @@ GENERIC_DEATH_RE = re.compile(
 
 def normalize(raw: str) -> str:
     """Replica la normalización que hace LogProcessor antes de aplicar regex."""
-    return (
-        raw.replace(":knife:", "🔪")
-        .replace("was 🔪 by", "fue 🔪 por")
-        .replace("was 🔪", "ha muerto 🔪")
-    )
+    return raw.replace(":knife:", "🔪").replace("was 🔪 by", "fue 🔪 por").replace("was 🔪", "ha muerto 🔪")
 
 
 class TestPlayerDeathRegex:
@@ -105,24 +101,30 @@ class TestNormalization:
 class TestPoliciaDetection:
     """La detección de @policia se hace sobre el contenido en minúsculas."""
 
-    @pytest.mark.parametrize("text,expected", [
-        ("Atacaron a @policia en el server", True),
-        ("@POLICIA mira el log", True),
-        ("Mensaje sin tag", False),
-        ("<@&1234567890> mira esto", True),  # mención por ID de rol
-    ])
+    @pytest.mark.parametrize(
+        "text,expected",
+        [
+            ("Atacaron a @policia en el server", True),
+            ("@POLICIA mira el log", True),
+            ("Mensaje sin tag", False),
+            ("<@&1234567890> mira esto", True),  # mención por ID de rol
+        ],
+    )
     def test_contains_policia_mention(self, text, expected):
         content_lower = text.lower()
         contains_policia = "@policia" in content_lower or "<@&" in content_lower
         assert contains_policia is expected
 
-    @pytest.mark.parametrize("text,expected", [
-        ("Algo was :knife: por otro", True),
-        ("Algo fue :knife: por otro", True),
-        ("Algo was 🔪 por otro", True),
-        ("Algo fue 🔪 por otro", True),
-        ("Sin emoji aquí", False),
-    ])
+    @pytest.mark.parametrize(
+        "text,expected",
+        [
+            ("Algo was :knife: por otro", True),
+            ("Algo fue :knife: por otro", True),
+            ("Algo was 🔪 por otro", True),
+            ("Algo fue 🔪 por otro", True),
+            ("Sin emoji aquí", False),
+        ],
+    )
     def test_contains_knife_marker(self, text, expected):
         content_lower = text.lower()
         contains_knife = (

@@ -1,9 +1,11 @@
-import discord
-import aiosqlite
 import logging
+
+import discord
+
 from cogs.warfare import build_player_detail_embed
 
 logger = logging.getLogger("ArkTribeBot")
+
 
 class AddRelationshipModal(discord.ui.Modal, title="Añadir Relación"):
     jugador1 = discord.ui.TextInput(
@@ -86,9 +88,7 @@ class RenameTribeModal(discord.ui.Modal, title="Asignar Nombre a Tribu"):
         placeholder="Nombre exacto de un jugador de la tribu...",
         max_length=100,
     )
-    nuevo_nombre = discord.ui.TextInput(
-        label="Nuevo Nombre", placeholder="Ej: Los Alfas", max_length=100
-    )
+    nuevo_nombre = discord.ui.TextInput(label="Nuevo Nombre", placeholder="Ej: Los Alfas", max_length=100)
 
     def __init__(self, bot):
         super().__init__()
@@ -128,16 +128,12 @@ class PlayerSelectMenu(discord.ui.Select):
         if aliases is None:
             aliases = {}
         options = []
-        for i, p in enumerate(players[:25]):
+        for _i, p in enumerate(players[:25]):
             alias_desc = f"Alias: {aliases[p]}" if p in aliases else "Ver detalles y horarios"
             label = f"{p} [{aliases[p]}]" if p in aliases else p
             if len(label) > 100:
                 label = label[:97] + "..."
-            options.append(
-                discord.SelectOption(
-                    label=label, description=alias_desc, value=p
-                )
-            )
+            options.append(discord.SelectOption(label=label, description=alias_desc, value=p))
         if not options:
             options.append(discord.SelectOption(label="Sin datos", value="none"))
         super().__init__(
@@ -164,7 +160,9 @@ class PlayerSelectMenu(discord.ui.Select):
 
 
 class K4UltraView(discord.ui.View):
-    def __init__(self, bot, guild_id: int, top_players=None, aliases=None, pages=None, current_page=0, mode="radar"):
+    def __init__(
+        self, bot, guild_id: int, top_players=None, aliases=None, pages=None, current_page=0, mode="radar"
+    ):
         super().__init__(timeout=None)
         self.bot = bot
         self.guild_id = guild_id
@@ -182,9 +180,7 @@ class K4UltraView(discord.ui.View):
         custom_id="k4ultra_add_rel",
         row=1,
     )
-    async def add_rel_btn(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
+    async def add_rel_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(AddRelationshipModal(self.bot))
 
     @discord.ui.button(
@@ -194,9 +190,7 @@ class K4UltraView(discord.ui.View):
         custom_id="k4ultra_rem_rel",
         row=1,
     )
-    async def rem_rel_btn(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
+    async def rem_rel_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(RemoveRelationshipModal(self.bot))
 
     @discord.ui.button(
@@ -206,9 +200,7 @@ class K4UltraView(discord.ui.View):
         custom_id="k4ultra_ren_rel",
         row=1,
     )
-    async def ren_rel_btn(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
+    async def ren_rel_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(RenameTribeModal(self.bot))
 
     @discord.ui.button(

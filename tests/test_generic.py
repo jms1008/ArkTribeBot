@@ -1,8 +1,9 @@
-import aiosqlite
 import logging
 import os
-import pytest
 from datetime import datetime, timedelta
+
+import aiosqlite
+import pytest
 
 logger = logging.getLogger("Test")
 
@@ -102,9 +103,7 @@ async def test_k4ultra_generic():
                 raw_name = fp["raw_name"]
                 true_identity = None
                 identities_already_online = [
-                    active_pool_dict[sid]["player_name"]
-                    for sid in seen_identities
-                    if sid in active_pool_dict
+                    active_pool_dict[sid]["player_name"] for sid in seen_identities if sid in active_pool_dict
                 ]
                 generic_names = {"123", "human", "humano", "survivor", "player", "bob"}
                 is_generic = raw_name.lower() in generic_names
@@ -123,10 +122,7 @@ async def test_k4ultra_generic():
                     generic_inactive.extend([dict(s) for s in await cursor2.fetchall()])
 
                     for sid, sinfo in active_pool_dict.items():
-                        if (
-                            sid not in seen_identities
-                            and extract_base(sinfo["player_name"]) == raw_name
-                        ):
+                        if sid not in seen_identities and extract_base(sinfo["player_name"]) == raw_name:
                             dummy_inactive = {
                                 "id": sinfo["id"],
                                 "player_name": sinfo["player_name"],
@@ -177,11 +173,7 @@ async def test_k4ultra_generic():
                         max_suffix = 0
                         for e in existing:
                             parts = e["player_name"].rsplit("_", 1)
-                            if (
-                                len(parts) == 2
-                                and parts[1].isdigit()
-                                and parts[0] == raw_name
-                            ):
+                            if len(parts) == 2 and parts[1].isdigit() and parts[0] == raw_name:
                                 val = int(parts[1])
                                 if val > max_suffix:
                                     max_suffix = val
@@ -235,9 +227,7 @@ async def test_k4ultra_generic():
 
             for sid, s in active_pool_dict.items():
                 if sid not in seen_identities and sid in [a["id"] for a in active_pool]:
-                    await db.execute(
-                        "UPDATE k4ultra_sessions SET is_active = 0 WHERE id = ?", (sid,)
-                    )
+                    await db.execute("UPDATE k4ultra_sessions SET is_active = 0 WHERE id = ?", (sid,))
 
             await db.commit()
 

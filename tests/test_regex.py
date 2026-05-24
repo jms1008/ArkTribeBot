@@ -1,28 +1,30 @@
-import sys
 import io
 import re
+import sys
 
 # Set stdout encoding to utf-8 if it's not
-if sys.stdout.encoding != 'utf-8':
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+if sys.stdout.encoding != "utf-8":
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 
 import pytest
 
-@pytest.mark.parametrize("text, is_death, victim, killer", [
-    ("Tribemember TPR - Lvl 140 was :knife:!", True, "TPR", None),
-    ("Tribemember TPR - Lvl 140 was :knife:", True, "TPR", None),
-    ("Tribemember TPR - Lvl 140 was 🔪", True, "TPR", None),
-    ("Tribemember TPR - Lvl 140 ha muerto 🔪", True, "TPR", None),
-    ("Tribemember TPR - Lvl 140 was 🔪 by Alpha T-Rex - Lvl 12", True, "TPR", "Alpha T-Rex"),
-    ("Just a random chat message with :knife:", False, None, None),
-])
+
+@pytest.mark.parametrize(
+    "text, is_death, victim, killer",
+    [
+        ("Tribemember TPR - Lvl 140 was :knife:!", True, "TPR", None),
+        ("Tribemember TPR - Lvl 140 was :knife:", True, "TPR", None),
+        ("Tribemember TPR - Lvl 140 was 🔪", True, "TPR", None),
+        ("Tribemember TPR - Lvl 140 ha muerto 🔪", True, "TPR", None),
+        ("Tribemember TPR - Lvl 140 was 🔪 by Alpha T-Rex - Lvl 12", True, "TPR", "Alpha T-Rex"),
+        ("Just a random chat message with :knife:", False, None, None),
+    ],
+)
 def test_death_detection(text, is_death, victim, killer):
     t_clean = (
-        text.replace(":knife:", "🔪")
-        .replace("was 🔪 by", "fue 🔪 por")
-        .replace("was 🔪", "ha muerto 🔪")
+        text.replace(":knife:", "🔪").replace("was 🔪 by", "fue 🔪 por").replace("was 🔪", "ha muerto 🔪")
     )
-    
+
     player_death_match = re.search(
         r"Tribemember (.*?) - Lvl.*?fue 🔪 por (.*?) - Lvl",
         t_clean,
@@ -42,7 +44,7 @@ def test_death_detection(text, is_death, victim, killer):
 
     # Check if detection matched
     assert player_death_match or generic_death_match
-    
+
     if killer:
         assert player_death_match is not None
         assert player_death_match.group(1).strip() == victim

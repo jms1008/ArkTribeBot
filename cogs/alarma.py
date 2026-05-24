@@ -1,9 +1,11 @@
+import json
+import logging
+
+import aiosqlite
 import discord
 from discord import app_commands
 from discord.ext import commands, tasks
-import aiosqlite
-import logging
-import json
+
 from cogs.server_status import get_guild_servers
 
 logger = logging.getLogger("ArkTribeBot")
@@ -21,15 +23,11 @@ class AlarmDismissView(discord.ui.View):
         emoji="✅",
         custom_id="dismiss_alarm_btn",
     )
-    async def dismiss_btn(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
+    async def dismiss_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         try:
             await interaction.message.delete()
             if not interaction.response.is_done():
-                await interaction.response.send_message(
-                    "Alarma silenciada.", ephemeral=True
-                )
+                await interaction.response.send_message("Alarma silenciada.", ephemeral=True)
         except Exception as e:
             logger.debug(f"[Alarma] Dismiss falló (mensaje ya eliminado o sin permisos): {e}")
 
@@ -84,23 +82,14 @@ class AlarmasPanelView(discord.ui.View):
                 options.append(discord.SelectOption(label=s, value=s))
 
         if not options:
-            options.append(
-                discord.SelectOption(label="Sin servidores", value="none")
-            )
+            options.append(discord.SelectOption(label="Sin servidores", value="none"))
 
         self.select_mapa.options = options
 
-    @discord.ui.select(
-        placeholder="Selecciona un mapa del clúster...",
-        custom_id="alarm_panel_select_map"
-    )
-    async def select_mapa(
-        self, interaction: discord.Interaction, select: discord.ui.Select
-    ):
+    @discord.ui.select(placeholder="Selecciona un mapa del clúster...", custom_id="alarm_panel_select_map")
+    async def select_mapa(self, interaction: discord.Interaction, select: discord.ui.Select):
         if select.values[0] == "none":
-            await interaction.response.send_message(
-                "No hay servidores configurados.", ephemeral=True
-            )
+            await interaction.response.send_message("No hay servidores configurados.", ephemeral=True)
             return
 
         selected = select.values[0]
@@ -108,10 +97,13 @@ class AlarmasPanelView(discord.ui.View):
         user_id = interaction.user.id
 
         # Comprobar si ya está activada para ofrecer la acción correcta
-        already_active = await self.bot.db.fetchone(
-            "SELECT 1 FROM map_alarms WHERE guild_id = ? AND user_id = ? AND map_name = ?",
-            (guild_id, user_id, selected),
-        ) is not None
+        already_active = (
+            await self.bot.db.fetchone(
+                "SELECT 1 FROM map_alarms WHERE guild_id = ? AND user_id = ? AND map_name = ?",
+                (guild_id, user_id, selected),
+            )
+            is not None
+        )
 
         # Vista efímera con acciones directas para ese mapa concreto
         action_view = AlarmActionView(self.bot, selected, already_active, interaction.message)
@@ -145,17 +137,13 @@ class AlarmActionView(discord.ui.View):
         if not self.parent_message:
             return
         try:
-            embed = await build_alarmas_embed(
-                self.bot, interaction.guild_id, interaction.user.id
-            )
+            embed = await build_alarmas_embed(self.bot, interaction.guild_id, interaction.user.id)
             await self.parent_message.edit(embed=embed)
         except Exception as e:
             logger.error(f"[Alarma] Error actualizando panel principal: {e}")
 
     @discord.ui.button(label="Encender 🔔", style=discord.ButtonStyle.success)
-    async def btn_on(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
+    async def btn_on(self, interaction: discord.Interaction, button: discord.ui.Button):
         user_id = interaction.user.id
         guild_id = interaction.guild_id
         channel_id = interaction.channel_id
@@ -175,9 +163,7 @@ class AlarmActionView(discord.ui.View):
         await self._refresh_parent(interaction)
 
     @discord.ui.button(label="Apagar 🔕", style=discord.ButtonStyle.danger)
-    async def btn_off(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
+    async def btn_off(self, interaction: discord.Interaction, button: discord.ui.Button):
         user_id = interaction.user.id
         guild_id = interaction.guild_id
 
@@ -207,9 +193,7 @@ class Alarma(commands.Cog):
     def cog_unload(self):
         self.check_alarms_loop.cancel()
 
-    async def mapa_autocomplete(
-        self, interaction: discord.Interaction, current: str
-    ):
+    async def mapa_autocomplete(self, interaction: discord.Interaction, current: str):
         servers = await get_guild_servers(self.bot, interaction.guild_id)
         return [
             app_commands.Choice(name=name, value=name)
@@ -232,9 +216,7 @@ class Alarma(commands.Cog):
         ]
     )
     @app_commands.autocomplete(mapa=mapa_autocomplete)
-    async def alarma(
-        self, interaction: discord.Interaction, mapa: str, estado: str
-    ):
+    async def alarma(self, interaction: discord.Interaction, mapa: str, estado: str):
         await interaction.response.defer(ephemeral=True)
         user_id = interaction.user.id
         guild_id = interaction.guild_id
@@ -263,9 +245,7 @@ class Alarma(commands.Cog):
                     (guild_id, user_id, mapa),
                 )
                 await db.commit()
-                await interaction.followup.send(
-                    f"🔕 Alarma para **{mapa}** desactivada.", ephemeral=True
-                )
+                await interaction.followup.send(f"🔕 Alarma para **{mapa}** desactivada.", ephemeral=True)
             else:
                 await db.execute(
                     "INSERT OR REPLACE INTO map_alarms (guild_id, user_id, map_name, channel_id) VALUES (?, ?, ?, ?)",
@@ -278,9 +258,7 @@ class Alarma(commands.Cog):
                 )
         except Exception as e:
             logger.error(f"Error en comando /alarma: {e}")
-            await interaction.followup.send(
-                f"❌ Ocurrió un error al procesar la alarma: {e}", ephemeral=True
-            )
+            await interaction.followup.send(f"❌ Ocurrió un error al procesar la alarma: {e}", ephemeral=True)
 
     @app_commands.command(
         name="alarmas",
@@ -296,14 +274,10 @@ class Alarma(commands.Cog):
             return
 
         server_names = list(servers.keys())
-        embed = await build_alarmas_embed(
-            self.bot, interaction.guild_id, interaction.user.id
-        )
+        embed = await build_alarmas_embed(self.bot, interaction.guild_id, interaction.user.id)
         view = AlarmasPanelView(self.bot, server_names)
 
-        await interaction.response.send_message(
-            embed=embed, view=view, ephemeral=False
-        )
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=False)
 
     @tasks.loop(minutes=1)
     async def check_alarms_loop(self):
@@ -314,9 +288,7 @@ class Alarma(commands.Cog):
         try:
             db = self.bot.db
 
-            watched_maps = await db.fetchall(
-                "SELECT DISTINCT guild_id, map_name FROM map_alarms"
-            )
+            watched_maps = await db.fetchall("SELECT DISTINCT guild_id, map_name FROM map_alarms")
             if not watched_maps:
                 return
 
@@ -339,20 +311,14 @@ class Alarma(commands.Cog):
                     if raw_names == "Nadie conectado." or cache_row["player_count"] == 0:
                         current_names: set[str] = set()
                     else:
-                        current_names = {
-                            n.strip() for n in raw_names.split(",") if n.strip()
-                        }
+                        current_names = {n.strip() for n in raw_names.split(",") if n.strip()}
 
                     # Obtener estado anterior
                     prev_row = await db.fetchone(
                         "SELECT players_json FROM map_last_players WHERE guild_id = ? AND map_name = ?",
                         (guild_id, map_name),
                     )
-                    prev_names = (
-                        set(json.loads(prev_row["players_json"]))
-                        if prev_row
-                        else set()
-                    )
+                    prev_names = set(json.loads(prev_row["players_json"])) if prev_row else set()
 
                     new_entries = current_names - prev_names
 
@@ -396,22 +362,18 @@ class Alarma(commands.Cog):
                                 try:
                                     u_id = target["user_id"]
                                     ch_id = target["channel_id"]
-                                    channel = self.bot.get_channel(
+                                    channel = self.bot.get_channel(ch_id) or await self.bot.fetch_channel(
                                         ch_id
-                                    ) or await self.bot.fetch_channel(ch_id)
+                                    )
                                     if channel:
-                                        intruders_fmt = ", ".join(
-                                            [f"**{i}**" for i in intruders]
-                                        )
+                                        intruders_fmt = ", ".join([f"**{i}**" for i in intruders])
                                         view = AlarmDismissView()
                                         await channel.send(
                                             f"⚠️ <@{u_id}>! **Intruso detectado** en `{map_name}`: {intruders_fmt}",
                                             view=view,
                                         )
                                 except Exception as e:
-                                    logger.error(
-                                        f"[Alarma] Error enviando alerta a {target['user_id']}: {e}"
-                                    )
+                                    logger.error(f"[Alarma] Error enviando alerta a {target['user_id']}: {e}")
 
                     # Actualizar el estado anterior
                     await db.execute(
@@ -425,9 +387,7 @@ class Alarma(commands.Cog):
                     await db.commit()
 
                 except Exception as e:
-                    logger.error(
-                        f"[Alarma] Error procesando alarma para {map_name} (Guild {guild_id}): {e}"
-                    )
+                    logger.error(f"[Alarma] Error procesando alarma para {map_name} (Guild {guild_id}): {e}")
 
         except Exception as e:
             logger.error(f"[Alarma] Error general en check_alarms_loop: {e}")

@@ -1,7 +1,8 @@
-import sqlite3
 import os
+import sqlite3
 
 DB_NAME = "tribe_data.db"
+
 
 def check_db():
     if not os.path.exists(DB_NAME):
@@ -12,7 +13,7 @@ def check_db():
     cursor = conn.cursor()
 
     print("--- Checking Characters ---")
-    cursor.execute("SELECT * FROM tribe_characters WHERE character_name LIKE ?", ('%TPR%',))
+    cursor.execute("SELECT * FROM tribe_characters WHERE character_name LIKE ?", ("%TPR%",))
     chars = cursor.fetchall()
     if chars:
         for c in chars:
@@ -27,6 +28,7 @@ def check_db():
         print(cfg)
 
     conn.close()
+
 
 if __name__ == "__main__":
     check_db()

@@ -3,6 +3,7 @@
 Toda creación de tablas, migraciones e índices vive aquí.
 Los cogs NUNCA deben crear tablas — si una tabla falta, añádela en TABLES.
 """
+
 from __future__ import annotations
 
 import logging
@@ -369,7 +370,10 @@ MIGRATIONS: list[tuple[str, str]] = [
     ("k4ultra_messages", "ALTER TABLE k4ultra_messages ADD COLUMN mode TEXT DEFAULT 'radar'"),
     ("k4ultra_sessions", "ALTER TABLE k4ultra_sessions ADD COLUMN last_duration INTEGER DEFAULT 0"),
     ("k4ultra_fixed_tribes", "ALTER TABLE k4ultra_fixed_tribes ADD COLUMN is_own INTEGER DEFAULT 0"),
-    ("k4ultra_relationships", "ALTER TABLE k4ultra_relationships ADD COLUMN shared_minutes INTEGER DEFAULT 0"),
+    (
+        "k4ultra_relationships",
+        "ALTER TABLE k4ultra_relationships ADD COLUMN shared_minutes INTEGER DEFAULT 0",
+    ),
     ("dinos", "ALTER TABLE dinos ADD COLUMN oxy INTEGER"),
     ("dinos", "ALTER TABLE dinos ADD COLUMN food INTEGER"),
     ("dinos", "ALTER TABLE dinos ADD COLUMN speed INTEGER"),

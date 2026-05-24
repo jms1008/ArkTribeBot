@@ -1,7 +1,9 @@
-import pytest
-from cogs.events import Events
-import aiosqlite
 import os
+
+import aiosqlite
+import pytest
+
+from cogs.events import Events
 
 
 @pytest.fixture
@@ -46,6 +48,7 @@ async def test_create_event_invalid_options(events_cog, mock_interaction):
 async def test_create_event_success(events_cog, mock_interaction):
     """Prueba que el comando crea correctamente el evento en la BD y envía el Embed."""
     from unittest.mock import MagicMock
+
     import discord
 
     mock_msg = MagicMock(spec=discord.Message)

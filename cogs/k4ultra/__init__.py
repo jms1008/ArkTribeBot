@@ -9,6 +9,7 @@ Submódulos:
 Re-exporta los símbolos públicos para que código externo siga usando
 ``from cogs.k4ultra import K4Ultra, K4UltraView`` sin cambios.
 """
+
 from cogs.k4ultra.cog import K4Ultra, setup
 from cogs.k4ultra.ui import K4UltraView
 

@@ -1,4 +1,5 @@
 """Tests unitarios del módulo utils.parsing — funciones puras."""
+
 import pytest
 
 from utils.parsing import (
@@ -14,23 +15,17 @@ class TestParseBattlemetrics:
         assert parse_battlemetrics(None) == {}
 
     def test_single_entry(self):
-        assert parse_battlemetrics("Ragnarok|192.168.1.1:27015") == {
-            "Ragnarok": ("192.168.1.1", 27015)
-        }
+        assert parse_battlemetrics("Ragnarok|192.168.1.1:27015") == {"Ragnarok": ("192.168.1.1", 27015)}
 
     def test_multiple_entries(self):
-        result = parse_battlemetrics(
-            "Ragnarok|192.168.1.1:27015,TheIsland|10.0.0.5:27020"
-        )
+        result = parse_battlemetrics("Ragnarok|192.168.1.1:27015,TheIsland|10.0.0.5:27020")
         assert result == {
             "Ragnarok": ("192.168.1.1", 27015),
             "TheIsland": ("10.0.0.5", 27020),
         }
 
     def test_handles_whitespace(self):
-        assert parse_battlemetrics("  Rag  |  1.2.3.4 : 1000  ") == {
-            "Rag": ("1.2.3.4", 1000)
-        }
+        assert parse_battlemetrics("  Rag  |  1.2.3.4 : 1000  ") == {"Rag": ("1.2.3.4", 1000)}
 
     def test_skips_malformed_entries(self):
         # Falta '|', falta ':', puerto no numérico, mapa vacío
@@ -47,24 +42,30 @@ class TestParseBattlemetrics:
 class TestWhitelists:
     def test_blacklist_fields_contains_expected_columns(self):
         expected = {"player", "tribe", "map", "notes", "is_enemy", "last_seen", "total_hours"}
-        assert ALLOWED_BLACKLIST_FIELDS == expected
+        assert expected == ALLOWED_BLACKLIST_FIELDS
 
     def test_dino_stats_contains_expected_columns(self):
         expected = {"hp", "melee", "stam", "weight", "oxy", "food", "speed", "mutaciones"}
-        assert ALLOWED_DINO_STATS == expected
+        assert expected == ALLOWED_DINO_STATS
 
-    @pytest.mark.parametrize("malicious", [
-        "1=1; DROP TABLE blacklist",
-        "id, player",
-        "player; --",
-    ])
+    @pytest.mark.parametrize(
+        "malicious",
+        [
+            "1=1; DROP TABLE blacklist",
+            "id, player",
+            "player; --",
+        ],
+    )
     def test_blacklist_rejects_injection_attempts(self, malicious):
         assert malicious not in ALLOWED_BLACKLIST_FIELDS
 
-    @pytest.mark.parametrize("malicious", [
-        "hp; DROP TABLE dinos",
-        "stam, hp",
-        "*",
-    ])
+    @pytest.mark.parametrize(
+        "malicious",
+        [
+            "hp; DROP TABLE dinos",
+            "stam, hp",
+            "*",
+        ],
+    )
     def test_dino_stats_rejects_injection_attempts(self, malicious):
         assert malicious not in ALLOWED_DINO_STATS

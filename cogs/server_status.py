@@ -1,10 +1,11 @@
+import asyncio
+import logging
+
+import a2s
+import aiosqlite
 import discord
 from discord import app_commands
 from discord.ext import commands, tasks
-import a2s
-import asyncio
-import aiosqlite
-import logging
 
 from utils.parsing import parse_battlemetrics
 
@@ -37,7 +38,7 @@ async def get_guild_servers(bot, guild_id: int) -> dict:
 
 # --- CACHÉ COMPARTIDO DE CONSULTAS A2S ---
 # Evita consultas duplicadas cuando server_status y k4ultra sondean en el mismo ciclo.
-import time as _time
+import time as _time  # noqa: E402  (separación deliberada para agrupar el módulo de caché)
 
 _a2s_cache = {}  # {(guild_id, map_name): {"info": ..., "players": [...], "ts": float}}
 # TTL: 90 s — algo menor que el ciclo de status_loop (120 s) y mayor que el de
@@ -52,12 +53,8 @@ async def _fetch_single_server(name: str, ip: str, port: int):
     """Consulta A2S de un solo servidor con semáforo global."""
     async with _a2s_semaphore:
         address = (ip, port)
-        info = await asyncio.wait_for(
-            asyncio.to_thread(a2s.info, address), timeout=10.0
-        )
-        players = await asyncio.wait_for(
-            asyncio.to_thread(a2s.players, address), timeout=10.0
-        )
+        info = await asyncio.wait_for(asyncio.to_thread(a2s.info, address), timeout=10.0)
+        players = await asyncio.wait_for(asyncio.to_thread(a2s.players, address), timeout=10.0)
         return info, players
 
 
@@ -85,6 +82,7 @@ async def query_all_servers(bot, guild_id: int, servers: dict = None) -> dict:
 
     # 2. Consultar solo los que no están en caché
     if to_fetch:
+
         async def _query_one(map_name, ip, port):
             try:
                 info, players = await _fetch_single_server(map_name, ip, port)
@@ -121,10 +119,10 @@ class ServerStatus(commands.Cog):
 
     async def setup_dashboard(self, guild_id: int, channel: discord.TextChannel):
         """Inicializa el dashboard interactivo de Estado de Servidores."""
-        import aiosqlite
         import asyncio
+
         from cogs.management import INFO_TEXTS
-        
+
         info_embed = discord.Embed(
             description=INFO_TEXTS["status"],
             color=discord.Color.from_rgb(43, 45, 49),
@@ -159,20 +157,14 @@ class ServerStatus(commands.Cog):
 
         try:
             # Ejecución asíncrona de consultas A2S
-            info = await asyncio.wait_for(
-                asyncio.to_thread(a2s.info, address), timeout=10.0
-            )
-            players = await asyncio.wait_for(
-                asyncio.to_thread(a2s.players, address), timeout=10.0
-            )
+            info = await asyncio.wait_for(asyncio.to_thread(a2s.info, address), timeout=10.0)
+            players = await asyncio.wait_for(asyncio.to_thread(a2s.players, address), timeout=10.0)
 
             valid_players = [p.name for p in players if p.name]
             p_count = len(valid_players)
             ping_ms = int(info.ping * 1000)
 
-            embed = discord.Embed(
-                title=f"🦖 Estado: {server_name}", color=discord.Color.green()
-            )
+            embed = discord.Embed(title=f"🦖 Estado: {server_name}", color=discord.Color.green())
             embed.add_field(name="Mapa", value=info.map_name, inline=True)
 
             player_list = ", ".join(valid_players)
@@ -184,15 +176,11 @@ class ServerStatus(commands.Cog):
             if len(player_list) > 1000:
                 player_list = player_list[:1000] + "..."
 
-            embed.add_field(
-                name="Jugadores", value=f"{p_count}/{info.max_players}", inline=True
-            )
+            embed.add_field(name="Jugadores", value=f"{p_count}/{info.max_players}", inline=True)
             embed.add_field(name="Ping", value=f"{ping_ms}ms", inline=True)
             embed.add_field(name="IP", value=f"`{ip}:{port}`", inline=False)
 
-            embed.add_field(
-                name="Conectados", value=f"```{player_list}```", inline=False
-            )
+            embed.add_field(name="Conectados", value=f"```{player_list}```", inline=False)
             embed.set_footer(text="Actualizado automáticamente cada 2 minutos.")
             return embed
 
@@ -240,18 +228,14 @@ class ServerStatus(commands.Cog):
     @app_commands.autocomplete(mapa=status_mapa_autocomplete)
     async def status_permanente(self, interaction: discord.Interaction, mapa: str):
         if not await interaction.client.is_authorized_admin(interaction):
-            await interaction.response.send_message(
-                "❌ **ACCESO DENEGADO.**", ephemeral=True
-            )
+            await interaction.response.send_message("❌ **ACCESO DENEGADO.**", ephemeral=True)
             return
 
         await interaction.response.defer()
         servers = await get_guild_servers(self.bot, interaction.guild_id)
         embed = await self.get_server_embed(mapa, servers)
         if not embed:
-            await interaction.followup.send(
-                "❌ Error al generar el estado inicial.", ephemeral=True
-            )
+            await interaction.followup.send("❌ Error al generar el estado inicial.", ephemeral=True)
             return
 
         # Envío del mensaje inicial
@@ -272,9 +256,7 @@ class ServerStatus(commands.Cog):
 
         messages_to_remove: list[int] = []
         db = self.bot.db
-        rows = await db.fetchall(
-            "SELECT id, guild_id, channel_id, message_id, map_name FROM status_messages"
-        )
+        rows = await db.fetchall("SELECT id, guild_id, channel_id, message_id, map_name FROM status_messages")
 
         for row in rows:
             row_id = row["id"]
@@ -286,9 +268,7 @@ class ServerStatus(commands.Cog):
             try:
                 # Carga dinámica de servidores configurados para este Guild
                 servers = await get_guild_servers(self.bot, guild_id)
-                channel = self.bot.get_channel(
-                    channel_id
-                ) or await self.bot.fetch_channel(channel_id)
+                channel = self.bot.get_channel(channel_id) or await self.bot.fetch_channel(channel_id)
                 if not channel:
                     logger.warning(
                         f"Canal {channel_id} no encontrado. Eliminando mensaje persistente {row_id}."
@@ -301,20 +281,14 @@ class ServerStatus(commands.Cog):
 
                 if new_embed:
                     await message.edit(embed=new_embed)
-                    logger.info(
-                        f"Actualizado estado de {map_name} en mensaje {message_id}"
-                    )
+                    logger.info(f"Actualizado estado de {map_name} en mensaje {message_id}")
 
             except discord.NotFound:
                 # Intercepción: El mensaje fue eliminado manualmente de Discord
-                logger.warning(
-                    f"Mensaje {message_id} no encontrado. Eliminando de DB."
-                )
+                logger.warning(f"Mensaje {message_id} no encontrado. Eliminando de DB.")
                 messages_to_remove.append(row_id)
             except discord.Forbidden:
-                logger.error(
-                    f"Sin permiso para editar mensaje {message_id} en canal {channel_id}."
-                )
+                logger.error(f"Sin permiso para editar mensaje {message_id} en canal {channel_id}.")
             except Exception as e:
                 logger.error(f"Error actualizando mensaje {row_id}: {e}")
 
@@ -331,9 +305,7 @@ class ServerStatus(commands.Cog):
         )
 
         if not servers:
-            embed.description = (
-                "⚠️ No hay servidores configurados. Usa `/inicio_ark` para añadirlos."
-            )
+            embed.description = "⚠️ No hay servidores configurados. Usa `/inicio_ark` para añadirlos."
             return embed
 
         # Consulta A2S centralizada (compartida con K4Ultra)
@@ -351,7 +323,14 @@ class ServerStatus(commands.Cog):
                         """INSERT OR REPLACE INTO server_status_cache
                            (guild_id, server_name, ip_port, ping, player_count, player_names, updated_at)
                            VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)""",
-                        (guild_id, name, res.get("address"), res.get("ping"), res.get("player_count"), player_names),
+                        (
+                            guild_id,
+                            name,
+                            res.get("address"),
+                            res.get("ping"),
+                            res.get("player_count"),
+                            player_names,
+                        ),
                     )
             await db.commit()
         except Exception as e:
@@ -401,7 +380,9 @@ class ServerStatus(commands.Cog):
 
         # 1. Servidores Poblados
         for s in populated_servers:
-            lines.append(f"🟢 **{s['name']}** — `{s['players']}/{s['max_players']}` Jugadores | 📶 `{s['ping']}ms`")
+            lines.append(
+                f"🟢 **{s['name']}** — `{s['players']}/{s['max_players']}` Jugadores | 📶 `{s['ping']}ms`"
+            )
             lines.append(f"```{s['list']}```")
 
         # 2. Servidores Vacíos
@@ -429,9 +410,7 @@ class ServerStatus(commands.Cog):
     )
     async def status_online(self, interaction: discord.Interaction):
         if not await interaction.client.is_authorized_admin(interaction):
-            await interaction.response.send_message(
-                "❌ **ACCESO DENEGADO.**", ephemeral=True
-            )
+            await interaction.response.send_message("❌ **ACCESO DENEGADO.**", ephemeral=True)
             return
 
         await interaction.response.defer()
@@ -451,6 +430,7 @@ class ServerStatus(commands.Cog):
         await self.bot.wait_until_ready()
 
         import time
+
         current_minute = int(time.time() // 60)
 
         messages_to_remove: list[int] = []
@@ -460,9 +440,7 @@ class ServerStatus(commands.Cog):
         cfg_rows = await db.fetchall("SELECT guild_id, update_interval FROM guild_config")
         guild_configs = {r["guild_id"]: r["update_interval"] or 2 for r in cfg_rows}
 
-        rows = await db.fetchall(
-            "SELECT id, guild_id, channel_id, message_id FROM status_online_messages"
-        )
+        rows = await db.fetchall("SELECT id, guild_id, channel_id, message_id FROM status_online_messages")
         if not rows:
             return
 
@@ -492,9 +470,7 @@ class ServerStatus(commands.Cog):
             message_id = row["message_id"]
 
             try:
-                channel = self.bot.get_channel(
-                    channel_id
-                ) or await self.bot.fetch_channel(channel_id)
+                channel = self.bot.get_channel(channel_id) or await self.bot.fetch_channel(channel_id)
                 if not channel:
                     messages_to_remove.append(row_id)
                     continue
@@ -505,6 +481,7 @@ class ServerStatus(commands.Cog):
                 if new_embed:
                     # Marca de tiempo de actualización para transparencia
                     from datetime import datetime
+
                     now_str = datetime.now().strftime("%H:%M:%S")
                     new_embed.set_footer(text=f"Actualizado cada 2 min • Última vez: {now_str}")
                     await message.edit(embed=new_embed)
@@ -514,15 +491,11 @@ class ServerStatus(commands.Cog):
             except discord.Forbidden as e:
                 logger.debug(f"[Status] Sin permiso editando mensaje {message_id}: {e}")
             except Exception as e:
-                logger.error(
-                    f"Error actualizando global status mensaje {row_id}: {e}"
-                )
+                logger.error(f"Error actualizando global status mensaje {row_id}: {e}")
 
         if messages_to_remove:
             for msg_id in messages_to_remove:
-                await db.execute(
-                    "DELETE FROM status_online_messages WHERE id = ?", (msg_id,)
-                )
+                await db.execute("DELETE FROM status_online_messages WHERE id = ?", (msg_id,))
             await db.commit()
 
 

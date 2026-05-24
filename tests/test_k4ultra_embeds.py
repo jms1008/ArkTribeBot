@@ -1,4 +1,5 @@
 """Tests de cogs.k4ultra.embeds (generación de páginas para el dashboard)."""
+
 import json
 
 import pytest
@@ -42,8 +43,7 @@ async def test_radar_shows_active_sessions(mock_bot):
         (1, "Alice", "Ragnarok", "2026-05-24 12:30:00"),
     )
     await mock_bot.db.execute(
-        "INSERT INTO k4ultra_playtime (guild_id, player_name, map_name, total_minutes) "
-        "VALUES (?, ?, ?, ?)",
+        "INSERT INTO k4ultra_playtime (guild_id, player_name, map_name, total_minutes) VALUES (?, ?, ?, ?)",
         (1, "Alice", "Ragnarok", 240),
     )
     await mock_bot.db.commit()
@@ -64,8 +64,7 @@ async def test_radar_uses_alias(mock_bot):
     """El alias se inyecta entre corchetes junto al nombre."""
     await mock_bot.init_mock_db()
     await mock_bot.db.execute(
-        "INSERT INTO k4ultra_playtime (guild_id, player_name, map_name, total_minutes) "
-        "VALUES (?, ?, ?, ?)",
+        "INSERT INTO k4ultra_playtime (guild_id, player_name, map_name, total_minutes) VALUES (?, ?, ?, ?)",
         (1, "Steam12345", "Ragnarok", 60),
     )
     await mock_bot.db.execute(
@@ -98,13 +97,11 @@ async def test_tribes_mode_shows_own_and_fixed(mock_bot):
     """Distingue 'Nuestra Tribu' (is_own=1) de tribus fijadas (is_own=0)."""
     await mock_bot.init_mock_db()
     await mock_bot.db.execute(
-        "INSERT INTO k4ultra_fixed_tribes (guild_id, name, members_json, is_own) "
-        "VALUES (?, ?, ?, ?)",
+        "INSERT INTO k4ultra_fixed_tribes (guild_id, name, members_json, is_own) VALUES (?, ?, ?, ?)",
         (1, "MiTribu", json.dumps(["Alice", "Bob"]), 1),
     )
     await mock_bot.db.execute(
-        "INSERT INTO k4ultra_fixed_tribes (guild_id, name, members_json, is_own) "
-        "VALUES (?, ?, ?, ?)",
+        "INSERT INTO k4ultra_fixed_tribes (guild_id, name, members_json, is_own) VALUES (?, ?, ?, ?)",
         (1, "Enemigos", json.dumps(["Carol"]), 0),
     )
     await mock_bot.db.commit()

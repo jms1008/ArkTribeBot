@@ -1,10 +1,10 @@
-import discord
-from discord import app_commands
-from discord.ext import commands, tasks
-import aiosqlite
 import logging
 from datetime import datetime
 from zoneinfo import ZoneInfo
+
+import discord
+from discord import app_commands
+from discord.ext import commands, tasks
 
 logger = logging.getLogger("ArkTribeBot")
 
@@ -43,9 +43,7 @@ class DailyPointsView(discord.ui.View):
         emoji="✅",
         custom_id="daily_points_completado_btn",
     )
-    async def completado_btn(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
+    async def completado_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         now_utc = datetime.now(ZoneInfo("UTC"))
         # Uso de zona horaria de España para la marca visual del log en el DM
         today_str = now_utc.astimezone(TIMEZONES["es"]).strftime("%d/%m/%Y")
@@ -94,9 +92,7 @@ class DailyPoints(commands.Cog):
         zona_val = zona.value if zona else "es"
 
         if hora < 0 or hora > 23:
-            await interaction.response.send_message(
-                "❌ La hora debe estar entre 0 y 23.", ephemeral=True
-            )
+            await interaction.response.send_message("❌ La hora debe estar entre 0 y 23.", ephemeral=True)
             return
 
         db = self.bot.db
@@ -133,9 +129,7 @@ class DailyPoints(commands.Cog):
                     ephemeral=True,
                 )
             except Exception as e:
-                await interaction.response.send_message(
-                    f"❌ Error al activar: {e}", ephemeral=True
-                )
+                await interaction.response.send_message(f"❌ Error al activar: {e}", ephemeral=True)
         else:
             try:
                 await db.execute(
@@ -148,9 +142,7 @@ class DailyPoints(commands.Cog):
                     ephemeral=True,
                 )
             except Exception as e:
-                await interaction.response.send_message(
-                    f"❌ Error al desactivar: {e}", ephemeral=True
-                )
+                await interaction.response.send_message(f"❌ Error al desactivar: {e}", ephemeral=True)
 
     @app_commands.command(
         name="config_puntos",
@@ -192,9 +184,7 @@ class DailyPoints(commands.Cog):
                 """,
                 (guild_id, enabled),
             )
-            cambios.append(
-                f"{'✅ Sistema activado' if enabled else '🔕 Sistema desactivado'}"
-            )
+            cambios.append(f"{'✅ Sistema activado' if enabled else '🔕 Sistema desactivado'}")
 
         if vote_links is not None:
             await db.execute(
@@ -206,9 +196,7 @@ class DailyPoints(commands.Cog):
             )
             # Mostrar los enlaces parseados para confirmación visual
             parsed = parse_vote_urls(vote_links)
-            links_fmt = "\n".join(
-                [f"{i + 1}️⃣ {url}" for i, url in enumerate(parsed)]
-            )
+            links_fmt = "\n".join([f"{i + 1}️⃣ {url}" for i, url in enumerate(parsed)])
             cambios.append(f"🔗 **URLs de voto actualizadas:**\n{links_fmt}")
 
         await db.commit()
@@ -221,9 +209,7 @@ class DailyPoints(commands.Cog):
             )
             enabled_str = "✅ Activo" if (not row or row["daily_points_enabled"] != 0) else "🔕 Desactivado"
             current_urls = parse_vote_urls(row["vote_urls"] if row else None)
-            urls_str = "\n".join(
-                [f"{i + 1}️⃣ {url}" for i, url in enumerate(current_urls)]
-            )
+            urls_str = "\n".join([f"{i + 1}️⃣ {url}" for i, url in enumerate(current_urls)])
             await interaction.response.send_message(
                 f"**Estado actual del sistema de Puntos Diarios:**\n"
                 f"• Sistema: {enabled_str}\n"
@@ -249,9 +235,7 @@ class DailyPoints(commands.Cog):
             return
 
         # Cargar todos los guild_config para evitar múltiples queries por usuario
-        cfg_rows = await db.fetchall(
-            "SELECT guild_id, daily_points_enabled, vote_urls FROM guild_config"
-        )
+        cfg_rows = await db.fetchall("SELECT guild_id, daily_points_enabled, vote_urls FROM guild_config")
         guild_configs = {row["guild_id"]: row for row in cfg_rows}
 
         users_to_notify: list[tuple[int, int, str]] = []
@@ -290,9 +274,7 @@ class DailyPoints(commands.Cog):
                 vote_urls_str = cfg["vote_urls"] if cfg else None
 
                 vote_links = parse_vote_urls(vote_urls_str)
-                links_block = "\n".join(
-                    [f"{i + 1}️⃣ {url}" for i, url in enumerate(vote_links)]
-                )
+                links_block = "\n".join([f"{i + 1}️⃣ {url}" for i, url in enumerate(vote_links)])
 
                 message_content = (
                     "🌅 ¡Buenas! Es hora de reclamar tus puntos diarios de los mapas.\n\n"
@@ -309,13 +291,9 @@ class DailyPoints(commands.Cog):
                     (date_str, uid, gid),
                 )
             except discord.Forbidden:
-                logger.warning(
-                    f"[DailyPoints] No pude enviar DM a {uid}. Posiblemente tiene DMs cerrados."
-                )
+                logger.warning(f"[DailyPoints] No pude enviar DM a {uid}. Posiblemente tiene DMs cerrados.")
             except Exception as e:
-                logger.error(
-                    f"[DailyPoints] Error enviando recordatorio a {uid} (Guild {gid}): {e}"
-                )
+                logger.error(f"[DailyPoints] Error enviando recordatorio a {uid} (Guild {gid}): {e}")
 
         await db.commit()
 

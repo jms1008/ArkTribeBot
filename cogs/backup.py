@@ -4,12 +4,13 @@
 - Conserva los últimos 7 backups, borra los más antiguos.
 - Comando `/db_backup` para admins (backup manual on-demand).
 """
+
 from __future__ import annotations
 
 import logging
 import os
 import shutil
-from datetime import datetime, timedelta, time
+from datetime import datetime, time, timedelta
 
 import discord
 from discord import app_commands
@@ -80,8 +81,7 @@ class Backup(commands.Cog):
             target = _do_backup(self.bot.db_name)
             removed = _prune_old_backups()
             logger.info(
-                f"[Backup] Backup diario creado: {os.path.basename(target)} "
-                f"(podados {removed} antiguos)"
+                f"[Backup] Backup diario creado: {os.path.basename(target)} (podados {removed} antiguos)"
             )
         except Exception as e:
             logger.error(f"[Backup] Falló el backup diario: {e}")
@@ -96,9 +96,7 @@ class Backup(commands.Cog):
     )
     async def db_backup(self, interaction: discord.Interaction):
         if not await interaction.client.is_authorized_admin(interaction):
-            await interaction.response.send_message(
-                "❌ Acceso denegado.", ephemeral=True
-            )
+            await interaction.response.send_message("❌ Acceso denegado.", ephemeral=True)
             return
 
         await interaction.response.defer(ephemeral=True)

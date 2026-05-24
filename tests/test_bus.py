@@ -1,4 +1,5 @@
 """Tests del módulo utils.bus (constantes y conexión productor/consumidor)."""
+
 import asyncio
 
 import discord

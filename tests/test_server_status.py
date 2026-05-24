@@ -1,5 +1,7 @@
+from unittest.mock import AsyncMock, patch
+
 import pytest
-from unittest.mock import patch, AsyncMock
+
 from cogs.server_status import ServerStatus
 
 
@@ -15,9 +17,7 @@ async def status_cog(mock_bot):
 async def test_get_server_embed_offline(status_cog):
     """Test que el embed de error se genera correctamente cuando el servidor no responde."""
     servers = {"Gen2": ("1.2.3.4", 7777)}
-    with patch(
-        "cogs.server_status.a2s.info", side_effect=Exception("Connection Refused")
-    ):
+    with patch("cogs.server_status.a2s.info", side_effect=Exception("Connection Refused")):
         embed = await status_cog.get_server_embed("Gen2", servers)
 
         assert embed is not None

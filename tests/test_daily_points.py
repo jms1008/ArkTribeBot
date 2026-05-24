@@ -1,6 +1,8 @@
-import pytest
 from unittest.mock import AsyncMock, patch
+
+import pytest
 from discord import app_commands
+
 from cogs.daily_points import DEFAULT_VOTE_URLS, DailyPoints, parse_vote_urls
 
 

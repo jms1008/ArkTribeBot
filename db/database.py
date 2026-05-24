@@ -14,11 +14,13 @@ Concurrencia:
   corrupción.
 - Para *transacciones explícitas* exponemos ``transaction()`` como contexto.
 """
+
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterable, Sequence
 from contextlib import asynccontextmanager
-from typing import Any, Iterable, Sequence
+from typing import Any
 
 import aiosqlite
 
