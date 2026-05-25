@@ -89,7 +89,44 @@ class TodoView(discord.ui.View):
         await interaction.response.edit_message(embed=embed, view=view)
 
 
+def _format_assignees(raw: str | None) -> str:
+    """Normaliza el campo asignado_a a una cadena de menciones Discord."""
+    if not raw:
+        return "*Sin asignar*"
+    parts = [p.strip() for p in str(raw).split(",") if p.strip()]
+    fixed = []
+    for p in parts:
+        core = p.replace("<@", "").replace(">", "")
+        if core.isdigit():
+            fixed.append(f"<@{core}>")
+        else:
+            fixed.append(core)
+    return ", ".join(fixed) if fixed else "*Sin asignar*"
+
+
+def _render_todo_item(row) -> list[str]:
+    """Renderiza una tarea como 2 líneas: encabezado + asignado.
+
+    Patrón visual unificado con Blacklist/Scouting:
+    ``#ID + emoji + **tarea**`` y debajo ``└ 👤 mention``.
+    """
+    icon = "🔨" if row["estado"] != "Pendiente" else "⏳"
+    return [
+        f"`#{row['id']:03d}` {icon} **{row['tarea']}**",
+        f"  └ 👤 {_format_assignees(row['asignado_a'])}",
+    ]
+
+
 def build_todo_embed_view(bot, rows: list, page: int = 0):
+    """Construye el embed del panel de To-Do con el patrón visual unificado.
+
+    Diseño (consistente con Blacklist/Scouting/Ranking):
+    - Header: emoji + título mayúscula
+    - Badges de contador en code-block (`` `N` ``)
+    - Secciones agrupadas por estado (🔨 EN PROGRESO primero, luego ⏳ PENDIENTES)
+    - Items con jerarquía: ``#ID emoji tarea`` + ``└ 👤 asignado``
+    - Footer: paginación + total + hint
+    """
     page_size = 10
     total = len(rows)
     total_pages = max(1, (total + page_size - 1) // page_size)
@@ -99,42 +136,47 @@ def build_todo_embed_view(bot, rows: list, page: int = 0):
     chunk = rows[start : start + page_size]
 
     embed = discord.Embed(title="📋 LISTA DE TAREAS", color=discord.Color.from_rgb(255, 165, 0))
+
     if not rows:
-        embed.description = "¡Sin tareas pendientes! La tribu está al día. 🎉"
-    else:
-        n_pending = sum(1 for r in rows if r["estado"] == "Pendiente")
-        n_progress = total - n_pending
+        embed.description = (
+            "✅ ¡Sin tareas pendientes! La tribu está al día. 🎉\n\n"
+            "*Pulsa **Añadir Tarea** o usa `/todo_add` para crear una nueva.*"
+        )
+        embed.set_footer(text="Página 1/1 • 0 tareas")
+        view = TodoView(bot, page=0, total_rows=0)
+        return embed, 0, view
 
-        lines = []
-        lines.append(f"⏳ `{n_pending}` Pendientes  ·  🔨 `{n_progress}` En Progreso  ·  📊 `{total}` Total")
-        lines.append("")
+    n_pending = sum(1 for r in rows if r["estado"] == "Pendiente")
+    n_progress = total - n_pending
 
-        for row in chunk:
-            raw_asignado = str(row["asignado_a"]) if row["asignado_a"] else ""
-            if not raw_asignado:
-                asignado = "*Sin asignar*"
-            else:
-                parts = [p.strip() for p in raw_asignado.split(",") if p.strip()]
-                fixed = []
-                for p in parts:
-                    core = p.replace("<@", "").replace(">", "")
-                    if core.isdigit():
-                        fixed.append(f"<@{core}>")
-                    else:
-                        fixed.append(core)
-                asignado = ", ".join(fixed)
-            if row["estado"] == "Pendiente":
-                icon = "⏳"
-                lines.append(f"> `#{row['id']}` {icon} **{row['tarea']}**")
-                lines.append(f">  ╰ 👤 {asignado}")
-            else:
-                icon = "🔨"
-                lines.append(f"> `#{row['id']}` {icon} **{row['tarea']}**")
-                lines.append(f">  ╰ 👤 {asignado}")
+    # Cabecera con counter de badges en code-block (estilo Blacklist).
+    lines: list[str] = [
+        f"🔨 `{n_progress:02d}` En Progreso  ·  ⏳ `{n_pending:02d}` Pendientes  ·  📊 `{total:02d}` Total",
+        "",
+    ]
+
+    # Separar por estado, manteniendo el orden original dentro de cada grupo.
+    in_progress = [r for r in chunk if r["estado"] != "Pendiente"]
+    pending = [r for r in chunk if r["estado"] == "Pendiente"]
+
+    if in_progress:
+        lines.append("## 🔨 EN PROGRESO")
+        for row in in_progress:
+            lines.extend(_render_todo_item(row))
             lines.append("")
 
-        embed.description = "\n".join(lines).strip()
-        embed.set_footer(text=f"Página {page + 1}/{total_pages} • {total} tareas en total")
+    if pending:
+        if in_progress:
+            lines.append("")  # separador extra entre secciones
+        lines.append("## ⏳ PENDIENTES")
+        for row in pending:
+            lines.extend(_render_todo_item(row))
+            lines.append("")
+
+    embed.description = "\n".join(lines).strip()
+    embed.set_footer(
+        text=f"Página {page + 1}/{total_pages} • {total} tareas totales • /todo_add para añadir"
+    )
 
     view = TodoView(bot, page=page, total_rows=total)
     return embed, page, view
@@ -627,21 +669,8 @@ class Management(commands.Cog, name="Management"):
         )
         rows = await cursor.fetchall()
 
-        todo_embed = discord.Embed(title="📝 Lista de Tareas", color=discord.Color.orange())
-        if not rows:
-            todo_embed.description = "No hay tareas pendientes. ¡Buen trabajo! 🎉"
-        else:
-            text = ""
-            for row in rows:
-                asignado = f"<@{row['asignado_a']}>" if row["asignado_a"] else "Nadie"
-                estado_icon = "⏳" if row["estado"] == "Pendiente" else "🔨"
-                text += f"**#{row['id']}** {estado_icon} - {row['tarea']}\n   Estado: {row['estado']} | Asignado: {asignado}\n\n"
-                if len(text) > 3800:
-                    text += "... (lista truncada)"
-                    break
-            todo_embed.description = text
-
-        view = TodoView(self.bot)
+        # Usar el builder unificado para consistencia visual con /todo_list.
+        todo_embed, _page, view = build_todo_embed_view(self.bot, rows, page=0)
         msg = await channel.send(embed=todo_embed, view=view)
         await asyncio.sleep(0.5)
 
@@ -681,26 +710,12 @@ class Management(commands.Cog, name="Management"):
 
     @app_commands.command(name="todo_list", description="Crea un panel de tareas auto-actualizable.")
     async def todo_list(self, interaction: discord.Interaction):
-        # Generación del Embed inicial
+        # Generación del Embed inicial usando el builder unificado.
         db = self.bot.db
         cursor = await db.execute("SELECT * FROM todos WHERE guild_id = ?", (interaction.guild_id,))
         rows = await cursor.fetchall()
 
-        embed = discord.Embed(title="📝 Lista de Tareas", color=discord.Color.orange())
-        if not rows:
-            embed.description = "No hay tareas pendientes. ¡Buen trabajo! 🎉"
-        else:
-            text = ""
-            for row in rows:
-                asignado = f"<@{row['asignado_a']}>" if row["asignado_a"] else "Nadie"
-                estado_icon = "⏳" if row["estado"] == "Pendiente" else "🔨"
-                text += f"**#{row['id']}** {estado_icon} - {row['tarea']}\n   Estado: {row['estado']} | Asignado: {asignado}\n\n"
-                if len(text) > 3800:
-                    text += "... (lista truncada)"
-                    break
-            embed.description = text
-
-        view = TodoView(self.bot)
+        embed, _page, view = build_todo_embed_view(self.bot, rows, page=0)
         await interaction.response.send_message(embed=embed, view=view)
         message = await interaction.original_response()
 
