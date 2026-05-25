@@ -105,15 +105,23 @@ class ScoutSelect(discord.ui.Select):
             await interaction.response.send_message("❌ Scout no encontrado.", ephemeral=True)
             return
 
+        threat_bar = "🔴" * row["nivel_amenaza"] + "⚫" * (5 - row["nivel_amenaza"])
+        notas = row["notas"] or "*Sin notas adicionales*"
+
         embed = discord.Embed(
-            title=f"🔎 SCOUT DETALLE: {row['tribu_enemiga']}", color=discord.Color.from_rgb(200, 50, 50)
+            title=f"🔎 SCOUT #{row['id']:03d}",
+            color=discord.Color.from_rgb(200, 50, 50),
         )
-        embed.add_field(name="📍 Mapa / Coords", value=f"{row['mapa']} | `{row['coordenadas']}`")
-        embed.add_field(
-            name="⚠️ Nivel de Amenaza", value="🔴" * row["nivel_amenaza"] + "⚫" * (5 - row["nivel_amenaza"])
+        embed.description = (
+            f"## 🏴 {row['tribu_enemiga']}\n\n"
+            f"> 🗺️ **Mapa:** `{row['mapa']}`\n"
+            f"> 📍 **Coordenadas:** `{row['coordenadas']}`\n"
+            f"> ⚠️ **Amenaza:** {threat_bar}  `{row['nivel_amenaza']}/5`\n\n"
+            f"## 📝 Notas\n"
+            f"> {notas}"
         )
-        embed.add_field(
-            name="📝 Notas Completas", value=row["notas"] or "*Sin notas adicionales*", inline=False
+        embed.set_footer(
+            text=f"Scout #{row['id']:03d}  •  /scout_delete id:{row['id']} para eliminar"
         )
 
         img_url = None
@@ -827,22 +835,34 @@ class Scouting(commands.Cog):
 
         if not rows:
             embed = discord.Embed(
-                title=f"\ud83d\udce1 Scouting: {target_map}",
-                description="No hay registros en este mapa.",
+                title=f"🛰️ SCOUTING: {target_map.upper()}",
+                description=(
+                    "📭 No hay registros en este mapa.\n\n"
+                    "💡 Usa `/scout_add` para registrar una base enemiga."
+                ),
                 color=discord.Color.red(),
             )
         else:
-            embed = discord.Embed(title=f"\ud83d\udce1 Scouting: {target_map}", color=discord.Color.red())
+            embed = discord.Embed(
+                title=f"🛰️ SCOUTING: {target_map.upper()}",
+                color=discord.Color.red(),
+            )
+            lines = [
+                f"📊 `{total}` bases registradas  ·  📄 Página `{page + 1}/{total_pages}`",
+                "",
+            ]
             for row in chunk:
-                amenaza_str = "\u2b50" * row["nivel_amenaza"]
-                value_text = f"\ud83d\udccd {row['coordenadas']} | \u26a0\ufe0f {amenaza_str}\n\ud83d\udcdd {row['notas']}\n\ud83c\udd94 **ID: {row['id']}**"
-                embed.add_field(
-                    name=row["tribu_enemiga"],
-                    value=value_text,
-                    inline=False,
-                )
+                threat_bar = "🔴" * row["nivel_amenaza"] + "⚫" * (5 - row["nivel_amenaza"])
+                notas = (row["notas"] or "").strip()
+                nota_corta = (notas[:50] + "...") if len(notas) > 50 else notas
+                lines.append(f"`#{row['id']:03d}` 🏴 **{row['tribu_enemiga']}**")
+                lines.append(f"  📍 `{row['coordenadas']}`  ·  {threat_bar}")
+                if nota_corta:
+                    lines.append(f"  ╰ 📝 *{nota_corta}*")
+                lines.append("")
+            embed.description = "\n".join(lines).strip()
             embed.set_footer(
-                text=f"Página {page + 1}/{total_pages} • {total} bases registradas | 💡 Usa /scout_add_image [id] [imagen] para foto"
+                text=f"Página {page + 1}/{total_pages}  •  {total} bases  •  /scout_add_image [id] para foto"
             )
 
         view = ScoutPrivateListView(self.bot, rows, target_map, page)

@@ -219,32 +219,32 @@ class BreedingDinoSelectMenu(discord.ui.Select):
             )
             return
 
-        embed = discord.Embed(title=f"🧬 Stats Detalladas: {row['especie']}", color=discord.Color.green())
+        STATS_ORDER = [
+            ("hp",     "❤️", "HP      "),
+            ("melee",  "⚔️", "Melee   "),
+            ("stam",   "⚡", "Stam    "),
+            ("weight", "⚖️", "Peso    "),
+            ("oxy",    "🫧", "Oxígeno "),
+            ("food",   "🍖", "Comida  "),
+            ("speed",  "💨", "Speed   "),
+        ]
+        registered = sum(1 for col, _, _ in STATS_ORDER if row[col])
 
-        hp = row["hp"] or 0
-        stam = row["stam"] or 0
-        weight = row["weight"] or 0
-        melee = row["melee"] or 0
-        oxy = row["oxy"] or 0
-        food = row["food"] or 0
-        speed = row["speed"] or 0
+        lines = [
+            f"🔢 Stats registradas: `{registered}/7`",
+            "",
+        ]
+        for col, emoji, name in STATS_ORDER:
+            v = row[col]
+            value = f"`{v:>3}`" if v else "` — `"
+            lines.append(f"{emoji} {name} {value}")
 
-        if hp > 0:
-            embed.add_field(name="❤️ Vida (HP)", value=str(hp), inline=True)
-        if stam > 0:
-            embed.add_field(name="⚡ Estamina", value=str(stam), inline=True)
-        if weight > 0:
-            embed.add_field(name="⚖️ Peso", value=str(weight), inline=True)
-        if melee > 0:
-            embed.add_field(name="⚔️ Daño (Melee)", value=str(melee), inline=True)
-        if oxy > 0:
-            embed.add_field(name="🫧 Oxígeno", value=str(oxy), inline=True)
-        if food > 0:
-            embed.add_field(name="🍖 Comida", value=str(food), inline=True)
-        if speed > 0:
-            embed.add_field(name="💨 Velocidad", value=str(speed), inline=True)
-
-        embed.set_footer(text=f"ID Interno: {row['especie']}")
+        embed = discord.Embed(
+            title=f"🧬 STATS: {row['especie']}",
+            color=discord.Color.green(),
+        )
+        embed.description = "\n".join(lines)
+        embed.set_footer(text="💡 Usa /linea_add para añadir o actualizar una stat")
         await interaction.followup.send(embed=embed, ephemeral=True)
 
 
@@ -384,10 +384,14 @@ class BreedingDashboardView(discord.ui.View):
                 response_text = "\n".join(recent_mutations)
 
                 embed = discord.Embed(
-                    title="📜 Últimas Mutaciones Registradas",
-                    description=response_text,
+                    title="📜 ÚLTIMAS MUTACIONES REGISTRADAS",
                     color=discord.Color.blue(),
                 )
+                embed.description = (
+                    f"📊 `{len(mutations)}` mutaciones totales · mostrando las `{len(recent_mutations)}` más recientes\n\n"
+                    f"{response_text}"
+                )
+                embed.set_footer(text="💡 Usa /log_mutas para el log completo")
                 await interaction.response.send_message(embed=embed, ephemeral=True)
         except Exception as e:
             await interaction.response.send_message(f"Error al leer logs: {e}", ephemeral=True)
@@ -842,34 +846,33 @@ class Breeding(commands.Cog):
             )
             return
 
-        hp = row["hp"] or 0
-        stam = row["stam"] or 0
-        weight = row["weight"] or 0
-        melee = row["melee"] or 0
-        oxy = row["oxy"] or 0
-        food = row["food"] or 0
-        speed = row["speed"] or 0
+        # Orden canónico de las 7 stats con su emoji y nombre largo.
+        STATS_ORDER = [
+            ("hp",     "❤️", "HP      "),
+            ("melee",  "⚔️", "Melee   "),
+            ("stam",   "⚡", "Stam    "),
+            ("weight", "⚖️", "Peso    "),
+            ("oxy",    "🫧", "Oxígeno "),
+            ("food",   "🍖", "Comida  "),
+            ("speed",  "💨", "Speed   "),
+        ]
+        registered = sum(1 for col, _, _ in STATS_ORDER if row[col])
 
-        stats_list = []
-        if hp > 0:
-            stats_list.append(f"❤️ HP: **{hp}**")
-        if stam > 0:
-            stats_list.append(f"⚡ Stam: **{stam}**")
-        if weight > 0:
-            stats_list.append(f"⚖️ Peso: **{weight}**")
-        if melee > 0:
-            stats_list.append(f"⚔️ Melee: **{melee}**")
-        if oxy > 0:
-            stats_list.append(f"🫧 Oxy: **{oxy}**")
-        if food > 0:
-            stats_list.append(f"🍖 Food: **{food}**")
-        if speed > 0:
-            stats_list.append(f"💨 Speed: **{speed}**")
+        lines = [
+            f"🔢 Stats registradas: `{registered}/7`",
+            "",
+        ]
+        for col, emoji, name in STATS_ORDER:
+            v = row[col]
+            value = f"`{v:>3}`" if v else "` — `"
+            lines.append(f"{emoji} {name} {value}")
 
-        stats_text = " | ".join(stats_list) if stats_list else "Sin stats registradas."
-
-        embed = discord.Embed(title=f"🧬 Stats: {dino}", color=discord.Color.purple())
-        embed.description = stats_text
+        embed = discord.Embed(
+            title=f"🧬 STATS: {dino}",
+            color=discord.Color.purple(),
+        )
+        embed.description = "\n".join(lines)
+        embed.set_footer(text="💡 Usa /linea_add para añadir o actualizar una stat")
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @app_commands.command(
@@ -929,18 +932,19 @@ class Breeding(commands.Cog):
                     "No se han registrado mutaciones históricamente.", ephemeral=True
                 )
             else:
-                # Ordenación descendente por marca de tiempo
                 mutations.sort(key=lambda x: x[0], reverse=True)
-
-                # Límite de 20 registros más recientes
                 recent_mutations = [mut[1] for mut in mutations[:20]]
                 response_text = "\n".join(recent_mutations)
 
                 embed = discord.Embed(
-                    title="🧬 Registro de Mutaciones (Últimas 20)",
-                    description=response_text,
+                    title="🧬 REGISTRO DE MUTACIONES",
                     color=discord.Color.green(),
                 )
+                embed.description = (
+                    f"📊 `{len(mutations)}` mutaciones totales · mostrando las `{len(recent_mutations)}` más recientes\n\n"
+                    f"{response_text}"
+                )
+                embed.set_footer(text="💡 Usa el botón 'Nueva muta' del dashboard para registrar una")
                 await interaction.response.send_message(embed=embed, ephemeral=True)
 
         except Exception as e:

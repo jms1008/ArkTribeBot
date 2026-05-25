@@ -1006,40 +1006,44 @@ class Warfare(commands.Cog):
         role_id = os.getenv("SOS_ROLE_ID")
         role_mention = f"<@&{role_id}>" if role_id else "@everyone"
 
-        if not tipo and not mapa and not atacantes and not defensores and not notas:
-            # Fallback: Dispatch de SOS Generalizado (Falta de argumentos)
-            embed = discord.Embed(
-                title="🚨 ¡SOS GENERAL! 🚨",
-                description=f"**¡SE NECESITA AYUDA URGENTE!**\n\nEl usuario {interaction.user.mention} ha solicitado asistencia inmediata.\n¡Entrad al canal de voz YA!",
-                color=discord.Color.brand_red(),
-            )
-            embed.set_footer(text="⚠️ Alerta de Prioridad MÁXIMA")
-        else:
-            # Dispatch: SOS Estructurado y Detallado
-            titulo = f"🚨 ALERTA: {tipo.value.upper()}" if tipo else "🚨 ALERTA DE COMBATE"
-            color = discord.Color.red()
+        # Cabecera unificada: emoji + tipo (o genérico). Mismo color en ambos
+        # casos para que el cliente de Discord no agrupe distinto.
+        tipo_label = tipo.value.upper() if tipo else "AYUDA INMEDIATA"
+        embed = discord.Embed(
+            title=f"🚨 ALERTA SOS · {tipo_label}",
+            color=discord.Color.brand_red(),
+        )
 
-            embed = discord.Embed(title=titulo, color=color)
-            embed.description = f"**Solicitud de ayuda de** {interaction.user.mention}"
+        # Badges en la primera línea: mapa, fuerzas, hora.
+        from datetime import datetime
 
-            if mapa:
-                embed.add_field(name="🗺️ Mapa", value=f"**{mapa}**", inline=True)
-            if tipo:
-                embed.add_field(name="🔥 Tipo", value=tipo.value, inline=True)
+        hora = datetime.now().strftime("%H:%M")
+        badges = []
+        if mapa:
+            badges.append(f"🗺️ `{mapa}`")
+        if atacantes is not None:
+            badges.append(f"⚔️ `{atacantes}` enemigos")
+        if defensores is not None:
+            badges.append(f"🛡️ `{defensores}` aliados")
+        badges.append(f"🕒 `{hora}`")
 
-            # Formateo de recuento de fuerzas (Enemigos/Aliados)
-            atack_str = str(atacantes) if atacantes is not None else "?"
-            def_str = str(defensores) if defensores is not None else "?"
-            embed.add_field(
-                name="⚔️ Status",
-                value=f"👿 **Enemigos:** {atack_str}\n🛡️ **Aliados:** {def_str}",
-                inline=False,
-            )
+        desc_lines = [
+            "  ·  ".join(badges),
+            "",
+            f"> **Solicitante:** {interaction.user.mention}",
+        ]
 
-            if notas:
-                embed.add_field(name="📝 Notas", value=notas, inline=False)
+        if not tipo and not mapa and atacantes is None and defensores is None and not notas:
+            # Sin parámetros: alerta genérica.
+            desc_lines.append("")
+            desc_lines.append("> *Llamada general — entrad al canal de voz YA.*")
+        elif notas:
+            desc_lines.append("")
+            desc_lines.append("## 📝 Notas")
+            desc_lines.append(f"> {notas}")
 
-            embed.set_footer(text="¡Dejad lo que estéis haciendo y venid!")
+        embed.description = "\n".join(desc_lines)
+        embed.set_footer(text="¡Dejad lo que estéis haciendo y venid!")
 
         # Broadcast de la alerta al canal de registro
         await interaction.channel.send(content=role_mention, embed=embed)

@@ -931,6 +931,9 @@ class Management(commands.Cog, name="Management"):
             (secundario, guild_id),
         )
         old_playtimes = await c_play.fetchall()
+        # Métricas para el embed de confirmación.
+        transferred_minutes = sum(int(p[1] or 0) for p in old_playtimes)
+        transferred_maps = sorted({p[0] for p in old_playtimes if p[0]})
 
         for map_name, mins, last_seen in old_playtimes:
             c_prim = await db.execute(
@@ -993,14 +996,24 @@ class Management(commands.Cog, name="Management"):
 
         await db.commit()
 
-        # Mensaje de confirmación detallado
+        # Mensaje de confirmación detallado.
+        h_total = transferred_minutes // 60
+        m_total = transferred_minutes % 60
+        horas_str = f"{h_total}h {m_total}m" if h_total else f"{m_total}m"
+        mapas_str = ", ".join(transferred_maps) if transferred_maps else "—"
+
         embed = discord.Embed(
-            title="✅ Identidades Fusionadas",
-            description=f"El perfil histórico de **{secundario}** ha sido traspasado y fusionado de manera perpetua a **{primario}**.",
+            title="✅ IDENTIDADES FUSIONADAS",
             color=discord.Color.brand_green(),
         )
+        embed.description = (
+            f"`{secundario}`  ➡️  `{primario}`\n\n"
+            f"> 📊 **Horas transferidas:** `{horas_str}`\n"
+            f"> 🗺️ **Mapas afectados:** `{len(transferred_maps)}` ({mapas_str})\n"
+            f"> 📅 **Registros movidos:** sesiones, blacklist y alias del K4Ultra"
+        )
         embed.set_footer(
-            text="A partir de ahora, el bot convertirá automáticamente a este jugador si se conecta usando su viejo nombre de Steam."
+            text="El bot convertirá automáticamente las próximas conexiones del nombre antiguo."
         )
 
         await interaction.followup.send(embed=embed)
@@ -1081,14 +1094,16 @@ class Management(commands.Cog, name="Management"):
         await db.commit()
 
         embed = discord.Embed(
-            title="✅ Perfil de Tribu Configurado",
-            description=f"El jugador {usuario.mention} ha sido registrado globalmente en la base de datos.",
+            title="✅ PERFIL DE TRIBU CONFIGURADO",
             color=discord.Color.green(),
         )
-        embed.add_field(name="📛 In-Game", value=f"`{personaje}`", inline=True)
-        embed.add_field(name="👤 Apodo", value=f"`{apodo_final}`", inline=True)
-        embed.add_field(name="🎮 Steam", value=f"`{steam_safe}`", inline=True)
-        embed.set_footer(text="Vinculado al Rancómetro y al Radar K4Ultra con éxito.")
+        embed.description = (
+            f"> 👤 **Usuario:** {usuario.mention}\n"
+            f"> 📛 **In-Game:** `{personaje}`\n"
+            f"> 🎭 **Apodo:** `{apodo_final}`\n"
+            f"> 🎮 **Steam:** `{steam_safe}`"
+        )
+        embed.set_footer(text="Vinculado al Rancómetro y al Radar K4Ultra  •  /ranking para ver tu posición")
 
         await interaction.response.send_message(embed=embed, ephemeral=False)
 
@@ -1144,13 +1159,14 @@ class Management(commands.Cog, name="Management"):
                 await i.response.edit_message(embed=emb, view=self)
 
         embed_inicial = discord.Embed(
-            title="📚 Manual de Usuario - ArkTribeBot",
+            title="📚 MANUAL DE USUARIO — ARKTRIBEBOT",
             description=(
                 "Selecciona una sección del menú inferior para conocer los comandos y "
                 "funcionamiento de cada módulo.\n\n"
-                "💡 **Si acabas de llegar:** usa `/perfil_tribu` para registrarte en el "
-                "sistema (necesario para el ranking de muertes y K4Ultra).\n"
-                "⚙️ **Si eres admin:** empieza por la sección *Setup & Admin* para "
+                "## 🚀 Empezar\n"
+                "> 💡 **Nuevo miembro:** usa `/perfil_tribu` para registrarte (necesario para "
+                "el ranking de muertes y el radar K4Ultra).\n"
+                "> ⚙️ **Admin del servidor:** comienza por la sección *Setup & Admin* para "
                 "configurar el bot con `/inicio_ark`."
             ),
             color=discord.Color.blurple(),
