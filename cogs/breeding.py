@@ -420,23 +420,23 @@ class BreedingDashboardView(discord.ui.View):
         await interaction.response.edit_message(embed=embed, view=new_view)
 
 
-# Las 7 stats de crianza con su emoji canónico. ``mutaciones`` no se incluye
-# (es un contador, no una Top Stat).
-_STAT_COLUMNS: list[tuple[str, str]] = [
-    # (sql_column, emoji)
-    ("hp",     "❤️"),
-    ("melee",  "⚔️"),
-    ("stam",   "⚡"),
+# Orden canónico de las 7 stats de crianza, siempre visibles en el listado
+# (con `—` cuando faltan) para que la tabla sea visualmente consistente entre
+# especies. ``mutaciones`` no se incluye aquí: es un contador, no un Top Stat.
+_PRIMARY_STATS = [
+    ("hp", "❤️"),
+    ("melee", "⚔️"),
+    ("stam", "⚡"),
     ("weight", "⚖️"),
-    ("oxy",    "🫧"),
-    ("food",   "🍖"),
-    ("speed",  "💨"),
+    ("oxy", "🫧"),
+    ("food", "🍖"),
+    ("speed", "💨"),
 ]
 
 
 def _format_stat(value) -> str:
-    """Valor padded a 3 chars (sin backticks externos; los aplica la fila entera)."""
-    return f"{value:>3}" if value else "  —"
+    """Devuelve `` `123` `` con padding fijo a 3 chars, o `` ` — ` `` si falta."""
+    return f"`{value:>3}`" if value else "` — `"
 
 
 def build_breeding_embed(rows, page=0):
@@ -448,7 +448,7 @@ def build_breeding_embed(rows, page=0):
     - 15 dinos por página para aprovechar mejor el espacio
     - Leyenda compacta en el footer
     """
-    items_per_page = 12
+    items_per_page = 15
     total_rows = len(rows)
     import math
 
@@ -479,28 +479,18 @@ def build_breeding_embed(rows, page=0):
         "## 🦖 ESPECIES",
     ]
 
-    # Padding del nombre = al max de la página (mín = ancho de "Especie").
-    name_pad = max((len(r["especie"]) for r in display_rows), default=10)
-    name_pad = max(name_pad, len("Especie"))
-
-    # Cabecera de la tabla: nombre en monospace (backtick) + emojis a color
-    # FUERA del backtick para que Discord los renderice en color. La alineación
-    # con las columnas de valores no será píxel-perfecta porque la fuente de
-    # texto normal y la de backtick difieren, pero queda visualmente legible.
-    emoji_header = "  ".join(emoji for _, emoji in _STAT_COLUMNS)
-    lines.append(f"`{'Especie':<{name_pad}}`  {emoji_header}")
-
-    # Filas: nombre + valores TODO en un solo backtick → alineación monospace
-    # perfecta entre filas, columnas de valores cuadradas.
+    # Listado tabular: nombre con padding fijo + 7 stats compactas.
     for row in display_rows:
-        cells = "  ".join(_format_stat(row[col]) for col, _ in _STAT_COLUMNS)
-        lines.append(f"`{row['especie']:<{name_pad}}  {cells}`")
+        stats_line = " ".join(
+            f"{icon}{_format_stat(row[col])}" for col, icon in _PRIMARY_STATS
+        )
+        lines.append(f"`{row['especie']:<14}` {stats_line}")
 
     embed.description = "\n".join(lines).strip()
     embed.set_footer(
         text=(
             f"Página {page + 1}/{total_pages}  •  {total_rows} especies totales  "
-            f"•  ❤️HP  ⚔️Melee  ⚡Stam  ⚖️Peso  🫧Oxy  🍖Food  💨Speed  "
+            f"•  ❤️HP ⚔️Melee ⚡Stam ⚖️Peso 🫧Oxy 🍖Food 💨Speed  "
             f"•  /linea_add"
         )
     )
