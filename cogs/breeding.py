@@ -448,7 +448,7 @@ def build_breeding_embed(rows, page=0):
     - 15 dinos por página para aprovechar mejor el espacio
     - Leyenda compacta en el footer
     """
-    items_per_page = 15
+    items_per_page = 12
     total_rows = len(rows)
     import math
 
@@ -479,16 +479,16 @@ def build_breeding_embed(rows, page=0):
         "## 🦖 ESPECIES",
     ]
 
-    # Listado tabular. Padding del nombre dinámico (mínimo necesario para la
-    # página actual) y stats con valor padded a 3 dentro de los backticks para
-    # mantener alineación entre stats del mismo dino. Línea mantiene <~60 chars
-    # para evitar wrap visual en clientes con ancho reducido.
-    name_pad = max((len(r["especie"]) for r in display_rows), default=10)
+    # Formato de 2 líneas por dino: encabezado + stats. Resuelve definitivamente
+    # el wrap visual de Discord en clientes con ancho reducido (el single-line
+    # con 7 stats + emojis VS-16 superaba el ancho disponible y truncaba la
+    # última stat de la última fila).
     for row in display_rows:
-        stats_line = " ".join(
+        stats_line = "  ".join(
             f"{icon}{_format_stat(row[col])}" for col, icon in _PRIMARY_STATS
         )
-        lines.append(f"`{row['especie']:<{name_pad}}` {stats_line}")
+        lines.append(f"🦖 **{row['especie']}**")
+        lines.append(f"  ╰ {stats_line}")
 
     embed.description = "\n".join(lines).strip()
     embed.set_footer(
