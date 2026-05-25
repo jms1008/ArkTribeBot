@@ -31,8 +31,7 @@ async def test_add_scout_modal_inserts_row(scouting_cog, mock_interaction, mock_
     mock_interaction.response.send_message.assert_called_once()
 
     row = await mock_bot.db.fetchone(
-        "SELECT tribu_enemiga, mapa, coordenadas, nivel_amenaza, notas "
-        "FROM scouts WHERE guild_id = ?",
+        "SELECT tribu_enemiga, mapa, coordenadas, nivel_amenaza, notas FROM scouts WHERE guild_id = ?",
         (mock_interaction.guild_id,),
     )
     assert row is not None
@@ -106,11 +105,7 @@ async def test_scouts_are_guild_isolated(mock_bot):
     )
     await mock_bot.db.commit()
 
-    rows_g1 = await mock_bot.db.fetchall(
-        "SELECT tribu_enemiga FROM scouts WHERE guild_id = ?", (1,)
-    )
-    rows_g2 = await mock_bot.db.fetchall(
-        "SELECT tribu_enemiga FROM scouts WHERE guild_id = ?", (2,)
-    )
+    rows_g1 = await mock_bot.db.fetchall("SELECT tribu_enemiga FROM scouts WHERE guild_id = ?", (1,))
+    rows_g2 = await mock_bot.db.fetchall("SELECT tribu_enemiga FROM scouts WHERE guild_id = ?", (2,))
     assert sorted(r["tribu_enemiga"] for r in rows_g1) == ["EnemyA", "EnemyB"]
     assert [r["tribu_enemiga"] for r in rows_g2] == ["OtroGuild"]

@@ -16,6 +16,8 @@ from collections import defaultdict
 import aiosqlite
 import discord
 
+from utils.embeds import apply_uniform_width
+
 logger = logging.getLogger("ArkTribeBot")
 
 
@@ -85,6 +87,10 @@ async def generate_k4ultra_embed(
         pages = await _build_radar_pages(db, guild_id, p_totals, p_maps, aliases, top_player_names)
     elif mode == "tribus":
         pages = await _build_tribes_page(db, guild_id, aliases)
+
+    # Ancho uniforme en todas las páginas para coherencia visual entre embeds.
+    for page in pages:
+        apply_uniform_width(page)
 
     return pages, top_player_names, aliases
 
@@ -282,10 +288,7 @@ async def _build_tribes_page(db, guild_id: int, aliases: dict[str, str]) -> list
 
         members_lines = [line for line in (_format_member(m) for m in members) if line]
         members_text = "  ".join(members_lines)
-        header = (
-            f"**{fr['name']}**  ·  👥 `{len(members):02d}`  ·  🟢 `{n_online:02d}` online"
-            f"{map_info}"
-        )
+        header = f"**{fr['name']}**  ·  👥 `{len(members):02d}`  ·  🟢 `{n_online:02d}` online{map_info}"
         block = f"{header}\n  └ {members_text}"
 
         if fr["is_own"]:
@@ -339,12 +342,7 @@ async def _build_tribes_page(db, guild_id: int, aliases: dict[str, str]) -> list
         map_info = f"  ·  🗺️ {top_map}" if top_map else ""
 
         # Confianza media del cluster.
-        scores = [
-            score_by_pair[(a, b)]
-            for a in tribe
-            for b in tribe
-            if a != b and (a, b) in score_by_pair
-        ]
+        scores = [score_by_pair[(a, b)] for a in tribe for b in tribe if a != b and (a, b) in score_by_pair]
         avg_score = sum(scores) // len(scores) if scores else 0
         bars = min(10, max(0, avg_score // 10))
         confidence_bar = "█" * bars + "░" * (10 - bars)

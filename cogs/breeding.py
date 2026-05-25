@@ -7,6 +7,8 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
+from utils.embeds import apply_uniform_width
+
 logger = logging.getLogger("ArkTribeBot")
 
 # Opciones del menú de estadísticas
@@ -470,6 +472,7 @@ def build_breeding_embed(rows, page=0):
             "💡 Usa `/linea_add dino:Rex estadistica:HP puntos:50` para empezar."
         )
         embed.set_footer(text="Página 1/1 • 0 especies")
+        apply_uniform_width(embed)
         return embed, [], 0, 1
 
     # Cabecera con badges.
@@ -481,9 +484,7 @@ def build_breeding_embed(rows, page=0):
 
     # Listado tabular: nombre con padding fijo + 7 stats compactas.
     for row in display_rows:
-        stats_line = " ".join(
-            f"{icon}{_format_stat(row[col])}" for col, icon in _PRIMARY_STATS
-        )
+        stats_line = " ".join(f"{icon}{_format_stat(row[col])}" for col, icon in _PRIMARY_STATS)
         lines.append(f"`{row['especie']:<14}` {stats_line}")
 
     embed.description = "\n".join(lines).strip()
@@ -494,6 +495,7 @@ def build_breeding_embed(rows, page=0):
             f"•  /linea_add"
         )
     )
+    apply_uniform_width(embed)
     return embed, [r["especie"] for r in display_rows], page, total_pages
 
 

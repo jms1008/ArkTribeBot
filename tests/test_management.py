@@ -71,9 +71,7 @@ async def test_claim_task_assigns_user_and_moves_to_in_progress(
     modal.task_id._value = str(task_id)
     await modal.on_submit(mock_interaction)
 
-    row = await mock_bot.db.fetchone(
-        "SELECT asignado_a, estado FROM todos WHERE id = ?", (task_id,)
-    )
+    row = await mock_bot.db.fetchone("SELECT asignado_a, estado FROM todos WHERE id = ?", (task_id,))
     assert row is not None
     assert row["estado"] == "En Progreso"
     assert f"<@{mock_interaction.user.id}>" in row["asignado_a"]
@@ -98,9 +96,7 @@ async def test_claim_task_toggles_off_when_already_assigned(
     # Segundo claim del mismo usuario.
     await modal.on_submit(mock_interaction)
 
-    row = await mock_bot.db.fetchone(
-        "SELECT asignado_a FROM todos WHERE id = ?", (task_id,)
-    )
+    row = await mock_bot.db.fetchone("SELECT asignado_a FROM todos WHERE id = ?", (task_id,))
     # Ya no debe contener su mention.
     assert f"<@{mock_interaction.user.id}>" not in (row["asignado_a"] or "")
 
@@ -132,9 +128,7 @@ async def test_claim_task_rejects_unknown_id(mgmt_cog, mock_interaction, mock_bo
 
 
 @pytest.mark.asyncio
-async def test_delete_task_removes_row(
-    mgmt_cog, mock_interaction, mock_bot, _no_dashboard_refresh
-):
+async def test_delete_task_removes_row(mgmt_cog, mock_interaction, mock_bot, _no_dashboard_refresh):
     await mock_bot.init_mock_db()
     cursor = await mock_bot.db.execute(
         "INSERT INTO todos (guild_id, tarea) VALUES (?, ?)",

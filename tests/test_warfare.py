@@ -119,12 +119,8 @@ async def test_blacklist_is_guild_isolated(mock_bot):
     )
     await mock_bot.db.commit()
 
-    rows_g1 = await mock_bot.db.fetchall(
-        "SELECT player FROM blacklist WHERE guild_id = ?", (1,)
-    )
-    rows_g2 = await mock_bot.db.fetchall(
-        "SELECT player FROM blacklist WHERE guild_id = ?", (2,)
-    )
+    rows_g1 = await mock_bot.db.fetchall("SELECT player FROM blacklist WHERE guild_id = ?", (1,))
+    rows_g2 = await mock_bot.db.fetchall("SELECT player FROM blacklist WHERE guild_id = ?", (2,))
     assert sorted(r["player"] for r in rows_g1) == ["EnemyA", "EnemyB"]
     assert [r["player"] for r in rows_g2] == ["OtroGuild"]
 

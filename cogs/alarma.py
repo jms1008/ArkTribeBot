@@ -7,6 +7,7 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 from cogs.server_status import get_guild_servers
+from utils.embeds import apply_uniform_width
 
 logger = logging.getLogger("ArkTribeBot")
 
@@ -67,10 +68,7 @@ async def _fetch_guild_alarms(bot, guild_id: int) -> list[dict]:
                 (guild_id,),
             )
             rows = await c.fetchall()
-    return [
-        {"user_id": r["user_id"], "map_name": r["map_name"], "channel_id": r["channel_id"]}
-        for r in rows
-    ]
+    return [{"user_id": r["user_id"], "map_name": r["map_name"], "channel_id": r["channel_id"]} for r in rows]
 
 
 async def build_alarmas_embed(bot, guild_id: int) -> discord.Embed:
@@ -88,18 +86,15 @@ async def build_alarmas_embed(bot, guild_id: int) -> discord.Embed:
     )
 
     alarms = await _fetch_guild_alarms(bot, guild_id)
-    logger.info(
-        f"[Alarma] build_alarmas_embed guild={guild_id} → {len(alarms)} alarmas activas"
-    )
+    logger.info(f"[Alarma] build_alarmas_embed guild={guild_id} → {len(alarms)} alarmas activas")
 
     if not alarms:
         embed.description = (
             "💤 Nadie en la tribu tiene alarmas activas ahora mismo.\n\n"
             "💡 Selecciona un mapa en el menú inferior o usa `/alarma mapa:X estado:on` para activar la tuya."
         )
-        embed.set_footer(
-            text="El bot avisa cuando entra un jugador desconocido al mapa vigilado."
-        )
+        embed.set_footer(text="El bot avisa cuando entra un jugador desconocido al mapa vigilado.")
+        apply_uniform_width(embed)
         return embed
 
     # Agrupar por mapa.
@@ -130,6 +125,7 @@ async def build_alarmas_embed(bot, guild_id: int) -> discord.Embed:
             "•  /alarma para comando directo"
         )
     )
+    apply_uniform_width(embed)
     return embed
 
 

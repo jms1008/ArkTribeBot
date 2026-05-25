@@ -6,6 +6,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from cogs.server_status import get_guild_servers
+from utils.embeds import apply_uniform_width
 
 logger = logging.getLogger("ArkTribeBot")
 
@@ -301,7 +302,7 @@ async def build_scout_embed_view(bot, rows: list, map_filter: str, page: int = 0
 
         embed.description = "\n".join(lines).strip()
         embed.set_footer(text=f"Página {page + 1}/{total_pages} • /scout_add_image [id] para foto")
-
+    apply_uniform_width(embed)
     view = ScoutView(bot, map_filter, chunk, page=page, total_rows=total)
     return embed, page, view
 

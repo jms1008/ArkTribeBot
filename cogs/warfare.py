@@ -9,6 +9,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from cogs.server_status import get_guild_servers
+from utils.embeds import apply_uniform_width
 
 logger = logging.getLogger("ArkTribeBot")
 
@@ -85,7 +86,7 @@ def build_blacklist_embed(rows: list, page: int = 0) -> discord.Embed:
         embed.set_footer(
             text=f"Página {page + 1}/{total_pages} • {total} entradas totales • /bl_editar para modificar"
         )
-
+    apply_uniform_width(embed)
     return embed, page, total_pages
 
 
@@ -689,7 +690,7 @@ async def build_player_detail_embed(bot, player_name: str, guild_id: int) -> dis
         else "Sin aliados conocidos."
     )
     embed.add_field(name="🤝 Aliados Cercanos", value=ally_text, inline=False)
-
+    apply_uniform_width(embed)
     return embed
 
 

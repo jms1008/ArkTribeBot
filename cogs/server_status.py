@@ -40,6 +40,8 @@ async def get_guild_servers(bot, guild_id: int) -> dict:
 # Evita consultas duplicadas cuando server_status y k4ultra sondean en el mismo ciclo.
 import time as _time  # noqa: E402  (separación deliberada para agrupar el módulo de caché)
 
+from utils.embeds import apply_uniform_width  # noqa: E402
+
 _a2s_cache = {}  # {(guild_id, map_name): {"info": ..., "players": [...], "ts": float}}
 # TTL: 90 s — algo menor que el ciclo de status_loop (120 s) y mayor que el de
 # k4ultra/global_status (60 s) para que el segundo loop del minuto reutilice el
@@ -182,6 +184,7 @@ class ServerStatus(commands.Cog):
 
             embed.add_field(name="Conectados", value=f"```{player_list}```", inline=False)
             embed.set_footer(text="Actualizado automáticamente cada 2 minutos.")
+            apply_uniform_width(embed)
             return embed
 
         except Exception as e:
@@ -191,6 +194,7 @@ class ServerStatus(commands.Cog):
                 color=discord.Color.red(),
             )
             embed.set_footer(text="Se reintentará en 5 minutos.")
+            apply_uniform_width(embed)
             return embed
 
     async def status_mapa_autocomplete(self, interaction: discord.Interaction, current: str):
@@ -306,6 +310,7 @@ class ServerStatus(commands.Cog):
 
         if not servers:
             embed.description = "⚠️ No hay servidores configurados. Usa `/inicio_ark` para añadirlos."
+            apply_uniform_width(embed)
             return embed
 
         # Consulta A2S centralizada (compartida con K4Ultra)
@@ -418,7 +423,7 @@ class ServerStatus(commands.Cog):
 
         embed.description = "\n".join(lines).strip()
         embed.set_footer(text="Auto-actualizado cada 2 minutos  •  /status para ver un mapa concreto")
-
+        apply_uniform_width(embed)
         return embed
 
     @app_commands.command(
