@@ -162,21 +162,26 @@ async def _build_radar_pages(
         top_lines.append(f"`#{idx:02d}` {online_marker}**{p_name}**{alias_tag}  ·  ⏱️ `{time_str}`")
         top_lines.append(f"  └ 🗺️ *{map_joined}*" if map_joined else "  └ *(sin actividad reciente)*")
 
-    # Partir top en páginas para respetar el límite de 4096 chars de description.
+    # Paginar el top por NÚMERO de jugadores (no por chars). La primera página
+    # comparte espacio con "EN LÍNEA AHORA" así que va más corta; las siguientes
+    # son más largas porque solo llevan ranking.
+    # Cada jugador ocupa 2 líneas (encabezado + mapas), así que 12 jugadores ≈
+    # 24 líneas, lo que cabe sin scroll en un monitor estándar.
+    TOP_PER_PAGE_FIRST = 12
+    TOP_PER_PAGE_REST = 18
+    LINES_PER_PLAYER = 2
+
     chunks: list[list[str]] = []
-    current: list[str] = []
-    current_len = 0
-    for line in top_lines:
-        line_len = len(line) + 1
-        # Reservamos margen para header + título de sección.
-        if current_len + line_len > 2800:
-            chunks.append(current)
-            current = []
-            current_len = 0
-        current.append(line)
-        current_len += line_len
-    if current:
-        chunks.append(current)
+    if top_lines:
+        first_chunk_size = TOP_PER_PAGE_FIRST * LINES_PER_PLAYER
+        first = top_lines[:first_chunk_size]
+        chunks.append(first)
+
+        remaining = top_lines[first_chunk_size:]
+        rest_chunk_size = TOP_PER_PAGE_REST * LINES_PER_PLAYER
+        while remaining:
+            chunks.append(remaining[:rest_chunk_size])
+            remaining = remaining[rest_chunk_size:]
 
     pages: list[discord.Embed] = []
 

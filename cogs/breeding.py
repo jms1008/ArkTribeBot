@@ -420,19 +420,22 @@ class BreedingDashboardView(discord.ui.View):
         await interaction.response.edit_message(embed=embed, view=new_view)
 
 
-# Orden canónico de stats principales (las 4 más usadas siempre visibles).
-# Las secundarias (oxy/food/speed) se omiten en el listado y aparecen en
-# el detalle individual via el selector inferior.
+# Orden canónico de las 7 stats de crianza, siempre visibles en el listado
+# (con `—` cuando faltan) para que la tabla sea visualmente consistente entre
+# especies. ``mutaciones`` no se incluye aquí: es un contador, no un Top Stat.
 _PRIMARY_STATS = [
     ("hp", "❤️"),
     ("melee", "⚔️"),
     ("stam", "⚡"),
     ("weight", "⚖️"),
+    ("oxy", "🫧"),
+    ("food", "🍖"),
+    ("speed", "💨"),
 ]
 
 
 def _format_stat(value) -> str:
-    """Devuelve `` `123` `` o `` `—` `` para stats no registradas (consistencia visual)."""
+    """Devuelve `` `123` `` con padding fijo a 3 chars, o `` ` — ` `` si falta."""
     return f"`{value:>3}`" if value else "` — `"
 
 
@@ -440,14 +443,12 @@ def build_breeding_embed(rows, page=0):
     """Construye el embed del dashboard de breeding con el patrón visual unificado.
 
     Diseño (consistente con Blacklist/Scouting):
-    - Header: emoji + título mayúscula
-    - Badges de contador (📊 N · 🧬 page X/Y)
-    - Cada especie en una línea con las 4 stats principales SIEMPRE visibles
-      (con — cuando faltan) para que la tabla sea visualmente consistente.
-    - Las stats secundarias (oxy/food/speed) viven en el detalle individual.
-    - Leyenda de iconos al inicio.
+    - Header con badges (📊 N · 📄 X/Y)
+    - Tabla con las 7 stats principales SIEMPRE visibles (— cuando faltan)
+    - 15 dinos por página para aprovechar mejor el espacio
+    - Leyenda compacta en el footer
     """
-    items_per_page = 10
+    items_per_page = 15
     total_rows = len(rows)
     import math
 
@@ -471,17 +472,17 @@ def build_breeding_embed(rows, page=0):
         embed.set_footer(text="Página 1/1 • 0 especies")
         return embed, [], 0, 1
 
-    # Cabecera con badges + leyenda.
+    # Cabecera con badges.
     lines = [
         f"📊 `{total_rows:02d}` especies registradas  ·  📄 Página `{page + 1}/{total_pages}`",
         "",
         "## 🦖 ESPECIES",
     ]
 
-    # Listado en formato "fila tabular": nombre + 4 stats fijas con — cuando faltan.
+    # Listado tabular: nombre con padding fijo + 7 stats compactas.
     for row in display_rows:
-        stats_line = "  ".join(
-            f"{icon} {_format_stat(row[col])}" for col, icon in _PRIMARY_STATS
+        stats_line = " ".join(
+            f"{icon}{_format_stat(row[col])}" for col, icon in _PRIMARY_STATS
         )
         lines.append(f"`{row['especie']:<14}` {stats_line}")
 
@@ -489,7 +490,8 @@ def build_breeding_embed(rows, page=0):
     embed.set_footer(
         text=(
             f"Página {page + 1}/{total_pages}  •  {total_rows} especies totales  "
-            f"•  ❤️HP  ⚔️Melee  ⚡Stam  ⚖️Peso  •  /linea_add para añadir"
+            f"•  ❤️HP ⚔️Melee ⚡Stam ⚖️Peso 🫧Oxy 🍖Food 💨Speed  "
+            f"•  /linea_add"
         )
     )
     return embed, [r["especie"] for r in display_rows], page, total_pages
