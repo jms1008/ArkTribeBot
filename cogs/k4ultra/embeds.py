@@ -89,6 +89,13 @@ async def generate_k4ultra_embed(
     return pages, top_player_names, aliases
 
 
+def _format_playtime(total_m: int) -> str:
+    """Devuelve ``999h 59m`` o ``59m`` con padding fijo a 8 chars para alineación."""
+    h = total_m // 60
+    m = total_m % 60
+    return f"{h}h {m:>2}m" if h > 0 else f"{m:>5}m"
+
+
 async def _build_radar_pages(
     db,
     guild_id: int,
@@ -97,7 +104,13 @@ async def _build_radar_pages(
     aliases: dict[str, str],
     top_player_names: list[str],
 ) -> list[discord.Embed]:
-    """Construye las páginas del modo radar (en línea + ranking)."""
+    """Construye las páginas del modo radar (en línea + ranking).
+
+    Patrón visual unificado (Blacklist/Scouting):
+    - Header con badges (📡 online · 🏆 total · 📄 paginación)
+    - Secciones marcadas con ## EMOJI TÍTULO
+    - Items con jerarquía: ``#NN nombre  ·  horas  ·  └ mapas%``
+    """
     cursor = await db.execute(
         "SELECT player_name, map_name, start_time FROM k4ultra_sessions WHERE is_active = 1 AND guild_id = ?",
         (guild_id,),
@@ -105,95 +118,98 @@ async def _build_radar_pages(
     active_sessions = await cursor.fetchall()
     active_players = {s["player_name"] for s in active_sessions}
 
-    page1 = discord.Embed(
-        title="🌐 TRACKER K4ULTRA — Radar en Vivo",
-        color=discord.Color.from_rgb(128, 0, 255),
-    )
+    sorted_players = sorted(p_totals.items(), key=lambda x: x[1], reverse=True)[:50]
+    n_total = len(sorted_players)
+    n_online = len(active_sessions)
+
+    # Cabecera común a todas las páginas.
+    def _header(page_idx: int, total_pages: int) -> list[str]:
+        return [
+            f"📡 `{n_online:02d}` Online  ·  🏆 `{n_total:02d}` En ranking  ·  📄 Página `{page_idx + 1}/{total_pages}`",
+            "",
+        ]
+
+    # Sección "EN LÍNEA AHORA" (solo en la primera página).
+    online_block: list[str] = ["## 📡 EN LÍNEA AHORA"]
     if active_sessions:
-        online_lines = []
         for s in active_sessions:
             p_name = s["player_name"]
             alias_tag = f" [{aliases[p_name]}]" if p_name in aliases else ""
             since = s["start_time"][11:16] if s["start_time"] else "?"
-            online_lines.append(f"🟢 **{p_name}{alias_tag}** — {s['map_name']} (desde {since})")
-        online_text = "\n".join(online_lines)
-        if len(online_text) > 900:
-            online_text = online_text[:897] + "..."
-        page1.add_field(
-            name=f"📡 En Línea Ahora ({len(active_sessions)})",
-            value=online_text,
-            inline=False,
-        )
+            online_block.append(f"🟢 **{p_name}**{alias_tag}  ·  🗺️ {s['map_name']}  ·  ⏱️ desde {since}")
     else:
-        page1.add_field(
-            name="📡 En Línea Ahora",
-            value="Ningún jugador conectado.",
-            inline=False,
-        )
+        online_block.append("*Ningún jugador conectado ahora mismo.*")
+    online_block.append("")
 
-    sorted_players = sorted(p_totals.items(), key=lambda x: x[1], reverse=True)[:50]
-
-    players_text = ""
-    for p_name, total_m in sorted_players:
+    # Sección "TOP JUGADORES".
+    top_lines: list[str] = []
+    for idx, (p_name, total_m) in enumerate(sorted_players, start=1):
         top_player_names.append(p_name)
-        h = total_m // 60
-        m = total_m % 60
-        time_str = f"{h}h {m}m" if h > 0 else f"{m}m"
+        time_str = _format_playtime(total_m)
 
-        maps_for_p = p_maps[p_name]
-        maps_for_p.sort(key=lambda x: x["mins"], reverse=True)
+        maps_for_p = sorted(p_maps[p_name], key=lambda x: x["mins"], reverse=True)
         map_str_list = []
         for mm in maps_for_p:
             pct = int((mm["mins"] / total_m) * 100) if total_m > 0 else 0
             if pct > 0:
                 raw_map = mm["map"]
                 acronym = MAP_ACRONYMS.get(raw_map, raw_map.replace(" ", "")[:4].capitalize())
-                map_str_list.append(f"*{pct}% {acronym}*")
+                map_str_list.append(f"{pct}% {acronym}")
 
-        map_joined = ", ".join(map_str_list)
-        online_marker = "🟢 " if p_name in active_players else ""
+        map_joined = " · ".join(map_str_list)
+        online_marker = "🟢 " if p_name in active_players else "⚫ "
         alias_tag = f" [{aliases[p_name]}]" if p_name in aliases else ""
-        players_text += f"- **{online_marker}{p_name}{alias_tag}** ⏱️ {time_str}: {map_joined}\n"
+        top_lines.append(f"`#{idx:02d}` {online_marker}**{p_name}**{alias_tag}  ·  ⏱️ `{time_str}`")
+        top_lines.append(f"  └ 🗺️ *{map_joined}*" if map_joined else "  └ *(sin actividad reciente)*")
 
-    chunks: list[str] = []
-    if players_text:
-        while len(players_text) > 900:
-            break_point = players_text.rfind("\n", 0, 900)
-            if break_point == -1:
-                break_point = 900
-            else:
-                break_point += 1
-            chunks.append(players_text[:break_point])
-            players_text = players_text[break_point:]
-        if players_text:
-            chunks.append(players_text)
+    # Partir top en páginas para respetar el límite de 4096 chars de description.
+    chunks: list[list[str]] = []
+    current: list[str] = []
+    current_len = 0
+    for line in top_lines:
+        line_len = len(line) + 1
+        # Reservamos margen para header + título de sección.
+        if current_len + line_len > 2800:
+            chunks.append(current)
+            current = []
+            current_len = 0
+        current.append(line)
+        current_len += line_len
+    if current:
+        chunks.append(current)
 
     pages: list[discord.Embed] = []
+
     if not chunks:
-        page1.add_field(
-            name="🏆 Top Jugadores",
-            value="No hay datos suficientes.",
-            inline=False,
+        # No hay jugadores en ranking — una sola página con solo online + mensaje.
+        page = discord.Embed(
+            title="🌐 TRACKER K4ULTRA — Radar en Vivo",
+            color=discord.Color.from_rgb(128, 0, 255),
         )
-        pages.append(page1)
-    else:
-        page1.add_field(name="🏆 Top Jugadores", value=chunks[0], inline=False)
-        pages.append(page1)
+        body = _header(0, 1) + online_block + ["## 🏆 TOP JUGADORES", "*No hay datos suficientes.*"]
+        page.description = "\n".join(body).strip()
+        page.set_footer(text="Radar  •  Página 1/1  •  Usa el selector para ver detalle de un jugador")
+        pages.append(page)
+        return pages
 
-        for chunk in chunks[1:]:
-            p_next = discord.Embed(
-                title="🌐 TRACKER K4ULTRA — Radar en Vivo",
-                color=discord.Color.from_rgb(128, 0, 255),
-            )
-            p_next.add_field(
-                name="🏆 Top Jugadores (Cont.)",
-                value=chunk,
-                inline=False,
-            )
-            pages.append(p_next)
-
-    for i, p in enumerate(pages):
-        p.set_footer(text=f"Radar | Página {i + 1}/{len(pages)} — Usa ◀️ ▶️ para navegar")
+    total_pages = len(chunks)
+    for i, chunk in enumerate(chunks):
+        page = discord.Embed(
+            title="🌐 TRACKER K4ULTRA — Radar en Vivo",
+            color=discord.Color.from_rgb(128, 0, 255),
+        )
+        body = _header(i, total_pages)
+        # El bloque de "online" solo aparece en la primera página.
+        if i == 0:
+            body += online_block
+        section_title = "## 🏆 TOP JUGADORES" if i == 0 else "## 🏆 TOP JUGADORES (Cont.)"
+        body.append(section_title)
+        body.extend(chunk)
+        page.description = "\n".join(body).strip()
+        page.set_footer(
+            text=f"Radar  •  Página {i + 1}/{total_pages}  •  Usa ◀️ ▶️ para navegar o el selector para ver detalle"
+        )
+        pages.append(page)
 
     return pages
 
@@ -205,6 +221,39 @@ async def _build_tribes_page(db, guild_id: int, aliases: dict[str, str]) -> list
         color=discord.Color.from_rgb(90, 0, 180),
     )
 
+    # Carga miembros activos para mostrar quién está online de cada tribu.
+    cursor = await db.execute(
+        "SELECT player_name FROM k4ultra_sessions WHERE is_active = 1 AND guild_id = ?",
+        (guild_id,),
+    )
+    online_set = {r["player_name"] for r in await cursor.fetchall()}
+
+    def _format_member(name: str) -> str:
+        """Renderiza un miembro con icono online + alias si lo tiene."""
+        # Filtrar nombres vacíos o placeholders inconsistentes (ej. "(—)").
+        clean = name.strip().strip("()").strip("—").strip()
+        if not clean:
+            return ""
+        marker = "🟢" if name in online_set else "⚫"
+        alias_tag = f" [{aliases[name]}]" if name in aliases else ""
+        return f"{marker} {clean}{alias_tag}"
+
+    async def _top_map(members: list[str]) -> str | None:
+        """Mapa donde la tribu acumula más tiempo."""
+        if not members:
+            return None
+        placeholders = ", ".join(["?"] * len(members))
+        cursor2 = await db.execute(
+            f"""
+            SELECT map_name FROM k4ultra_playtime
+            WHERE player_name IN ({placeholders}) AND guild_id = ?
+            GROUP BY map_name ORDER BY SUM(total_minutes) DESC LIMIT 1
+            """,
+            list(members) + [guild_id],
+        )
+        row = await cursor2.fetchone()
+        return row["map_name"] if row else None
+
     cursor = await db.execute(
         "SELECT name, members_json, is_own FROM k4ultra_fixed_tribes WHERE guild_id = ?",
         (guild_id,),
@@ -212,40 +261,36 @@ async def _build_tribes_page(db, guild_id: int, aliases: dict[str, str]) -> list
     fixed_rows = await cursor.fetchall()
 
     fixed_players: set[str] = set()
-    own_tribe_text = ""
-    fixed_tribes_text = ""
+    own_blocks: list[str] = []
+    fixed_blocks: list[str] = []
 
     for fr in fixed_rows:
-        tribe_name = fr["name"]
-        is_own = fr["is_own"]
         members = json.loads(fr["members_json"])
         if not members:
             continue
         for m in members:
             fixed_players.add(m)
 
-        tribe_str = ", ".join(f"{m} [{aliases[m]}]" if m in aliases else m for m in members)
-        placeholders = ", ".join(["?"] * len(members))
-        cursor = await db.execute(
-            f"""
-            SELECT map_name, SUM(total_minutes) as tribe_mins
-            FROM k4ultra_playtime WHERE player_name IN ({placeholders})
-            GROUP BY map_name ORDER BY tribe_mins DESC LIMIT 1
-            """,
-            list(members),
+        n_online = sum(1 for m in members if m in online_set)
+        top_map = await _top_map(members)
+        map_info = f"  ·  🗺️ {top_map}" if top_map else ""
+
+        members_lines = [line for line in (_format_member(m) for m in members) if line]
+        members_text = "  ".join(members_lines)
+        header = (
+            f"**{fr['name']}**  ·  👥 `{len(members):02d}`  ·  🟢 `{n_online:02d}` online"
+            f"{map_info}"
         )
-        map_row = await cursor.fetchone()
-        map_info = f" | 🗺️ {map_row['map_name']}" if map_row else ""
+        block = f"{header}\n  └ {members_text}"
 
-        if is_own:
-            own_tribe_text += (
-                f"**{tribe_name}** [🏰 Nuestra Tribu] ({len(members)}){map_info}\n└ {tribe_str}\n"
-            )
+        if fr["is_own"]:
+            own_blocks.append(block)
         else:
-            fixed_tribes_text += f"**{tribe_name}** [🛡️ Fijada] ({len(members)}){map_info}\n└ {tribe_str}\n"
+            fixed_blocks.append(block)
 
+    # Cálculo de tribus dinámicas vía BFS sobre relaciones.
     cursor = await db.execute(
-        "SELECT player1, player2 FROM k4ultra_relationships "
+        "SELECT player1, player2, probability_score FROM k4ultra_relationships "
         "WHERE ((probability_score >= 25 AND shared_minutes >= 60) OR is_manual = 1) "
         "AND guild_id = ?",
         (guild_id,),
@@ -253,14 +298,16 @@ async def _build_tribes_page(db, guild_id: int, aliases: dict[str, str]) -> list
     rels = await cursor.fetchall()
 
     adjacency: dict[str, set[str]] = {}
+    score_by_pair: dict[tuple[str, str], int] = {}
     for r in rels:
         p1, p2 = r["player1"], r["player2"]
         if p1 in fixed_players or p2 in fixed_players:
             continue
         adjacency.setdefault(p1, set()).add(p2)
         adjacency.setdefault(p2, set()).add(p1)
+        score_by_pair[(p1, p2)] = r["probability_score"]
+        score_by_pair[(p2, p1)] = r["probability_score"]
 
-    # BFS para clusters conectados
     visited: set[str] = set()
     dynamic_tribes: list[list[str]] = []
     for node in adjacency:
@@ -280,49 +327,74 @@ async def _build_tribes_page(db, guild_id: int, aliases: dict[str, str]) -> list
             dynamic_tribes.append(list(cluster))
     dynamic_tribes.sort(key=len, reverse=True)
 
-    dyn_text = ""
-    for i, tribe in enumerate(dynamic_tribes[:8]):
-        tribe_label = f"Grupo {i + 1}"
-        tribe_str = ", ".join(f"{m} [{aliases[m]}]" if m in aliases else m for m in tribe)
-        if len(tribe_str) > 150:
-            tribe_str = tribe_str[:147] + "..."
-        placeholders = ", ".join(["?"] * len(tribe))
-        cursor = await db.execute(
-            f"""
-            SELECT map_name, SUM(total_minutes) as tribe_mins
-            FROM k4ultra_playtime WHERE player_name IN ({placeholders}) AND guild_id = ?
-            GROUP BY map_name ORDER BY tribe_mins DESC LIMIT 1
-            """,
-            list(tribe) + [guild_id],
-        )
-        map_row = await cursor.fetchone()
-        map_info = f" | 🗺️ {map_row['map_name']}" if map_row else ""
-        dyn_text += f"**{tribe_label}** ({len(tribe)}){map_info}\n└ {tribe_str}\n"
+    dyn_blocks: list[str] = []
+    for i, tribe in enumerate(dynamic_tribes[:8], start=1):
+        n_online = sum(1 for m in tribe if m in online_set)
+        top_map = await _top_map(tribe)
+        map_info = f"  ·  🗺️ {top_map}" if top_map else ""
 
-    if len(dynamic_tribes) > 8:
-        dyn_text += f"*... y {len(dynamic_tribes) - 8} grupos más*\n"
+        # Confianza media del cluster.
+        scores = [
+            score_by_pair[(a, b)]
+            for a in tribe
+            for b in tribe
+            if a != b and (a, b) in score_by_pair
+        ]
+        avg_score = sum(scores) // len(scores) if scores else 0
+        bars = min(10, max(0, avg_score // 10))
+        confidence_bar = "█" * bars + "░" * (10 - bars)
 
-    if own_tribe_text:
-        page_t.add_field(name="🏰 Nuestra Tribu", value=own_tribe_text, inline=False)
-    if fixed_tribes_text:
-        page_t.add_field(
-            name="🛡️ Otras Tribus Fijadas",
-            value=fixed_tribes_text,
-            inline=False,
-        )
-    if dyn_text:
-        page_t.add_field(
-            name="🔗 Grupos / Predicciones",
-            value=dyn_text,
-            inline=False,
-        )
+        members_lines = [line for line in (_format_member(m) for m in tribe) if line]
+        if len(", ".join(members_lines)) > 200:
+            shown = members_lines[:5]
+            members_text = "  ".join(shown) + f"  …(+{len(members_lines) - 5})"
+        else:
+            members_text = "  ".join(members_lines)
 
-    if not own_tribe_text and not fixed_tribes_text and not dyn_text:
-        page_t.add_field(
-            name="Tribus",
-            value="No hay tribus registradas ni grupos predecidos aún.",
-            inline=False,
+        header = (
+            f"**Grupo {i}**  ·  👥 `{len(tribe):02d}`  ·  🟢 `{n_online:02d}` online"
+            f"{map_info}  ·  📊 `{confidence_bar}` {avg_score}%"
         )
+        dyn_blocks.append(f"{header}\n  └ {members_text}")
 
-    page_t.set_footer(text="Explorador de Tribus — Página Única")
+    # Construcción del embed final con secciones tipo Blacklist/Scouting.
+    n_total_known = sum(len(json.loads(fr["members_json"])) for fr in fixed_rows)
+    n_total_dyn = sum(len(t) for t in dynamic_tribes)
+    n_online_known = sum(1 for fr in fixed_rows for m in json.loads(fr["members_json"]) if m in online_set)
+
+    lines: list[str] = [
+        f"🏰 `{len(own_blocks):02d}` Nuestras  ·  🛡️ `{len(fixed_blocks):02d}` Fijadas  ·  "
+        f"🔗 `{len(dynamic_tribes):02d}` Predichas  ·  🟢 `{n_online_known:02d}` online",
+        "",
+    ]
+
+    if own_blocks:
+        lines.append("## 🏰 NUESTRA TRIBU")
+        lines.extend(own_blocks)
+        lines.append("")
+
+    if fixed_blocks:
+        lines.append("## 🛡️ TRIBUS FIJADAS")
+        lines.extend(fixed_blocks)
+        lines.append("")
+
+    if dyn_blocks:
+        lines.append("## 🔗 GRUPOS PREDICHOS")
+        lines.extend(dyn_blocks)
+        if len(dynamic_tribes) > 8:
+            lines.append(f"*… y {len(dynamic_tribes) - 8} grupos más con menor confianza.*")
+
+    if not (own_blocks or fixed_blocks or dyn_blocks):
+        lines.append("📭 No hay tribus registradas ni grupos predecidos aún.")
+        lines.append("")
+        lines.append("💡 Usa `/tribu_propia crear` para marcar tu base, o `/fijar_tribu` para conocidas.")
+
+    page_t.description = "\n".join(lines).strip()
+    page_t.set_footer(
+        text=(
+            f"Total jugadores conocidos: {n_total_known + n_total_dyn}  "
+            f"•  ⚫ Offline · 🟢 Online  "
+            f"•  /tribu_propia · /fijar_tribu"
+        )
+    )
     return [page_t]

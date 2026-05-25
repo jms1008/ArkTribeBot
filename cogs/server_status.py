@@ -373,34 +373,51 @@ class ServerStatus(commands.Cog):
         # Clasificación de servidores activos por afluencia de jugadores (Descendente)
         populated_servers.sort(key=lambda x: x["players"], reverse=True)
 
-        # Construcción visual por líneas sin add_fields
-        lines = []
-        lines.append(f"👥 **Total de jugadores en la red:** `{total_players}/{total_max}`")
-        lines.append("")
+        # Cabecera con badges (estilo Blacklist/Scouting).
+        n_pop = len(populated_servers)
+        n_empty = len(empty_servers)
+        n_off = len(offline_servers)
+        # Barra de ocupación visual del cluster (10 segmentos).
+        if total_max > 0:
+            ratio = total_players / total_max
+            filled = min(10, max(0, int(round(ratio * 10))))
+            occupancy_bar = "█" * filled + "░" * (10 - filled)
+            occupancy_text = f"`{occupancy_bar}` `{total_players}/{total_max}` ({int(ratio * 100)}%)"
+        else:
+            occupancy_text = "*sin datos*"
 
-        # 1. Servidores Poblados
-        for s in populated_servers:
-            lines.append(
-                f"🟢 **{s['name']}** — `{s['players']}/{s['max_players']}` Jugadores | 📶 `{s['ping']}ms`"
-            )
-            lines.append(f"```{s['list']}```")
+        lines = [
+            f"👥 **Total de jugadores en la red:** {occupancy_text}",
+            f"🟢 `{n_pop:02d}` Activos  ·  🟡 `{n_empty:02d}` Vacíos  ·  🔴 `{n_off:02d}` Offline",
+            "",
+        ]
 
-        # 2. Servidores Vacíos
-        if empty_servers:
-            lines.append("## 🟡 Servidores Vacíos (Online)")
-            for s in empty_servers:
-                lines.append(f"> 🔸 **{s['name']}** — `{s['ping']}ms`")
+        # 1. Servidores Poblados.
+        if populated_servers:
+            lines.append("## 🟢 SERVIDORES ACTIVOS")
+            for s in populated_servers:
+                lines.append(
+                    f"**{s['name']}**  ·  👥 `{s['players']}/{s['max_players']}`  ·  📶 `{s['ping']}ms`"
+                )
+                lines.append(f"```{s['list']}```")
             lines.append("")
 
-        # 3. Servidores Inactivos
+        # 2. Servidores Vacíos.
+        if empty_servers:
+            lines.append("## 🟡 SERVIDORES VACÍOS")
+            for s in empty_servers:
+                lines.append(f"🔸 **{s['name']}**  ·  📶 `{s['ping']}ms`")
+            lines.append("")
+
+        # 3. Servidores Inactivos.
         if offline_servers:
-            lines.append("## 🔴 Servidores Offline / Timeout")
+            lines.append("## 🔴 SERVIDORES OFFLINE / TIMEOUT")
             for s in offline_servers:
-                lines.append(f"> ❌ **{s['name']}** — *{s['error']}*")
+                lines.append(f"❌ **{s['name']}**  ·  *{s['error']}*")
             lines.append("")
 
         embed.description = "\n".join(lines).strip()
-        embed.set_footer(text="Actualizado automáticamente cada 2 minutos.")
+        embed.set_footer(text="Auto-actualizado cada 2 minutos  •  /status para ver un mapa concreto")
 
         return embed
 

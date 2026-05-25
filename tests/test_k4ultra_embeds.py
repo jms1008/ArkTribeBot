@@ -1,4 +1,8 @@
-"""Tests de cogs.k4ultra.embeds (generación de páginas para el dashboard)."""
+"""Tests de cogs.k4ultra.embeds (generación de páginas para el dashboard).
+
+El diseño actual usa ``embed.description`` con secciones `## EMOJI TÍTULO`
+(en lugar de ``add_field``), siguiendo el patrón visual unificado del bot.
+"""
 
 import json
 
@@ -20,7 +24,7 @@ class TestMapAcronyms:
 
 @pytest.mark.asyncio
 async def test_radar_empty_state(mock_bot):
-    """Sin jugadores ni sesiones → la página existe con mensaje de vacío."""
+    """Sin jugadores ni sesiones → la página existe con secciones EN LÍNEA y TOP."""
     await mock_bot.init_mock_db()
     pages, top, aliases = await generate_k4ultra_embed(mock_bot, guild_id=1, mode="radar")
 
@@ -28,14 +32,15 @@ async def test_radar_empty_state(mock_bot):
     assert "TRACKER K4ULTRA" in pages[0].title
     assert top == []
     assert aliases == {}
-    # Field "En Línea Ahora" debe estar presente.
-    field_names = [f.name for f in pages[0].fields]
-    assert any("En Línea" in n for n in field_names)
+    desc = pages[0].description
+    # Ambas secciones deben estar presentes aunque sin datos.
+    assert "EN LÍNEA AHORA" in desc
+    assert "TOP JUGADORES" in desc
 
 
 @pytest.mark.asyncio
 async def test_radar_shows_active_sessions(mock_bot):
-    """Si hay una sesión activa, aparece como '🟢' en la lista de en-línea."""
+    """Una sesión activa aparece con 🟢 en la sección EN LÍNEA del description."""
     await mock_bot.init_mock_db()
     await mock_bot.db.execute(
         "INSERT INTO k4ultra_sessions (guild_id, player_name, map_name, start_time, is_active) "
@@ -51,17 +56,18 @@ async def test_radar_shows_active_sessions(mock_bot):
     pages, top, _ = await generate_k4ultra_embed(mock_bot, guild_id=1, mode="radar")
 
     assert "Alice" in top
-    online_field = next(f for f in pages[0].fields if "En Línea" in f.name)
-    assert "Alice" in online_field.value
-    assert "🟢" in online_field.value
-    assert "Ragnarok" in online_field.value
+    desc = pages[0].description
+    assert "EN LÍNEA AHORA" in desc
+    assert "Alice" in desc
+    assert "🟢" in desc
+    assert "Ragnarok" in desc
     # Hora de la sesión: 12:30
-    assert "12:30" in online_field.value
+    assert "12:30" in desc
 
 
 @pytest.mark.asyncio
 async def test_radar_uses_alias(mock_bot):
-    """El alias se inyecta entre corchetes junto al nombre."""
+    """El alias se inyecta entre corchetes junto al nombre en el ranking."""
     await mock_bot.init_mock_db()
     await mock_bot.db.execute(
         "INSERT INTO k4ultra_playtime (guild_id, player_name, map_name, total_minutes) VALUES (?, ?, ?, ?)",
@@ -76,25 +82,25 @@ async def test_radar_uses_alias(mock_bot):
     pages, top, aliases = await generate_k4ultra_embed(mock_bot, guild_id=1, mode="radar")
 
     assert aliases == {"Steam12345": "Alice"}
-    # Buscar el campo de Top Jugadores
-    top_field = next(f for f in pages[0].fields if "Top Jugadores" in f.name)
-    assert "[Alice]" in top_field.value
+    desc = pages[0].description
+    assert "TOP JUGADORES" in desc
+    assert "[Alice]" in desc
 
 
 @pytest.mark.asyncio
 async def test_tribes_mode_empty(mock_bot):
-    """Modo tribus sin datos: una sola página con mensaje 'No hay tribus'."""
+    """Modo tribus sin datos: una sola página con mensaje de vacío."""
     await mock_bot.init_mock_db()
     pages, _, _ = await generate_k4ultra_embed(mock_bot, guild_id=1, mode="tribus")
 
     assert len(pages) == 1
-    field = pages[0].fields[0]
-    assert "No hay tribus" in field.value
+    desc = pages[0].description
+    assert "No hay tribus" in desc
 
 
 @pytest.mark.asyncio
 async def test_tribes_mode_shows_own_and_fixed(mock_bot):
-    """Distingue 'Nuestra Tribu' (is_own=1) de tribus fijadas (is_own=0)."""
+    """Distingue NUESTRA TRIBU (is_own=1) de TRIBUS FIJADAS (is_own=0)."""
     await mock_bot.init_mock_db()
     await mock_bot.db.execute(
         "INSERT INTO k4ultra_fixed_tribes (guild_id, name, members_json, is_own) VALUES (?, ?, ?, ?)",
@@ -108,17 +114,13 @@ async def test_tribes_mode_shows_own_and_fixed(mock_bot):
 
     pages, _, _ = await generate_k4ultra_embed(mock_bot, guild_id=1, mode="tribus")
 
-    field_names = [f.name for f in pages[0].fields]
-    assert any("Nuestra Tribu" in n for n in field_names)
-    assert any("Fijadas" in n for n in field_names)
-
-    own_field = next(f for f in pages[0].fields if "Nuestra Tribu" in f.name)
-    assert "MiTribu" in own_field.value
-    assert "Alice" in own_field.value
-
-    fixed_field = next(f for f in pages[0].fields if "Fijadas" in f.name)
-    assert "Enemigos" in fixed_field.value
-    assert "Carol" in fixed_field.value
+    desc = pages[0].description
+    assert "NUESTRA TRIBU" in desc
+    assert "TRIBUS FIJADAS" in desc
+    assert "MiTribu" in desc
+    assert "Alice" in desc
+    assert "Enemigos" in desc
+    assert "Carol" in desc
 
 
 @pytest.mark.asyncio
@@ -140,10 +142,8 @@ async def test_tribes_mode_clusters_relationships(mock_bot):
 
     pages, _, _ = await generate_k4ultra_embed(mock_bot, guild_id=1, mode="tribus")
 
-    field_names = [f.name for f in pages[0].fields]
-    assert any("Grupos" in n for n in field_names)
-
-    grupos_field = next(f for f in pages[0].fields if "Grupos" in f.name)
+    desc = pages[0].description
+    assert "GRUPOS PREDICHOS" in desc
     # Debe agrupar A, B y C en un solo cluster.
     for name in ("A", "B", "C"):
-        assert name in grupos_field.value
+        assert name in desc

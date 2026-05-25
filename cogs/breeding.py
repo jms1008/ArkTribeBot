@@ -420,53 +420,78 @@ class BreedingDashboardView(discord.ui.View):
         await interaction.response.edit_message(embed=embed, view=new_view)
 
 
+# Orden canónico de stats principales (las 4 más usadas siempre visibles).
+# Las secundarias (oxy/food/speed) se omiten en el listado y aparecen en
+# el detalle individual via el selector inferior.
+_PRIMARY_STATS = [
+    ("hp", "❤️"),
+    ("melee", "⚔️"),
+    ("stam", "⚡"),
+    ("weight", "⚖️"),
+]
+
+
+def _format_stat(value) -> str:
+    """Devuelve `` `123` `` o `` `—` `` para stats no registradas (consistencia visual)."""
+    return f"`{value:>3}`" if value else "` — `"
+
+
 def build_breeding_embed(rows, page=0):
-    """Construye el embed del dashboard de breeding de forma consistente."""
+    """Construye el embed del dashboard de breeding con el patrón visual unificado.
+
+    Diseño (consistente con Blacklist/Scouting):
+    - Header: emoji + título mayúscula
+    - Badges de contador (📊 N · 🧬 page X/Y)
+    - Cada especie en una línea con las 4 stats principales SIEMPRE visibles
+      (con — cuando faltan) para que la tabla sea visualmente consistente.
+    - Las stats secundarias (oxy/food/speed) viven en el detalle individual.
+    - Leyenda de iconos al inicio.
+    """
     items_per_page = 10
     total_rows = len(rows)
     import math
 
     total_pages = math.ceil(total_rows / items_per_page) if total_rows > 0 else 1
 
-    if page < 0:
-        page = 0
-    if page >= total_pages:
-        page = total_pages - 1
+    page = max(0, min(page, total_pages - 1))
 
     start_idx = page * items_per_page
-    end_idx = start_idx + items_per_page
-    display_rows = rows[start_idx:end_idx]
+    display_rows = rows[start_idx : start_idx + items_per_page]
 
-    embed = discord.Embed(title="🧬 LÍNEAS DE CRIANZA (Top Stats)", color=discord.Color.from_rgb(255, 215, 0))
+    embed = discord.Embed(
+        title="🧬 LÍNEAS DE CRIANZA (Top Stats)",
+        color=discord.Color.from_rgb(255, 215, 0),
+    )
 
     if not rows:
-        embed.description = "No hay líneas registradas aún.\n💡 Usa `/linea_add` para empezar."
-        return embed, [], page, total_pages
+        embed.description = (
+            "📭 No hay líneas registradas aún.\n\n"
+            "💡 Usa `/linea_add dino:Rex estadistica:HP puntos:50` para empezar."
+        )
+        embed.set_footer(text="Página 1/1 • 0 especies")
+        return embed, [], 0, 1
 
-    lines = [f"📊 `{total_rows}` especies registradas · Página `{page + 1}/{total_pages}`", ""]
+    # Cabecera con badges + leyenda.
+    lines = [
+        f"📊 `{total_rows:02d}` especies registradas  ·  📄 Página `{page + 1}/{total_pages}`",
+        "",
+        "## 🦖 ESPECIES",
+    ]
+
+    # Listado en formato "fila tabular": nombre + 4 stats fijas con — cuando faltan.
     for row in display_rows:
-        stats = []
-        if row["hp"]:
-            stats.append(f"❤️ `{row['hp']}`")
-        if row["stam"]:
-            stats.append(f"⚡ `{row['stam']}`")
-        if row["weight"]:
-            stats.append(f"⚖️ `{row['weight']}`")
-        if row["melee"]:
-            stats.append(f"⚔️ `{row['melee']}`")
-        if row["oxy"]:
-            stats.append(f"🫧 `{row['oxy']}`")
-        if row["food"]:
-            stats.append(f"🍖 `{row['food']}`")
-        if row["speed"]:
-            stats.append(f"💨 `{row['speed']}`")
-
-        stats_text = " ".join(stats) if stats else "*Stats base*"
-        lines.append(f"### 🦖 {row['especie']}")
-        lines.append(f"> ╰ {stats_text}")
+        stats_line = "  ".join(
+            f"{icon} {_format_stat(row[col])}" for col, icon in _PRIMARY_STATS
+        )
+        lines.append(f"`{row['especie']:<14}` {stats_line}")
 
     embed.description = "\n".join(lines).strip()
-    embed.set_footer(text=f"Página {page + 1}/{total_pages} • {total_rows} total | 💡 /linea_add")
+    embed.set_footer(
+        text=(
+            f"Página {page + 1}/{total_pages}  •  {total_rows} especies totales  "
+            f"•  ❤️HP  ⚔️Melee  ⚡Stam  ⚖️Peso  •  /linea_add para añadir"
+        )
+    )
     return embed, [r["especie"] for r in display_rows], page, total_pages
 
 

@@ -76,10 +76,11 @@ async def _fetch_guild_alarms(bot, guild_id: int) -> list[dict]:
 async def build_alarmas_embed(bot, guild_id: int) -> discord.Embed:
     """Construye el embed compartido del panel de alarmas del servidor.
 
-    El panel es PÚBLICO (todos los miembros de la tribu lo ven) y muestra el
-    estado global agrupado por mapa: qué mapas están vigilados y por quién.
-    Cada miembro puede usar el selector inferior para gestionar SUS propias
-    alarmas (las acciones individuales son efímeras).
+    Patrón visual unificado (Blacklist/Scouting/Ranking):
+    - Header en mayúscula
+    - Badges de contador (🗺️ N · 👥 M)
+    - Sección con items en formato ``#NN 🟢 **mapa** + watchers``
+    - Footer con hint del comando
     """
     embed = discord.Embed(
         title="🔔 PANEL DE ALARMAS DE LA TRIBU",
@@ -91,29 +92,44 @@ async def build_alarmas_embed(bot, guild_id: int) -> discord.Embed:
         f"[Alarma] build_alarmas_embed guild={guild_id} → {len(alarms)} alarmas activas"
     )
 
-    lines = ["Selecciona un mapa en el menú inferior para activar/desactivar **tu** alarma personal.", ""]
-
     if not alarms:
-        lines.append("## 💤 Estado Actual")
-        lines.append("> Nadie en la tribu tiene alarmas activas ahora mismo.")
-    else:
-        # Agrupar por mapa para mostrar quién vigila cada uno.
-        by_map: dict[str, list[int]] = {}
-        for a in alarms:
-            by_map.setdefault(a["map_name"], []).append(a["user_id"])
+        embed.description = (
+            "💤 Nadie en la tribu tiene alarmas activas ahora mismo.\n\n"
+            "💡 Selecciona un mapa en el menú inferior o usa `/alarma mapa:X estado:on` para activar la tuya."
+        )
+        embed.set_footer(
+            text="El bot avisa cuando entra un jugador desconocido al mapa vigilado."
+        )
+        return embed
 
-        lines.append(f"## 👀 Mapas Vigilados ({len(by_map)})")
-        for map_name in sorted(by_map.keys()):
-            watchers = by_map[map_name]
-            mentions = ", ".join(f"<@{uid}>" for uid in watchers)
-            lines.append(f"> 🟢 **{map_name}**  ·  {mentions}")
+    # Agrupar por mapa.
+    by_map: dict[str, list[int]] = {}
+    for a in alarms:
+        by_map.setdefault(a["map_name"], []).append(a["user_id"])
 
-    lines.append("")
-    lines.append(
-        "*El bot avisa cuando entra un jugador que NO sea de la tribu propia ni un personaje registrado.*"
-    )
+    total_watchers = sum(len(v) for v in by_map.values())
+    unique_watchers = len({uid for uids in by_map.values() for uid in uids})
+
+    lines: list[str] = [
+        f"🗺️ `{len(by_map):02d}` Mapas vigilados  ·  👥 `{unique_watchers:02d}` Vigilantes únicos  ·  📊 `{total_watchers:02d}` Suscripciones",
+        "",
+        "## 🟢 MAPAS BAJO VIGILANCIA",
+    ]
+
+    for idx, map_name in enumerate(sorted(by_map.keys()), start=1):
+        watchers = by_map[map_name]
+        mentions = " · ".join(f"<@{uid}>" for uid in watchers)
+        count = len(watchers)
+        lines.append(f"`#{idx:02d}` 🟢 **{map_name}**  ·  👥 `{count}` vigilante{'s' if count != 1 else ''}")
+        lines.append(f"  └ {mentions}")
 
     embed.description = "\n".join(lines).strip()
+    embed.set_footer(
+        text=(
+            "Selecciona un mapa en el menú inferior para activar/desactivar tu alarma  "
+            "•  /alarma para comando directo"
+        )
+    )
     return embed
 
 
