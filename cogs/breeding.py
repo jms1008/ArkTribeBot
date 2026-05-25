@@ -420,23 +420,23 @@ class BreedingDashboardView(discord.ui.View):
         await interaction.response.edit_message(embed=embed, view=new_view)
 
 
-# Orden canónico de las 7 stats de crianza, siempre visibles en el listado
-# (con `—` cuando faltan) para que la tabla sea visualmente consistente entre
-# especies. ``mutaciones`` no se incluye aquí: es un contador, no un Top Stat.
-_PRIMARY_STATS = [
-    ("hp", "❤️"),
-    ("melee", "⚔️"),
-    ("stam", "⚡"),
-    ("weight", "⚖️"),
-    ("oxy", "🫧"),
-    ("food", "🍖"),
-    ("speed", "💨"),
+# Las 7 stats de crianza con su columna abreviada (3 chars) + emoji para la
+# leyenda del footer. ``mutaciones`` no se incluye: es un contador, no un Top.
+_STAT_COLUMNS: list[tuple[str, str, str]] = [
+    # (sql_column, header_abbrev, emoji_leyenda)
+    ("hp",     "HP ", "❤️"),
+    ("melee",  "ATK", "⚔️"),
+    ("stam",   "STA", "⚡"),
+    ("weight", "PES", "⚖️"),
+    ("oxy",    "OXI", "🫧"),
+    ("food",   "COM", "🍖"),
+    ("speed",  "VEL", "💨"),
 ]
 
 
 def _format_stat(value) -> str:
-    """Devuelve `` `123` `` con padding fijo a 3 chars, o `` ` — ` `` si falta."""
-    return f"`{value:>3}`" if value else "` — `"
+    """Valor padded a 3 chars (sin backticks; los pone la línea entera)."""
+    return f"{value:>3}" if value else "  —"
 
 
 def build_breeding_embed(rows, page=0):
@@ -479,23 +479,26 @@ def build_breeding_embed(rows, page=0):
         "## 🦖 ESPECIES",
     ]
 
-    # Formato de 2 líneas por dino: encabezado + stats. Resuelve definitivamente
-    # el wrap visual de Discord en clientes con ancho reducido (el single-line
-    # con 7 stats + emojis VS-16 superaba el ancho disponible y truncaba la
-    # última stat de la última fila).
+    # Tabla en monospace: cada fila completa entre backticks asegura
+    # alineación perfecta y elimina el problema de wrap por emojis VS-16.
+    # Padding del nombre = al máximo de la página (ancho mínimo necesario).
+    name_pad = max((len(r["especie"]) for r in display_rows), default=10)
+    name_pad = max(name_pad, len("Especie"))  # nunca menor que el header
+
+    header_row = f"{'Especie':<{name_pad}}  " + "  ".join(h for _, h, _ in _STAT_COLUMNS)
+    lines.append(f"`{header_row}`")
+
     for row in display_rows:
-        stats_line = "  ".join(
-            f"{icon}{_format_stat(row[col])}" for col, icon in _PRIMARY_STATS
-        )
-        lines.append(f"🦖 **{row['especie']}**")
-        lines.append(f"  ╰ {stats_line}")
+        stat_cells = "  ".join(_format_stat(row[col]) for col, _, _ in _STAT_COLUMNS)
+        body_row = f"{row['especie']:<{name_pad}}  {stat_cells}"
+        lines.append(f"`{body_row}`")
 
     embed.description = "\n".join(lines).strip()
+    legend = "  ".join(f"{e}{h.strip()}" for _, h, e in _STAT_COLUMNS)
     embed.set_footer(
         text=(
-            f"Página {page + 1}/{total_pages}  •  {total_rows} especies totales  "
-            f"•  ❤️HP ⚔️Melee ⚡Stam ⚖️Peso 🫧Oxy 🍖Food 💨Speed  "
-            f"•  /linea_add"
+            f"Página {page + 1}/{total_pages}  •  {total_rows} especies  "
+            f"•  {legend}  •  /linea_add"
         )
     )
     return embed, [r["especie"] for r in display_rows], page, total_pages
