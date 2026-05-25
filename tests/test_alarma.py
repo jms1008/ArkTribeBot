@@ -150,6 +150,54 @@ class TestIntruderDetection:
         assert intruders == []  # Alice es de la tribu propia
 
     @pytest.mark.asyncio
+    async def test_allied_tribe_members_are_excluded(self, mock_bot):
+        """Miembros de una tribu marcada como aliada (is_ally=1) NO se consideran intrusos.
+
+        Verifica el helper `_get_trusted_members` que une tribu propia + aliadas.
+        """
+        import json
+
+        await mock_bot.init_mock_db()
+        # Tribu propia + tribu aliada en el mismo guild.
+        await mock_bot.db.executemany(
+            "INSERT INTO k4ultra_fixed_tribes (guild_id, name, members_json, is_own, is_ally) "
+            "VALUES (?, ?, ?, ?, ?)",
+            [
+                (1, "MiTribu", json.dumps(["Alice", "Bob"]), 1, 0),
+                (1, "AliadosDelEste", json.dumps(["Charlie", "Dave"]), 0, 1),
+                (1, "OtraTribu", json.dumps(["Mallory"]), 0, 0),  # No propia ni aliada
+            ],
+        )
+        await mock_bot.db.commit()
+
+        trusted = await alarma_mod._get_trusted_members(mock_bot, guild_id=1)
+        # Propios + aliados, todos en lowercase.
+        assert trusted == {"alice", "bob", "charlie", "dave"}
+        # Mallory NO está → seguirá disparando alarma.
+        assert "mallory" not in trusted
+
+    @pytest.mark.asyncio
+    async def test_trusted_members_isolated_per_guild(self, mock_bot):
+        """Las tribus aliadas de un guild no afectan a las de otro guild."""
+        import json
+
+        await mock_bot.init_mock_db()
+        await mock_bot.db.executemany(
+            "INSERT INTO k4ultra_fixed_tribes (guild_id, name, members_json, is_own, is_ally) "
+            "VALUES (?, ?, ?, ?, ?)",
+            [
+                (1, "AliadosG1", json.dumps(["Alice"]), 0, 1),
+                (2, "AliadosG2", json.dumps(["Bob"]), 0, 1),
+            ],
+        )
+        await mock_bot.db.commit()
+
+        trusted_g1 = await alarma_mod._get_trusted_members(mock_bot, guild_id=1)
+        trusted_g2 = await alarma_mod._get_trusted_members(mock_bot, guild_id=2)
+        assert trusted_g1 == {"alice"}
+        assert trusted_g2 == {"bob"}
+
+    @pytest.mark.asyncio
     async def test_registered_character_is_excluded(self, db_path):
         """Un personaje en tribe_characters no se considera intruso."""
         async with aiosqlite.connect(db_path) as db:

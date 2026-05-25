@@ -32,6 +32,41 @@ class AlarmDismissView(discord.ui.View):
             logger.debug(f"[Alarma] Dismiss falló (mensaje ya eliminado o sin permisos): {e}")
 
 
+async def _get_trusted_members(bot, guild_id: int) -> set[str]:
+    """Devuelve el set de jugadores (en lowercase) que NO deben disparar alarma:
+    miembros de la tribu propia + miembros de tribus marcadas como aliadas.
+
+    Se lee de `k4ultra_fixed_tribes` filtrando por `is_own = 1 OR is_ally = 1`.
+    """
+    trusted: set[str] = set()
+    rows = await bot.db.fetchall(
+        "SELECT members_json FROM k4ultra_fixed_tribes "
+        "WHERE guild_id = ? AND (is_own = 1 OR is_ally = 1)",
+        (guild_id,),
+    )
+    for row in rows:
+        try:
+            members = json.loads(row["members_json"])
+            for m in members:
+                trusted.add(m.lower())
+        except (json.JSONDecodeError, TypeError) as e:
+            logger.warning(f"[Alarma] members_json inválido en tribu fijada: {e}")
+    return trusted
+
+
+async def _fetch_allied_tribes(bot, guild_id: int) -> list[dict]:
+    """Lista de tribus aliadas registradas en el guild."""
+    rows = await bot.db.fetchall(
+        "SELECT id, name, members_json FROM k4ultra_fixed_tribes "
+        "WHERE guild_id = ? AND is_ally = 1 ORDER BY name",
+        (guild_id,),
+    )
+    return [
+        {"id": r["id"], "name": r["name"], "members_json": r["members_json"]}
+        for r in rows
+    ]
+
+
 async def _fetch_user_alarms(bot, guild_id: int, user_id: int) -> list[dict]:
     """Alarmas de un usuario concreto en un guild. Usado por el Select para
     saber qué mapas ya tiene activos el usuario que interactúa."""
@@ -412,24 +447,13 @@ class Alarma(commands.Cog):
                     new_entries = current_names - prev_names
 
                     if new_entries:
-                        # Cargar miembros de la tribu propia
-                        own_rows = await db.fetchall(
-                            "SELECT members_json FROM k4ultra_fixed_tribes WHERE guild_id = ? AND is_own = 1",
-                            (guild_id,),
-                        )
-                        own_members: set[str] = set()
-                        for row_own in own_rows:
-                            try:
-                                m_list = json.loads(row_own["members_json"])
-                                for m in m_list:
-                                    own_members.add(m.lower())
-                            except (json.JSONDecodeError, TypeError) as e:
-                                logger.warning(f"[Alarma] members_json inválido en tribu propia: {e}")
+                        # Set de "confiables": tribu propia + tribus aliadas.
+                        trusted_members = await _get_trusted_members(self.bot, guild_id)
 
                         intruders: list[str] = []
                         for name in new_entries:
-                            # Ignorar miembros de la tribu propia
-                            if name.lower() in own_members:
+                            # Ignorar miembros de la tribu propia o tribus aliadas
+                            if name.lower() in trusted_members:
                                 continue
 
                             # Comprobar si es un personaje registrado de la tribu
@@ -447,22 +471,29 @@ class Alarma(commands.Cog):
                                 (guild_id, map_name),
                             )
 
+                            intruders_fmt = ", ".join([f"**{i}**" for i in intruders])
                             for target in alert_targets:
+                                u_id = target["user_id"]
+                                # Mensaje privado vía DM: solo lo ve el destinatario.
                                 try:
-                                    u_id = target["user_id"]
-                                    ch_id = target["channel_id"]
-                                    channel = self.bot.get_channel(ch_id) or await self.bot.fetch_channel(
-                                        ch_id
-                                    )
-                                    if channel:
-                                        intruders_fmt = ", ".join([f"**{i}**" for i in intruders])
-                                        view = AlarmDismissView()
-                                        await channel.send(
-                                            f"⚠️ <@{u_id}>! **Intruso detectado** en `{map_name}`: {intruders_fmt}",
-                                            view=view,
+                                    user = self.bot.get_user(u_id) or await self.bot.fetch_user(u_id)
+                                    if user is None:
+                                        logger.warning(
+                                            f"[Alarma] Usuario {u_id} no encontrado, no se envía DM."
                                         )
+                                        continue
+                                    view = AlarmDismissView()
+                                    await user.send(
+                                        f"⚠️ **Intruso detectado** en `{map_name}`: {intruders_fmt}",
+                                        view=view,
+                                    )
+                                except discord.Forbidden:
+                                    logger.warning(
+                                        f"[Alarma] No se puede enviar DM a {u_id} "
+                                        f"(DMs cerrados). Mapa={map_name}."
+                                    )
                                 except Exception as e:
-                                    logger.error(f"[Alarma] Error enviando alerta a {target['user_id']}: {e}")
+                                    logger.error(f"[Alarma] Error enviando DM a {u_id}: {e}")
 
                     # Actualizar el estado anterior
                     await db.execute(
@@ -480,6 +511,216 @@ class Alarma(commands.Cog):
 
         except Exception as e:
             logger.error(f"[Alarma] Error general en check_alarms_loop: {e}")
+
+    # ------------------------------------------------------------------
+    # /aliados — gestión de tribus aliadas (solo admin)
+    # ------------------------------------------------------------------
+    aliados_group = app_commands.Group(
+        name="aliados",
+        description="Gestión de tribus aliadas (no disparan alarmas de intrusos).",
+    )
+
+    @aliados_group.command(
+        name="crear",
+        description="[Admin] Registra una tribu aliada (no dispara alarmas).",
+    )
+    @app_commands.describe(
+        nombre="Nombre de la tribu aliada",
+        jugadores="Jugadores aliados (separados por comas)",
+    )
+    async def aliados_crear(
+        self, interaction: discord.Interaction, nombre: str, jugadores: str
+    ):
+        if not await interaction.client.is_authorized_admin(interaction):
+            await interaction.response.send_message("❌ Acceso denegado.", ephemeral=True)
+            return
+
+        miembros = [j.strip() for j in jugadores.split(",") if j.strip()]
+        if not miembros:
+            await interaction.response.send_message(
+                "❌ Debes indicar al menos un jugador.", ephemeral=True
+            )
+            return
+
+        db = self.bot.db
+        # Si existe una tribu con el mismo nombre (sea propia/aliada/otra),
+        # la sobrescribimos como aliada manteniendo el id no es trivial — la borramos y reinsertamos.
+        await db.execute(
+            "DELETE FROM k4ultra_fixed_tribes WHERE guild_id = ? AND name = ?",
+            (interaction.guild_id, nombre),
+        )
+        await db.execute(
+            "INSERT INTO k4ultra_fixed_tribes (guild_id, name, members_json, is_own, is_ally) "
+            "VALUES (?, ?, ?, 0, 1)",
+            (interaction.guild_id, nombre, json.dumps(miembros)),
+        )
+        await db.commit()
+
+        await interaction.response.send_message(
+            f"🤝 Tribu aliada **{nombre}** registrada con {len(miembros)} jugador"
+            f"{'es' if len(miembros) != 1 else ''}: {', '.join(miembros)}.\n"
+            f"Estos jugadores ya no dispararán alarmas de intrusos.",
+            ephemeral=True,
+        )
+
+    @aliados_group.command(
+        name="modificar",
+        description="[Admin] Modifica una tribu aliada existente.",
+    )
+    @app_commands.describe(
+        nombre="Nombre exacto de la tribu aliada a modificar",
+        opcion="Tipo de modificación",
+        valor="Nuevo nombre o jugador a añadir/quitar",
+    )
+    @app_commands.choices(
+        opcion=[
+            app_commands.Choice(name="Cambiar Nombre", value="nombre"),
+            app_commands.Choice(name="Añadir Jugador", value="add"),
+            app_commands.Choice(name="Quitar Jugador", value="remove"),
+        ]
+    )
+    async def aliados_modificar(
+        self,
+        interaction: discord.Interaction,
+        nombre: str,
+        opcion: app_commands.Choice[str],
+        valor: str,
+    ):
+        if not await interaction.client.is_authorized_admin(interaction):
+            await interaction.response.send_message("❌ Acceso denegado.", ephemeral=True)
+            return
+
+        valor = valor.strip().strip("'\"")
+
+        db = self.bot.db
+        row = await db.fetchone(
+            "SELECT id, name, members_json FROM k4ultra_fixed_tribes "
+            "WHERE guild_id = ? AND name = ? AND is_ally = 1",
+            (interaction.guild_id, nombre),
+        )
+        if not row:
+            await interaction.response.send_message(
+                f"❌ No existe la tribu aliada **{nombre}**. Usa `/aliados lista` para ver las registradas.",
+                ephemeral=True,
+            )
+            return
+
+        if opcion.value == "nombre":
+            await db.execute(
+                "UPDATE k4ultra_fixed_tribes SET name = ? WHERE id = ?", (valor, row["id"])
+            )
+            await db.commit()
+            await interaction.response.send_message(
+                f"✅ Tribu aliada renombrada de **{nombre}** a **{valor}**.", ephemeral=True
+            )
+            return
+
+        miembros = json.loads(row["members_json"])
+
+        if opcion.value == "add":
+            if any(m.lower() == valor.lower() for m in miembros):
+                await interaction.response.send_message(
+                    f"⚠️ **{valor}** ya está en la tribu aliada **{row['name']}**.", ephemeral=True
+                )
+                return
+            miembros.append(valor)
+            await db.execute(
+                "UPDATE k4ultra_fixed_tribes SET members_json = ? WHERE id = ?",
+                (json.dumps(miembros), row["id"]),
+            )
+            await db.commit()
+            await interaction.response.send_message(
+                f"✅ Se añadió a **{valor}** a la tribu aliada **{row['name']}**.", ephemeral=True
+            )
+            return
+
+        # opcion.value == "remove"
+        original = len(miembros)
+        miembros = [m for m in miembros if m.lower() != valor.lower()]
+        if len(miembros) == original:
+            await interaction.response.send_message(
+                f"❌ **{valor}** no está en la tribu aliada **{row['name']}**.", ephemeral=True
+            )
+            return
+        await db.execute(
+            "UPDATE k4ultra_fixed_tribes SET members_json = ? WHERE id = ?",
+            (json.dumps(miembros), row["id"]),
+        )
+        await db.commit()
+        await interaction.response.send_message(
+            f"✅ Se eliminó a **{valor}** de la tribu aliada **{row['name']}**.", ephemeral=True
+        )
+
+    @aliados_group.command(
+        name="borrar",
+        description="[Admin] Elimina una tribu aliada (volverán a disparar alarmas).",
+    )
+    @app_commands.describe(nombre="Nombre exacto de la tribu aliada a borrar")
+    async def aliados_borrar(self, interaction: discord.Interaction, nombre: str):
+        if not await interaction.client.is_authorized_admin(interaction):
+            await interaction.response.send_message("❌ Acceso denegado.", ephemeral=True)
+            return
+
+        db = self.bot.db
+        cursor = await db.execute(
+            "DELETE FROM k4ultra_fixed_tribes WHERE guild_id = ? AND name = ? AND is_ally = 1",
+            (interaction.guild_id, nombre),
+        )
+        await db.commit()
+        if cursor.rowcount == 0:
+            await interaction.response.send_message(
+                f"❌ No existe la tribu aliada **{nombre}**.", ephemeral=True
+            )
+            return
+        await interaction.response.send_message(
+            f"🗑️ Tribu aliada **{nombre}** eliminada. Sus jugadores volverán a disparar alarmas.",
+            ephemeral=True,
+        )
+
+    @aliados_group.command(
+        name="lista",
+        description="Muestra las tribus aliadas registradas en el servidor.",
+    )
+    async def aliados_lista(self, interaction: discord.Interaction):
+        allied = await _fetch_allied_tribes(self.bot, interaction.guild_id)
+
+        embed = discord.Embed(
+            title="🤝 TRIBUS ALIADAS",
+            color=discord.Color.from_rgb(80, 200, 120),
+        )
+
+        if not allied:
+            embed.description = (
+                "💤 No hay tribus aliadas registradas.\n\n"
+                "💡 Un admin puede añadir una con `/aliados crear nombre:X jugadores:a,b,c`."
+            )
+            embed.set_footer(text="Los jugadores de tribus aliadas no disparan alarmas de intrusos.")
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+
+        total_players = 0
+        lines: list[str] = []
+        for idx, tribe in enumerate(allied, start=1):
+            try:
+                members = json.loads(tribe["members_json"])
+            except (json.JSONDecodeError, TypeError):
+                members = []
+            total_players += len(members)
+            members_fmt = ", ".join(f"`{m}`" for m in members) if members else "*(vacía)*"
+            lines.append(
+                f"`#{idx:02d}` 🤝 **{tribe['name']}**  ·  👥 `{len(members)}` jugador"
+                f"{'es' if len(members) != 1 else ''}"
+            )
+            lines.append(f"  └ {members_fmt}")
+
+        header = (
+            f"🤝 `{len(allied):02d}` Tribus aliadas  ·  👥 `{total_players:02d}` Jugadores cubiertos"
+        )
+        embed.description = header + "\n\n## 🤝 ALIADOS REGISTRADOS\n" + "\n".join(lines)
+        embed.set_footer(
+            text="Los jugadores aquí listados NO dispararán alarmas al entrar en mapas vigilados."
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 async def setup(bot):

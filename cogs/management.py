@@ -542,23 +542,26 @@ Para que el sistema pueda atribuir muertes:
 El módulo de **Puntos Diarios** (`/info modulo:🌅 Puntos Diarios`) es opcional y complementario — te avisa por DM cada día para que canjees los votos del cluster.""",
     "alarmas": """# :bell: Alarmas de Intrusos por Mapa
 
-Sistema de defensa pasiva: el bot vigila los mapas que elijas y te **menciona** cuando entra un jugador que NO esté en tu tribu propia ni registrado como personaje conocido.
+Sistema de defensa pasiva: el bot vigila los mapas que elijas y te avisa por **DM privado** cuando entra un jugador que NO esté en tu tribu propia, en una tribu aliada, ni registrado como personaje conocido.
 
 ### :gear: Comandos
 - **/alarma mapa:Fjordur estado:on** — Activa la vigilancia de un mapa.
 - **/alarma mapa:Fjordur estado:off** — La desactiva.
 - **/alarmas** — Abre el **panel interactivo** con todas las alarmas configurables del cluster (más cómodo que el comando suelto).
+- **/aliados crear / modificar / borrar / lista** *(admin)* — Registra tribus aliadas para que sus jugadores no disparen alarmas.
 
 ### :brain: Cómo decide si alguien es intruso
 Cada minuto el bot lee el caché de Status (no genera tráfico extra) y compara contra el último snapshot del mapa. Para cada jugador NUEVO:
 1. Si está en tu tribu propia (`/tribu_propia`) → ignora.
-2. Si está registrado como personaje conocido (`/perfil_tribu`) → ignora.
-3. Si no → :rotating_light: **alarma**: te menciona en el canal donde activaste la alarma con la lista de intrusos.
+2. Si está en una tribu aliada (`/aliados`) → ignora.
+3. Si está registrado como personaje conocido (`/perfil_tribu`) → ignora.
+4. Si no → :rotating_light: **alarma**: el bot te envía un **DM privado** con la lista de intrusos. Solo lo ves tú.
 
 ### :pushpin: Detalle
 - Las alarmas son **por usuario** y por mapa: cada miembro puede tener su propia lista.
 - Multi-mapa: puedes vigilar varios mapas a la vez sin coste extra.
-- El mensaje de alarma incluye un botón **✅ Completado** para silenciarlo.""",
+- El mensaje de alarma incluye un botón **✅ Silenciar** para descartarlo.
+- Si tienes los DMs cerrados, el bot no podrá avisarte (queda anotado en el log del servidor).""",
     "puntos_diarios": """# :sunrise: Puntos Diarios de Voto
 
 Recordatorio personal por DM para que canjees los puntos diarios votando tu cluster en los rankings públicos.

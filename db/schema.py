@@ -370,6 +370,7 @@ MIGRATIONS: list[tuple[str, str]] = [
     ("k4ultra_messages", "ALTER TABLE k4ultra_messages ADD COLUMN mode TEXT DEFAULT 'radar'"),
     ("k4ultra_sessions", "ALTER TABLE k4ultra_sessions ADD COLUMN last_duration INTEGER DEFAULT 0"),
     ("k4ultra_fixed_tribes", "ALTER TABLE k4ultra_fixed_tribes ADD COLUMN is_own INTEGER DEFAULT 0"),
+    ("k4ultra_fixed_tribes", "ALTER TABLE k4ultra_fixed_tribes ADD COLUMN is_ally INTEGER DEFAULT 0"),
     (
         "k4ultra_relationships",
         "ALTER TABLE k4ultra_relationships ADD COLUMN shared_minutes INTEGER DEFAULT 0",
