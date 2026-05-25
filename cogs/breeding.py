@@ -479,12 +479,16 @@ def build_breeding_embed(rows, page=0):
         "## 🦖 ESPECIES",
     ]
 
-    # Listado tabular: nombre con padding fijo + 7 stats compactas.
+    # Listado tabular. Padding del nombre dinámico (mínimo necesario para la
+    # página actual) y stats con valor padded a 3 dentro de los backticks para
+    # mantener alineación entre stats del mismo dino. Línea mantiene <~60 chars
+    # para evitar wrap visual en clientes con ancho reducido.
+    name_pad = max((len(r["especie"]) for r in display_rows), default=10)
     for row in display_rows:
         stats_line = " ".join(
             f"{icon}{_format_stat(row[col])}" for col, icon in _PRIMARY_STATS
         )
-        lines.append(f"`{row['especie']:<14}` {stats_line}")
+        lines.append(f"`{row['especie']:<{name_pad}}` {stats_line}")
 
     embed.description = "\n".join(lines).strip()
     embed.set_footer(
