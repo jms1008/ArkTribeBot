@@ -190,46 +190,39 @@ class ArkTribeBot(commands.Bot):
             return
 
         embed = discord.Embed(
-            title="🦖 ¡ArkTribeBot ha completado su despliegue!",
-            description=(
-                "El sistema está en línea. Soy tu IA táctica para la gestión de clanes en **ARK: Survival Evolved**.\n\n"
-                "Para iniciar los subsistemas, un administrador debe ejecutar la configuración inicial obligatoria."
-            ),
+            title="🦖 ARKTRIBEBOT v3.0 — DESPLIEGUE COMPLETADO",
             color=discord.Color.from_rgb(35, 135, 80),
         )
-
-        embed.add_field(
-            name="⚙️ Arranque y Configuración",
-            value=(
-                "El comando `/inicio_ark` vinculará el bot a este servidor y preparará todos los sub-sistemas automáticamente.\n\n"
-                "💡 **RECOMENDACIÓN:** Antes de ejecutar el comando, crea en tu Discord los canales vacíos que vayas a necesitar (ej. `#todo-list`, `#scouting`, `#crianza`, `#blacklist`, `#k4ultra`, `#status`).\n\n"
-                "⚠️ *La ejecución de `/inicio_ark` es estrictamente necesaria para desbloquear el resto del bot.*"
-            ),
-            inline=False,
+        embed.description = (
+            "Sistema en línea. Soy tu **centro de mando táctico** para la gestión de "
+            "tribus en **ARK: Survival Ascended / Evolved**.\n\n"
+            "## ⚙️ ARRANQUE EN 2 PASOS\n"
+            "> **1.** Crea los canales que usará el bot (ej. `#blacklist`, `#scouting`, "
+            "`#crianza`, `#todo-list`, `#k4ultra`, `#status`, `#alarmas`).\n"
+            "> **2.** Ejecuta `/inicio_ark` — el asistente vincula los canales y "
+            "despliega todos los dashboards automáticamente.\n\n"
+            "⚠️ *`/inicio_ark` es **obligatorio** para desbloquear el resto del bot.*\n\n"
+            "## 🤖 MÓDULOS\n"
+            "> 👁️ **K4Ultra Radar** — Sesiones, alianzas predichas y aliases\n"
+            "> ☠️ **Blacklist** — Enemigos (KOS) y neutrales con enriquecimiento automático\n"
+            "> 🛰️ **Scouting** — Bases enemigas con coords, amenaza e imagen\n"
+            "> 🚨 **SOS** — Alertas estructuradas + detector silencioso `@policia`\n"
+            "> 🔔 **Alarmas de Intrusos** — Vigilancia pasiva por mapa\n"
+            "> 🧬 **Crianza** — 7 stats por dino + alarmas de impronta + log de mutas\n"
+            "> 📝 **To-Do** — Tareas con multi-asignación y refresh automático\n"
+            "> 🟢 **Status** — Monitor 24/7 con caché A2S compartido\n"
+            "> 🪦 **Ranking KDA** — Anti-fuego-amigo + sarcasmos con hitos\n"
+            "> 🌅 **Puntos Diarios** — Recordatorios por DM para voto del cluster\n"
+            "> 📆 **Eventos LFG** — Encuestas con votación y persistencia\n"
+            "> 💾 **Backups** — Diario automático + `/db_backup` manual\n\n"
+            "## 👥 PARA QUE FUNCIONE TODO\n"
+            "> **1.** `/tribu_propia crear` — Marca tu base para descartarla del radar.\n"
+            "> **2.** `/perfil_tribu usuario:@x personaje:Bob steam:... apodo:...` — "
+            "Registra cada miembro (vincula in-game + Discord).\n"
+            "> **3.** `/fijar_tribu nombre:...` — (Opcional) Tribus conocidas (aliados/enemigos).\n\n"
+            "💡 **Ayuda en cualquier momento:** `/info modulo:...` o `/guia` para el manual."
         )
-        embed.add_field(
-            name="🤖 Módulos Principales",
-            value=(
-                "👁️ **K4Ultra Intel:** Radar pasivo que monitoriza sesiones, tiempos y alianzas.\n"
-                "☠️ **Blacklist:** Panel interactivo para gestionar Enemigos (KOS) y Neutrales.\n"
-                "🛰️ **Scouting:** Inventario global de bases enemigas paginado.\n"
-                "🚨 **Alerta SOS:** Pings estructurados y detector silencioso (`@policia`).\n"
-                "🧬 **Crianza:** Dashboard de líneas estadísticas y alarmas.\n"
-                "📝 **To-Do List:** Panel interactivo de tareas tribales.\n"
-                "🟢 **Server Status:** Monitorización 24/7 de tus mapas."
-            ),
-            inline=False,
-        )
-        embed.add_field(
-            name="👨‍👩‍👧‍👦 Gestión de Miembros (VITAL)",
-            value=(
-                "Para que el sistema de K/D/A y el detector de muertes funcionen:\n"
-                "1. Usa `/fijar_tribu` para registrar los nombres de tus clanes aliados.\n"
-                "2. Usa `/ranking_char_add` para vincular los nombres de personajes de tus miembros (ARK) con sus usuarios de Discord."
-            ),
-            inline=False,
-        )
-        embed.set_footer(text="ArkTribeBot v2.0 • By: @K4NEKIs")
+        embed.set_footer(text="ArkTribeBot v3.0  •  by @K4NEKIs  •  /guia para el manual completo")
 
         try:
             await canal.send(embed=embed)
