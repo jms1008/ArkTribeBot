@@ -85,11 +85,6 @@ def build_blacklist_embed(rows: list, page: int = 0) -> discord.Embed:
         embed.set_footer(
             text=f"Página {page + 1}/{total_pages} • {total} entradas totales • /bl_editar para modificar"
         )
-
-    # Prueba experimental: ancho minimo via PNG transparente (set_image).
-    from utils.embeds import apply_uniform_width
-
-    apply_uniform_width(embed)
     return embed, page, total_pages
 
 
