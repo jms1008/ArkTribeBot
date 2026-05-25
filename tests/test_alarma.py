@@ -1,5 +1,7 @@
 """Tests del cog Alarma: panel embed y detección de intrusos."""
 
+from collections import Counter
+
 import aiosqlite
 import pytest
 
@@ -216,3 +218,85 @@ class TestIntruderDetection:
                 )
             ).fetchone()
             assert check is not None
+
+
+class TestCounterDiff:
+    """Tests de la lógica Counter-based para detectar duplicados de nombre.
+
+    Caso real: varios jugadores comparten el mismo Steam name (ej: "123", "bob")
+    y necesitamos disparar la alarma cuando entra UNO MÁS, aunque ya hubiera
+    otro online con el mismo nombre.
+    """
+
+    def test_counter_diff_detects_count_increase(self):
+        """Si el contador de un nombre aumenta entre dos ticks → alarma."""
+        prev = Counter(["alice", "bob", "123"])
+        current = Counter(["alice", "bob", "123", "123"])  # un "123" más
+
+        diff = current - prev
+        assert dict(diff) == {"123": 1}
+        assert "123" in set(diff.keys())
+
+    def test_counter_diff_ignores_known_player(self):
+        """Mismo conjunto → ningún nombre nuevo."""
+        prev = Counter(["alice", "bob"])
+        current = Counter(["alice", "bob"])
+        diff = current - prev
+        assert dict(diff) == {}
+
+    def test_counter_diff_detects_brand_new_name(self):
+        """Un nombre que no estaba antes aparece como nuevo (delta=1)."""
+        prev = Counter(["alice"])
+        current = Counter(["alice", "mallory"])
+        diff = current - prev
+        assert dict(diff) == {"mallory": 1}
+
+    def test_counter_diff_ignores_disconnects(self):
+        """Si alguien desconecta (cuenta baja), Counter - Counter no lo reporta."""
+        prev = Counter(["alice", "bob", "123", "123"])
+        current = Counter(["alice", "bob", "123"])  # un "123" desconectó
+        diff = current - prev
+        assert dict(diff) == {}  # No hay claves con delta positivo
+
+    def test_counter_round_trip_via_json(self):
+        """El snapshot se serializa como lista con duplicados expandidos
+        (Counter.elements()) y se reconstruye correctamente al leer."""
+        import json
+
+        original = Counter(["alice", "123", "123", "bob"])
+        serialized = json.dumps(list(original.elements()))
+        # JSON-stable order, pero el Counter resultante es equivalente.
+        deserialized = Counter(json.loads(serialized))
+        assert deserialized == original
+
+
+class TestSnapshotInvalidation:
+    """Tests del listener on_trusted_members_changed: al disparar el evento,
+    map_last_players del guild se vacía → próximo tick re-evalúa a todos."""
+
+    @pytest.mark.asyncio
+    async def test_listener_clears_only_target_guild(self, mock_bot):
+        """Solo se limpia el guild objetivo; los otros guilds intactos."""
+        await mock_bot.init_mock_db()
+        await mock_bot.db.executemany(
+            "INSERT INTO map_last_players (guild_id, map_name, players_json) VALUES (?, ?, ?)",
+            [
+                (1, "Ragnarok", '["alice", "bob"]'),
+                (1, "Aberration", '["charlie"]'),
+                (2, "TheIsland", '["dave"]'),  # Otro guild — no debe tocarse
+            ],
+        )
+        await mock_bot.db.commit()
+
+        cog = alarma_mod.Alarma(mock_bot)
+        await cog.on_trusted_members_changed(guild_id=1)
+
+        # Guild 1 vaciado, guild 2 intacto.
+        rows_g1 = await mock_bot.db.fetchall(
+            "SELECT map_name FROM map_last_players WHERE guild_id = 1"
+        )
+        rows_g2 = await mock_bot.db.fetchall(
+            "SELECT map_name FROM map_last_players WHERE guild_id = 2"
+        )
+        assert rows_g1 == []
+        assert len(rows_g2) == 1

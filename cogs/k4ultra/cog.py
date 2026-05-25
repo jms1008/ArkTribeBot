@@ -8,6 +8,7 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 from cogs.k4ultra.ui import K4UltraView
+from utils import bus
 
 logger = logging.getLogger("ArkTribeBot")
 
@@ -323,6 +324,10 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
             (interaction.guild_id, nombre, json.dumps(miembros), is_own),
         )
         await db.commit()
+        # Solo invalida snapshot si la tribu marca confianza (propia). Las tribus
+        # fijadas neutras no afectan al filtro de intrusos.
+        if is_own == 1:
+            self.bot.dispatch(bus.TRUSTED_MEMBERS_CHANGED, interaction.guild_id)
 
         tag_propia = "\n🌟 Ha sido marcada como TU TRIBU PROPIA." if propia else ""
         await interaction.response.send_message(
@@ -375,6 +380,7 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
             (interaction.guild_id, nombre, json.dumps(miembros)),
         )
         await db.commit()
+        self.bot.dispatch(bus.TRUSTED_MEMBERS_CHANGED, interaction.guild_id)
 
         await interaction.response.send_message(
             f"✅ Se ha configurado **{nombre}** como tribu propia con los jugadores: {', '.join(miembros)}.",
@@ -442,6 +448,7 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
                 (json.dumps(miembros), row["id"]),
             )
             await db.commit()
+            self.bot.dispatch(bus.TRUSTED_MEMBERS_CHANGED, interaction.guild_id)
             await interaction.response.send_message(
                 f"✅ Se añadió a **{valor}** a la tribu propia (**{row['name']}**).", ephemeral=True
             )
@@ -460,6 +467,7 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
                 (json.dumps(miembros), row["id"]),
             )
             await db.commit()
+            self.bot.dispatch(bus.TRUSTED_MEMBERS_CHANGED, interaction.guild_id)
             await interaction.response.send_message(
                 f"✅ Se eliminó a **{valor}** de la tribu propia (**{row['name']}**).", ephemeral=True
             )
@@ -488,6 +496,7 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
             )
             return
         await db.commit()
+        self.bot.dispatch(bus.TRUSTED_MEMBERS_CHANGED, interaction.guild_id)
 
         await interaction.response.send_message(
             "✅ Has borrado permanentemente la tribu propia del servidor.", ephemeral=True
@@ -506,6 +515,14 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
         nombre = nombre.strip()
 
         db = self.bot.db
+        # Comprobamos antes del DELETE si la tribu marcaba confianza, para saber
+        # si invalidar el snapshot del módulo de alarmas.
+        pre = await db.fetchone(
+            "SELECT is_own, is_ally FROM k4ultra_fixed_tribes WHERE name = ? AND guild_id = ?",
+            (nombre, interaction.guild_id),
+        )
+        was_trusted = bool(pre and (pre["is_own"] == 1 or pre["is_ally"] == 1))
+
         cursor = await db.execute(
             "DELETE FROM k4ultra_fixed_tribes WHERE name = ? AND guild_id = ?", (nombre, interaction.guild_id)
         )
@@ -513,6 +530,8 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
         await db.commit()
 
         if deleted > 0:
+            if was_trusted:
+                self.bot.dispatch(bus.TRUSTED_MEMBERS_CHANGED, interaction.guild_id)
             await interaction.response.send_message(
                 f"✅ Tribu **{nombre}** ha sido eliminada de las fijadas. Sus miembros volverán a agruparse automáticamente.",
                 ephemeral=True,

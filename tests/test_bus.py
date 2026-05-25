@@ -25,6 +25,7 @@ class TestEventConstants:
             bus.SCOUTING_UPDATED,
             bus.TODO_UPDATED,
             bus.BREEDING_UPDATED,
+            bus.TRUSTED_MEMBERS_CHANGED,
         }
         assert set(bus.ALL_EVENTS) == expected
 

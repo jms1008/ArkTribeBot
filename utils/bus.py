@@ -41,6 +41,12 @@ TODO_UPDATED = "todo_updated"
 BREEDING_UPDATED = "breeding_updated"
 """Se han modificado las líneas de crianza. Args: (guild_id: int,)."""
 
+TRUSTED_MEMBERS_CHANGED = "trusted_members_changed"
+"""La lista de miembros "confiables" (tribu propia / aliados) ha cambiado en un
+guild. El cog de Alarmas reacciona limpiando ``map_last_players`` para forzar
+una re-evaluación de todos los jugadores actualmente online en el próximo tick.
+Args: (guild_id: int,)."""
+
 # --- Tabla de eventos publicables (utilidad para tests/documentación) ----
 ALL_EVENTS: tuple[str, ...] = (
     BLACKLIST_UPDATED,
@@ -48,4 +54,5 @@ ALL_EVENTS: tuple[str, ...] = (
     SCOUTING_UPDATED,
     TODO_UPDATED,
     BREEDING_UPDATED,
+    TRUSTED_MEMBERS_CHANGED,
 )

@@ -1,5 +1,6 @@
 import json
 import logging
+from collections import Counter
 
 import aiosqlite
 import discord
@@ -7,6 +8,7 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 from cogs.server_status import get_guild_servers
+from utils import bus
 
 logger = logging.getLogger("ArkTribeBot")
 
@@ -314,6 +316,25 @@ class Alarma(commands.Cog):
     def cog_unload(self):
         self.check_alarms_loop.cancel()
 
+    @commands.Cog.listener()
+    async def on_trusted_members_changed(self, guild_id: int):
+        """Limpia el snapshot de jugadores conocidos del guild al cambiar la
+        lista de tribu propia o tribus aliadas. Así el siguiente tick re-evalúa
+        a todos los jugadores online — útil cuando alguien deja de ser confiable
+        pero sigue conectado (su nombre estaría cacheado y no dispararía alarma).
+        """
+        try:
+            cursor = await self.bot.db.execute(
+                "DELETE FROM map_last_players WHERE guild_id = ?", (guild_id,)
+            )
+            await self.bot.db.commit()
+            logger.info(
+                f"[Alarma] Snapshot de map_last_players limpiado para guild={guild_id} "
+                f"({cursor.rowcount} mapas reseteados) tras cambio de miembros confiables."
+            )
+        except Exception as e:
+            logger.error(f"[Alarma] Error limpiando snapshot tras TRUSTED_MEMBERS_CHANGED: {e}")
+
     async def mapa_autocomplete(self, interaction: discord.Interaction, current: str):
         servers = await get_guild_servers(self.bot, interaction.guild_id)
         return [
@@ -430,21 +451,36 @@ class Alarma(commands.Cog):
                     if not cache_row or not cache_row["player_names"]:
                         continue
 
-                    # Parsear nombres actuales del caché
+                    # Parsear nombres actuales del caché. Se usa Counter (no set) para
+                    # distinguir jugadores distintos que comparten Steam name (caso clásico:
+                    # varios "123" o "bob" online a la vez). Si el contador de un nombre
+                    # SUBE entre dos ticks, hay un nuevo jugador con ese mismo nombre y la
+                    # alarma debe dispararse.
                     raw_names = cache_row["player_names"]
                     if raw_names == "Nadie conectado." or cache_row["player_count"] == 0:
-                        current_names: set[str] = set()
+                        current_counter: Counter[str] = Counter()
                     else:
-                        current_names = {n.strip() for n in raw_names.split(",") if n.strip()}
+                        current_counter = Counter(
+                            n.strip() for n in raw_names.split(",") if n.strip()
+                        )
 
-                    # Obtener estado anterior
+                    # Obtener estado anterior — convertimos la lista (con duplicados
+                    # preservados) a Counter para hacer la resta multi-conjunto.
                     prev_row = await db.fetchone(
                         "SELECT players_json FROM map_last_players WHERE guild_id = ? AND map_name = ?",
                         (guild_id, map_name),
                     )
-                    prev_names = set(json.loads(prev_row["players_json"])) if prev_row else set()
+                    if prev_row:
+                        try:
+                            prev_counter = Counter(json.loads(prev_row["players_json"]))
+                        except (json.JSONDecodeError, TypeError):
+                            prev_counter = Counter()
+                    else:
+                        prev_counter = Counter()
 
-                    new_entries = current_names - prev_names
+                    # Counter - Counter solo conserva claves con delta positivo.
+                    diff = current_counter - prev_counter
+                    new_entries = set(diff.keys())
 
                     if new_entries:
                         # Set de "confiables": tribu propia + tribus aliadas.
@@ -495,13 +531,15 @@ class Alarma(commands.Cog):
                                 except Exception as e:
                                     logger.error(f"[Alarma] Error enviando DM a {u_id}: {e}")
 
-                    # Actualizar el estado anterior
+                    # Actualizar el estado anterior. Serializamos como lista con duplicados
+                    # expandidos (Counter.elements()) para que el siguiente tick pueda
+                    # detectar incrementos de cuenta en nombres repetidos.
                     await db.execute(
                         "INSERT OR REPLACE INTO map_last_players (guild_id, map_name, players_json) VALUES (?, ?, ?)",
                         (
                             guild_id,
                             map_name,
-                            json.dumps(list(current_names)),
+                            json.dumps(list(current_counter.elements())),
                         ),
                     )
                     await db.commit()
@@ -555,6 +593,7 @@ class Alarma(commands.Cog):
             (interaction.guild_id, nombre, json.dumps(miembros)),
         )
         await db.commit()
+        self.bot.dispatch(bus.TRUSTED_MEMBERS_CHANGED, interaction.guild_id)
 
         await interaction.response.send_message(
             f"🤝 Tribu aliada **{nombre}** registrada con {len(miembros)} jugador"
@@ -610,6 +649,7 @@ class Alarma(commands.Cog):
                 "UPDATE k4ultra_fixed_tribes SET name = ? WHERE id = ?", (valor, row["id"])
             )
             await db.commit()
+            # Rename no afecta la composición → no hace falta invalidar snapshot.
             await interaction.response.send_message(
                 f"✅ Tribu aliada renombrada de **{nombre}** a **{valor}**.", ephemeral=True
             )
@@ -629,6 +669,7 @@ class Alarma(commands.Cog):
                 (json.dumps(miembros), row["id"]),
             )
             await db.commit()
+            self.bot.dispatch(bus.TRUSTED_MEMBERS_CHANGED, interaction.guild_id)
             await interaction.response.send_message(
                 f"✅ Se añadió a **{valor}** a la tribu aliada **{row['name']}**.", ephemeral=True
             )
@@ -647,6 +688,7 @@ class Alarma(commands.Cog):
             (json.dumps(miembros), row["id"]),
         )
         await db.commit()
+        self.bot.dispatch(bus.TRUSTED_MEMBERS_CHANGED, interaction.guild_id)
         await interaction.response.send_message(
             f"✅ Se eliminó a **{valor}** de la tribu aliada **{row['name']}**.", ephemeral=True
         )
@@ -672,6 +714,7 @@ class Alarma(commands.Cog):
                 f"❌ No existe la tribu aliada **{nombre}**.", ephemeral=True
             )
             return
+        self.bot.dispatch(bus.TRUSTED_MEMBERS_CHANGED, interaction.guild_id)
         await interaction.response.send_message(
             f"🗑️ Tribu aliada **{nombre}** eliminada. Sus jugadores volverán a disparar alarmas.",
             ephemeral=True,
