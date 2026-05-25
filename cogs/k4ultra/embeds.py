@@ -16,8 +16,6 @@ from collections import defaultdict
 import aiosqlite
 import discord
 
-from utils.embeds import apply_uniform_width
-
 logger = logging.getLogger("ArkTribeBot")
 
 
@@ -87,10 +85,6 @@ async def generate_k4ultra_embed(
         pages = await _build_radar_pages(db, guild_id, p_totals, p_maps, aliases, top_player_names)
     elif mode == "tribus":
         pages = await _build_tribes_page(db, guild_id, aliases)
-
-    # Ancho uniforme en todas las páginas para coherencia visual entre embeds.
-    for page in pages:
-        apply_uniform_width(page)
 
     return pages, top_player_names, aliases
 

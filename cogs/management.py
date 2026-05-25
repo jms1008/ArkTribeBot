@@ -6,7 +6,6 @@ from discord import app_commands
 from discord.ext import commands
 
 from utils import bus
-from utils.embeds import apply_uniform_width
 
 logger = logging.getLogger("ArkTribeBot")
 
@@ -144,7 +143,6 @@ def build_todo_embed_view(bot, rows: list, page: int = 0):
             "*Pulsa **Añadir Tarea** o usa `/todo_add` para crear una nueva.*"
         )
         embed.set_footer(text="Página 1/1 • 0 tareas")
-        apply_uniform_width(embed)
         view = TodoView(bot, page=0, total_rows=0)
         return embed, 0, view
 
@@ -177,7 +175,6 @@ def build_todo_embed_view(bot, rows: list, page: int = 0):
 
     embed.description = "\n".join(lines).strip()
     embed.set_footer(text=f"Página {page + 1}/{total_pages} • {total} tareas totales • /todo_add para añadir")
-    apply_uniform_width(embed)
     view = TodoView(bot, page=page, total_rows=total)
     return embed, page, view
 

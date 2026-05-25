@@ -6,8 +6,6 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from utils.embeds import apply_uniform_width
-
 logger = logging.getLogger("ArkTribeBot")
 
 
@@ -526,7 +524,6 @@ def build_config_embed(config: aiosqlite.Row, num_miembros: int, guild_id: int) 
         value=f"```\n{bm_urls}\n```",
         inline=False,
     )
-    apply_uniform_width(embed)
     return embed
 
 

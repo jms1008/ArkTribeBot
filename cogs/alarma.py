@@ -7,7 +7,6 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 from cogs.server_status import get_guild_servers
-from utils.embeds import apply_uniform_width
 
 logger = logging.getLogger("ArkTribeBot")
 
@@ -94,7 +93,6 @@ async def build_alarmas_embed(bot, guild_id: int) -> discord.Embed:
             "💡 Selecciona un mapa en el menú inferior o usa `/alarma mapa:X estado:on` para activar la tuya."
         )
         embed.set_footer(text="El bot avisa cuando entra un jugador desconocido al mapa vigilado.")
-        apply_uniform_width(embed)
         return embed
 
     # Agrupar por mapa.
@@ -125,7 +123,6 @@ async def build_alarmas_embed(bot, guild_id: int) -> discord.Embed:
             "•  /alarma para comando directo"
         )
     )
-    apply_uniform_width(embed)
     return embed
 
 
