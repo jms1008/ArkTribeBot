@@ -129,7 +129,7 @@ async def build_alarmas_embed(bot, guild_id: int) -> discord.Embed:
             "💤 Nadie en la tribu tiene alarmas activas ahora mismo.\n\n"
             "💡 Selecciona un mapa en el menú inferior o usa `/alarma mapa:X estado:on` para activar la tuya."
         )
-        embed.set_footer(text="El bot avisa por DM privado cuando entra un jugador desconocido al mapa vigilado.")
+        embed.set_footer(text="El bot avisa en el canal cuando entra un jugador desconocido al mapa vigilado.")
         return embed
 
     # Agrupar por mapa.
@@ -280,7 +280,10 @@ class AlarmActionView(discord.ui.View):
         self.btn_on.disabled = True
         self.btn_off.disabled = False
         await interaction.response.edit_message(
-            content=f"🚨 **Alarma activada** para `{self.map_name}`. Te avisaré por **mensaje privado** cuando entre un intruso.",
+            content=(
+                f"🚨 **Alarma activada** para `{self.map_name}`. "
+                f"Te mencionaré en este canal cuando entre un intruso."
+            ),
             view=self,
         )
         await self._refresh_parent(interaction)
@@ -395,9 +398,8 @@ class Alarma(commands.Cog):
                 )
                 await db.commit()
                 await interaction.followup.send(
-                    f"🚨 **Alarma activada** para `{mapa}`. Te avisaré por **mensaje privado** "
-                    f"cuando entre un intruso. 🔔\n"
-                    f"⚠️ Asegúrate de tener los DMs abiertos para este servidor.",
+                    f"🚨 **Alarma activada** para `{mapa}`. Te mencionaré en este canal "
+                    f"cuando entre un intruso. 🔔",
                     ephemeral=True,
                 )
         except Exception as e:
@@ -512,26 +514,30 @@ class Alarma(commands.Cog):
                             intruders_fmt = ", ".join([f"**{i}**" for i in intruders])
                             for target in alert_targets:
                                 u_id = target["user_id"]
-                                # Mensaje privado vía DM: solo lo ve el destinatario.
+                                ch_id = target["channel_id"]
+                                # Mensaje en el canal donde se activó la alarma, con mención
+                                # al destinatario para que reciba notificación push.
                                 try:
-                                    user = self.bot.get_user(u_id) or await self.bot.fetch_user(u_id)
-                                    if user is None:
+                                    channel = self.bot.get_channel(ch_id) or await self.bot.fetch_channel(ch_id)
+                                    if channel is None:
                                         logger.warning(
-                                            f"[Alarma] Usuario {u_id} no encontrado, no se envía DM."
+                                            f"[Alarma] Canal {ch_id} no encontrado, no se envía alerta."
                                         )
                                         continue
                                     view = AlarmDismissView()
-                                    await user.send(
-                                        f"⚠️ **Intruso detectado** en `{map_name}`: {intruders_fmt}",
+                                    await channel.send(
+                                        f"⚠️ <@{u_id}>! **Intruso detectado** en `{map_name}`: {intruders_fmt}",
                                         view=view,
                                     )
                                 except discord.Forbidden:
                                     logger.warning(
-                                        f"[Alarma] No se puede enviar DM a {u_id} "
-                                        f"(DMs cerrados). Mapa={map_name}."
+                                        f"[Alarma] Sin permisos para enviar en canal {ch_id} "
+                                        f"(usuario {u_id}, mapa {map_name})."
                                     )
                                 except Exception as e:
-                                    logger.error(f"[Alarma] Error enviando DM a {u_id}: {e}")
+                                    logger.error(
+                                        f"[Alarma] Error enviando alerta a canal {ch_id} (user {u_id}): {e}"
+                                    )
 
                     # Actualizar el estado anterior. Serializamos como lista con duplicados
                     # expandidos (Counter.elements()) para que el siguiente tick pueda
