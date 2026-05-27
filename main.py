@@ -141,6 +141,12 @@ class ArkTribeBot(commands.Bot):
         # Registrar Listener para Logging de Comandos
         self.tree.on_command_completion = self.on_app_command_completion
 
+        # Bloquear el uso de slash commands en DM o canales privados (los grupos,
+        # tribus, alarmas, dashboards, etc., solo tienen sentido dentro de un guild).
+        # NOTA: los DMs que el bot ENVÍA (alarmas) siguen funcionando — esto solo
+        # impide que los USUARIOS interactúen con el bot por DM.
+        self.tree.interaction_check = self._reject_dm_interactions
+
         # Registro de Vistas Persistentes
         self.add_view(TodoView(self))
         self.add_view(BlacklistView(self))
@@ -258,8 +264,39 @@ class ArkTribeBot(commands.Bot):
 
         asyncio.create_task(_sync_guild())
 
-    # El método on_message ha sido extraido al cog LogProcessor para mantener main.py limpio.
-    # El método por defecto de commands.Bot se encargará de self.process_commands(message).
+    async def _reject_dm_interactions(self, interaction: discord.Interaction) -> bool:
+        """Check global del CommandTree: rechaza cualquier slash command invocado
+        fuera de un guild (DMs o canales privados de grupo).
+
+        Devuelve ``False`` cancela la ejecución del comando; antes se envía un
+        mensaje efímero al usuario explicando que solo se admite uso en servidores.
+        """
+        if interaction.guild is not None:
+            return True
+        try:
+            await interaction.response.send_message(
+                "❌ Este bot solo funciona dentro de un servidor de Discord. "
+                "Usa los comandos en uno de los canales del cluster.",
+                ephemeral=True,
+            )
+        except discord.errors.InteractionResponded:
+            # Otro check / autocomplete ya respondió — no podemos hacer más.
+            pass
+        return False
+
+    async def on_message(self, message: discord.Message):
+        """Bloquea cualquier procesamiento de mensajes en DMs.
+
+        - Mensajes en DM dirigidos al bot: se ignoran silenciosamente (sin
+          ``process_commands``, sin listeners de cog).
+        - Mensajes en guild: se delegan al pipeline normal (``process_commands``
+          + listeners ``on_message`` de los cogs como ``LogProcessor``).
+        """
+        if message.guild is None:
+            return  # Ignorar todo lo recibido por DM.
+        await self.process_commands(message)
+
+    # El procesamiento adicional de on_message ocurre en el cog LogProcessor.
 
     async def on_app_command_completion(
         self, interaction: discord.Interaction, command: app_commands.Command

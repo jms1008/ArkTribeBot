@@ -29,7 +29,11 @@ class LogProcessor(commands.Cog, name="LogProcessor"):
         if message.author.id == self.bot.user.id:
             return
 
-        guild_id = message.guild.id if message.guild else None
+        # Ignorar DMs por completo — el procesador solo opera en canales de guild.
+        if message.guild is None:
+            return
+
+        guild_id = message.guild.id
 
         # Verificación del canal puente de logs configurado para este servidor
         is_log_channel = False

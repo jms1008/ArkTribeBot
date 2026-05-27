@@ -129,7 +129,7 @@ async def build_alarmas_embed(bot, guild_id: int) -> discord.Embed:
             "💤 Nadie en la tribu tiene alarmas activas ahora mismo.\n\n"
             "💡 Selecciona un mapa en el menú inferior o usa `/alarma mapa:X estado:on` para activar la tuya."
         )
-        embed.set_footer(text="El bot avisa cuando entra un jugador desconocido al mapa vigilado.")
+        embed.set_footer(text="El bot avisa por DM privado cuando entra un jugador desconocido al mapa vigilado.")
         return embed
 
     # Agrupar por mapa.
@@ -280,7 +280,7 @@ class AlarmActionView(discord.ui.View):
         self.btn_on.disabled = True
         self.btn_off.disabled = False
         await interaction.response.edit_message(
-            content=f"🚨 **Alarma activada** para `{self.map_name}`. Recibirás un ping en este canal cuando entre un intruso.",
+            content=f"🚨 **Alarma activada** para `{self.map_name}`. Te avisaré por **mensaje privado** cuando entre un intruso.",
             view=self,
         )
         await self._refresh_parent(interaction)
@@ -395,7 +395,9 @@ class Alarma(commands.Cog):
                 )
                 await db.commit()
                 await interaction.followup.send(
-                    f"🚨 **Alarma activada** para `{mapa}`. Te avisaré cuando entre un intruso. 🔔",
+                    f"🚨 **Alarma activada** para `{mapa}`. Te avisaré por **mensaje privado** "
+                    f"cuando entre un intruso. 🔔\n"
+                    f"⚠️ Asegúrate de tener los DMs abiertos para este servidor.",
                     ephemeral=True,
                 )
         except Exception as e:
