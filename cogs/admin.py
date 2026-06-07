@@ -6,6 +6,9 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from utils import bus, i18n
+from utils.i18n import t
+
 logger = logging.getLogger("ArkTribeBot")
 
 
@@ -166,6 +169,54 @@ class Admin(commands.Cog):
 
         embed = build_config_embed(config, num_miembros, guild_id)
         await interaction.followup.send(embed=embed)
+
+    @app_commands.command(
+        name="idioma",
+        description="[Admin] Cambia el idioma del bot en este servidor (Español / Inglés).",
+    )
+    @app_commands.describe(modo="Idioma y alcance que se aplicará en este servidor.")
+    @app_commands.choices(
+        modo=[
+            app_commands.Choice(name="🇪🇸 Español", value=i18n.MODE_ES),
+            app_commands.Choice(name="🇬🇧 English (solo dashboards)", value=i18n.MODE_EN_PERIODIC),
+            app_commands.Choice(name="🇬🇧 English (todo / everything)", value=i18n.MODE_EN_TOTAL),
+        ]
+    )
+    async def idioma(self, interaction: discord.Interaction, modo: app_commands.Choice[str]):
+        if not await interaction.client.is_authorized_admin(interaction):
+            await interaction.response.send_message(t("idioma.denied", "es"), ephemeral=True)
+            return
+
+        guild_id = interaction.guild_id
+        mode = modo.value
+
+        db = self.bot.db
+        # Upsert: el guild puede no tener fila aún si no se ejecutó /inicio_ark.
+        await db.execute(
+            "INSERT INTO guild_config (guild_id, language) VALUES (?, ?) "
+            "ON CONFLICT(guild_id) DO UPDATE SET language = excluded.language",
+            (guild_id, mode),
+        )
+        await db.commit()
+
+        # Invalidar la caché para que dashboards y comandos reflejen el cambio ya.
+        i18n.invalidate_lang_cache(guild_id)
+
+        # Refresco inmediato de los dashboards con bus de eventos: se repintan en el
+        # nuevo idioma sin esperar al loop periódico. Los paneles sin bus (status,
+        # k4ultra, alarmas) se actualizan en su próximo ciclo/interacción.
+        for event in (
+            bus.BLACKLIST_UPDATED,
+            bus.KDA_UPDATED,
+            bus.SCOUTING_UPDATED,
+            bus.TODO_UPDATED,
+            bus.BREEDING_UPDATED,
+        ):
+            self.bot.dispatch(event, guild_id)
+
+        # Confirmación en el idioma de comando del nuevo modo (EN solo si total).
+        conf_lang = "en" if mode == i18n.MODE_EN_TOTAL else "es"
+        await interaction.response.send_message(t(f"idioma.set.{mode}", conf_lang), ephemeral=True)
 
     @commands.command(name="sync")
     async def sync(
