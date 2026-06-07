@@ -7,6 +7,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
+from utils.i18n import resolve_lang, t
 from utils.parsing import parse_battlemetrics
 
 # Configuración de Logging
@@ -300,12 +301,13 @@ class ServerStatus(commands.Cog):
 
     async def get_global_status_embed(self, guild_id: int, servers: dict):
         """Genera un Embed unificado para todos los servidores del Guild, ordenado por jugadores."""
+        lang = await resolve_lang(self.bot, guild_id, "periodic")
         embed = discord.Embed(
-            title="🌐 ESTADO GLOBAL DE SERVIDORES", color=discord.Color.from_rgb(0, 120, 255)
+            title=t("status.title", lang), color=discord.Color.from_rgb(0, 120, 255)
         )
 
         if not servers:
-            embed.description = "⚠️ No hay servidores configurados. Usa `/inicio_ark` para añadirlos."
+            embed.description = t("status.no_servers", lang)
             return embed
 
         # Consulta A2S centralizada (compartida con K4Ultra)
@@ -353,7 +355,7 @@ class ServerStatus(commands.Cog):
 
                 player_list = ", ".join([p["name"] for p in res["players"]])
                 if not player_list:
-                    player_list = "Nadie conectado."
+                    player_list = t("status.nobody", lang)
                 if len(player_list) > 1000:
                     player_list = player_list[:1000] + "..."
 
@@ -384,17 +386,17 @@ class ServerStatus(commands.Cog):
             occupancy_bar = "█" * filled + "░" * (10 - filled)
             occupancy_text = f"`{occupancy_bar}` `{total_players}/{total_max}` ({int(ratio * 100)}%)"
         else:
-            occupancy_text = "*sin datos*"
+            occupancy_text = t("status.no_data", lang)
 
         lines = [
-            f"👥 **Total de jugadores en la red:** {occupancy_text}",
-            f"🟢 `{n_pop:02d}` Activos  ·  🟡 `{n_empty:02d}` Vacíos  ·  🔴 `{n_off:02d}` Offline",
+            t("status.total_players", lang, occupancy=occupancy_text),
+            t("status.badges", lang, pop=n_pop, empty=n_empty, off=n_off),
             "",
         ]
 
         # 1. Servidores Poblados.
         if populated_servers:
-            lines.append("## 🟢 SERVIDORES ACTIVOS")
+            lines.append(t("status.section.active", lang))
             for s in populated_servers:
                 lines.append(
                     f"**{s['name']}**  ·  👥 `{s['players']}/{s['max_players']}`  ·  📶 `{s['ping']}ms`"
@@ -404,20 +406,20 @@ class ServerStatus(commands.Cog):
 
         # 2. Servidores Vacíos.
         if empty_servers:
-            lines.append("## 🟡 SERVIDORES VACÍOS")
+            lines.append(t("status.section.empty", lang))
             for s in empty_servers:
                 lines.append(f"🔸 **{s['name']}**  ·  📶 `{s['ping']}ms`")
             lines.append("")
 
         # 3. Servidores Inactivos.
         if offline_servers:
-            lines.append("## 🔴 SERVIDORES OFFLINE / TIMEOUT")
+            lines.append(t("status.section.offline", lang))
             for s in offline_servers:
                 lines.append(f"❌ **{s['name']}**  ·  *{s['error']}*")
             lines.append("")
 
         embed.description = "\n".join(lines).strip()
-        embed.set_footer(text="Auto-actualizado cada 2 minutos  •  /status para ver un mapa concreto")
+        embed.set_footer(text=t("status.footer", lang))
         return embed
 
     @app_commands.command(

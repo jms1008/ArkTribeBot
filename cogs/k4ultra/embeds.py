@@ -16,6 +16,8 @@ from collections import defaultdict
 import aiosqlite
 import discord
 
+from utils.i18n import resolve_lang, t
+
 logger = logging.getLogger("ArkTribeBot")
 
 
@@ -80,11 +82,12 @@ async def generate_k4ultra_embed(
         logger.debug(f"[K4Ultra] Tabla k4ultra_aliases no disponible: {e}")
 
     pages: list[discord.Embed] = []
+    lang = await resolve_lang(bot, guild_id, "periodic")
 
     if mode == "radar":
-        pages = await _build_radar_pages(db, guild_id, p_totals, p_maps, aliases, top_player_names)
+        pages = await _build_radar_pages(db, guild_id, p_totals, p_maps, aliases, top_player_names, lang)
     elif mode == "tribus":
-        pages = await _build_tribes_page(db, guild_id, aliases)
+        pages = await _build_tribes_page(db, guild_id, aliases, lang)
 
     return pages, top_player_names, aliases
 
@@ -103,6 +106,7 @@ async def _build_radar_pages(
     p_maps: dict[str, list[dict]],
     aliases: dict[str, str],
     top_player_names: list[str],
+    lang: str = "es",
 ) -> list[discord.Embed]:
     """Construye las páginas del modo radar (en línea + ranking).
 
@@ -125,20 +129,22 @@ async def _build_radar_pages(
     # Cabecera común a todas las páginas.
     def _header(page_idx: int, total_pages: int) -> list[str]:
         return [
-            f"📡 `{n_online:02d}` Online  ·  🏆 `{n_total:02d}` En ranking  ·  📄 Página `{page_idx + 1}/{total_pages}`",
+            t("k4.radar.header", lang, online=n_online, total=n_total, page=page_idx + 1, pages=total_pages),
             "",
         ]
 
     # Sección "EN LÍNEA AHORA" (solo en la primera página).
-    online_block: list[str] = ["## 📡 EN LÍNEA AHORA"]
+    online_block: list[str] = [t("k4.radar.online_section", lang)]
     if active_sessions:
         for s in active_sessions:
             p_name = s["player_name"]
             alias_tag = f" [{aliases[p_name]}]" if p_name in aliases else ""
             since = s["start_time"][11:16] if s["start_time"] else "?"
-            online_block.append(f"🟢 **{p_name}**{alias_tag}  ·  🗺️ {s['map_name']}  ·  ⏱️ desde {since}")
+            online_block.append(
+                t("k4.radar.online_item", lang, name=p_name, alias=alias_tag, map=s["map_name"], since=since)
+            )
     else:
-        online_block.append("*Ningún jugador conectado ahora mismo.*")
+        online_block.append(t("k4.radar.nobody_online", lang))
     online_block.append("")
 
     # Sección "TOP JUGADORES".
@@ -160,7 +166,7 @@ async def _build_radar_pages(
         online_marker = "🟢 " if p_name in active_players else "⚫ "
         alias_tag = f" [{aliases[p_name]}]" if p_name in aliases else ""
         top_lines.append(f"`#{idx:02d}` {online_marker}**{p_name}**{alias_tag}  ·  ⏱️ `{time_str}`")
-        top_lines.append(f"  └ 🗺️ *{map_joined}*" if map_joined else "  └ *(sin actividad reciente)*")
+        top_lines.append(f"  └ 🗺️ *{map_joined}*" if map_joined else t("k4.radar.no_activity", lang))
 
     # Paginar el top por NÚMERO de jugadores (no por chars). La primera página
     # comparte espacio con "EN LÍNEA AHORA" así que va más corta; las siguientes
@@ -188,41 +194,41 @@ async def _build_radar_pages(
     if not chunks:
         # No hay jugadores en ranking — una sola página con solo online + mensaje.
         page = discord.Embed(
-            title="🌐 TRACKER K4ULTRA — Radar en Vivo",
+            title=t("k4.radar.title", lang),
             color=discord.Color.from_rgb(128, 0, 255),
         )
-        body = _header(0, 1) + online_block + ["## 🏆 TOP JUGADORES", "*No hay datos suficientes.*"]
+        body = _header(0, 1) + online_block + [t("k4.radar.top_section", lang), t("k4.radar.no_data", lang)]
         page.description = "\n".join(body).strip()
-        page.set_footer(text="Radar  •  Página 1/1  •  Usa el selector para ver detalle de un jugador")
+        page.set_footer(text=t("k4.radar.footer_single", lang))
         pages.append(page)
         return pages
 
     total_pages = len(chunks)
     for i, chunk in enumerate(chunks):
         page = discord.Embed(
-            title="🌐 TRACKER K4ULTRA — Radar en Vivo",
+            title=t("k4.radar.title", lang),
             color=discord.Color.from_rgb(128, 0, 255),
         )
         body = _header(i, total_pages)
         # El bloque de "online" solo aparece en la primera página.
         if i == 0:
             body += online_block
-        section_title = "## 🏆 TOP JUGADORES" if i == 0 else "## 🏆 TOP JUGADORES (Cont.)"
+        section_title = t("k4.radar.top_section", lang) if i == 0 else t("k4.radar.top_section_cont", lang)
         body.append(section_title)
         body.extend(chunk)
         page.description = "\n".join(body).strip()
-        page.set_footer(
-            text=f"Radar  •  Página {i + 1}/{total_pages}  •  Usa ◀️ ▶️ para navegar o el selector para ver detalle"
-        )
+        page.set_footer(text=t("k4.radar.footer", lang, page=i + 1, pages=total_pages))
         pages.append(page)
 
     return pages
 
 
-async def _build_tribes_page(db, guild_id: int, aliases: dict[str, str]) -> list[discord.Embed]:
+async def _build_tribes_page(
+    db, guild_id: int, aliases: dict[str, str], lang: str = "es"
+) -> list[discord.Embed]:
     """Construye la única página del modo tribus (fijadas + dinámicas)."""
     page_t = discord.Embed(
-        title="🌐 TRACKER K4ULTRA — Tribus y Grupos",
+        title=t("k4.tribes.title", lang),
         color=discord.Color.from_rgb(90, 0, 180),
     )
 
@@ -282,7 +288,9 @@ async def _build_tribes_page(db, guild_id: int, aliases: dict[str, str]) -> list
 
         members_lines = [line for line in (_format_member(m) for m in members) if line]
         members_text = "  ".join(members_lines)
-        header = f"**{fr['name']}**  ·  👥 `{len(members):02d}`  ·  🟢 `{n_online:02d}` online{map_info}"
+        header = t(
+            "k4.tribes.tribe_header", lang, name=fr["name"], count=len(members), online=n_online, map_info=map_info
+        )
         block = f"{header}\n  └ {members_text}"
 
         if fr["is_own"]:
@@ -348,9 +356,16 @@ async def _build_tribes_page(db, guild_id: int, aliases: dict[str, str]) -> list
         else:
             members_text = "  ".join(members_lines)
 
-        header = (
-            f"**Grupo {i}**  ·  👥 `{len(tribe):02d}`  ·  🟢 `{n_online:02d}` online"
-            f"{map_info}  ·  📊 `{confidence_bar}` {avg_score}%"
+        group_name = t("k4.tribes.group_name", lang, i=i)
+        header = t(
+            "k4.tribes.group_header",
+            lang,
+            group=group_name,
+            count=len(tribe),
+            online=n_online,
+            map_info=map_info,
+            bar=confidence_bar,
+            score=avg_score,
         )
         dyn_blocks.append(f"{header}\n  └ {members_text}")
 
@@ -360,38 +375,38 @@ async def _build_tribes_page(db, guild_id: int, aliases: dict[str, str]) -> list
     n_online_known = sum(1 for fr in fixed_rows for m in json.loads(fr["members_json"]) if m in online_set)
 
     lines: list[str] = [
-        f"🏰 `{len(own_blocks):02d}` Nuestras  ·  🛡️ `{len(fixed_blocks):02d}` Fijadas  ·  "
-        f"🔗 `{len(dynamic_tribes):02d}` Predichas  ·  🟢 `{n_online_known:02d}` online",
+        t(
+            "k4.tribes.header",
+            lang,
+            own=len(own_blocks),
+            fixed=len(fixed_blocks),
+            pred=len(dynamic_tribes),
+            online=n_online_known,
+        ),
         "",
     ]
 
     if own_blocks:
-        lines.append("## 🏰 NUESTRA TRIBU")
+        lines.append(t("k4.tribes.own_section", lang))
         lines.extend(own_blocks)
         lines.append("")
 
     if fixed_blocks:
-        lines.append("## 🛡️ TRIBUS FIJADAS")
+        lines.append(t("k4.tribes.fixed_section", lang))
         lines.extend(fixed_blocks)
         lines.append("")
 
     if dyn_blocks:
-        lines.append("## 🔗 GRUPOS PREDICHOS")
+        lines.append(t("k4.tribes.pred_section", lang))
         lines.extend(dyn_blocks)
         if len(dynamic_tribes) > 8:
-            lines.append(f"*… y {len(dynamic_tribes) - 8} grupos más con menor confianza.*")
+            lines.append(t("k4.tribes.more_groups", lang, n=len(dynamic_tribes) - 8))
 
     if not (own_blocks or fixed_blocks or dyn_blocks):
-        lines.append("📭 No hay tribus registradas ni grupos predecidos aún.")
+        lines.append(t("k4.tribes.empty", lang))
         lines.append("")
-        lines.append("💡 Usa `/tribu_propia crear` para marcar tu base, o `/fijar_tribu` para conocidas.")
+        lines.append(t("k4.tribes.empty_hint", lang))
 
     page_t.description = "\n".join(lines).strip()
-    page_t.set_footer(
-        text=(
-            f"Total jugadores conocidos: {n_total_known + n_total_dyn}  "
-            f"•  ⚫ Offline · 🟢 Online  "
-            f"•  /tribu_propia · /fijar_tribu"
-        )
-    )
+    page_t.set_footer(text=t("k4.tribes.footer", lang, total=n_total_known + n_total_dyn))
     return [page_t]

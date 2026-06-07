@@ -94,6 +94,64 @@ STRINGS: dict[str, dict[str, str]] = {
         "breeding.btn.muta": "Nueva muta",
         "breeding.btn.alarms": "Alarmas",
         "breeding.btn.logs": "Ver Logs Muta",
+        # --- Alarmas dashboard (panel compartido) ---
+        "alarm.title": "🔔 PANEL DE ALARMAS DE LA TRIBU",
+        "alarm.empty": (
+            "💤 Nadie en la tribu tiene alarmas activas ahora mismo.\n\n"
+            "💡 Selecciona un mapa en el menú inferior o usa `/alarma mapa:X estado:on` para activar la tuya."
+        ),
+        "alarm.empty_footer": "El bot avisa en el canal cuando entra un jugador desconocido al mapa vigilado.",
+        "alarm.badges": "🗺️ `{maps:02d}` Mapas vigilados  ·  👥 `{unique:02d}` Vigilantes únicos  ·  📊 `{subs:02d}` Suscripciones",
+        "alarm.section": "## 🟢 MAPAS BAJO VIGILANCIA",
+        "alarm.map_line": "`#{idx:02d}` 🟢 **{map}**  ·  👥 `{count}` {word}",
+        "alarm.watcher_one": "vigilante",
+        "alarm.watcher_many": "vigilantes",
+        "alarm.footer": "Selecciona un mapa en el menú inferior para activar/desactivar tu alarma  •  /alarma para comando directo",
+        "alarm.select_placeholder": "Selecciona un mapa del clúster...",
+        "alarm.btn.refresh": "Refrescar",
+        # --- K4Ultra dashboard (radar) ---
+        "k4.radar.title": "🌐 TRACKER K4ULTRA — Radar en Vivo",
+        "k4.radar.header": "📡 `{online:02d}` Online  ·  🏆 `{total:02d}` En ranking  ·  📄 Página `{page}/{pages}`",
+        "k4.radar.online_section": "## 📡 EN LÍNEA AHORA",
+        "k4.radar.online_item": "🟢 **{name}**{alias}  ·  🗺️ {map}  ·  ⏱️ desde {since}",
+        "k4.radar.nobody_online": "*Ningún jugador conectado ahora mismo.*",
+        "k4.radar.top_section": "## 🏆 TOP JUGADORES",
+        "k4.radar.top_section_cont": "## 🏆 TOP JUGADORES (Cont.)",
+        "k4.radar.no_activity": "  └ *(sin actividad reciente)*",
+        "k4.radar.no_data": "*No hay datos suficientes.*",
+        "k4.radar.footer_single": "Radar  •  Página 1/1  •  Usa el selector para ver detalle de un jugador",
+        "k4.radar.footer": "Radar  •  Página {page}/{pages}  •  Usa ◀️ ▶️ para navegar o el selector para ver detalle",
+        # --- K4Ultra dashboard (tribus) ---
+        "k4.tribes.title": "🌐 TRACKER K4ULTRA — Tribus y Grupos",
+        "k4.tribes.header": (
+            "🏰 `{own:02d}` Nuestras  ·  🛡️ `{fixed:02d}` Fijadas  ·  "
+            "🔗 `{pred:02d}` Predichas  ·  🟢 `{online:02d}` online"
+        ),
+        "k4.tribes.own_section": "## 🏰 NUESTRA TRIBU",
+        "k4.tribes.fixed_section": "## 🛡️ TRIBUS FIJADAS",
+        "k4.tribes.pred_section": "## 🔗 GRUPOS PREDICHOS",
+        "k4.tribes.tribe_header": "**{name}**  ·  👥 `{count:02d}`  ·  🟢 `{online:02d}` online{map_info}",
+        "k4.tribes.group_name": "Grupo {i}",
+        "k4.tribes.group_header": (
+            "**{group}**  ·  👥 `{count:02d}`  ·  🟢 `{online:02d}` online{map_info}  ·  📊 `{bar}` {score}%"
+        ),
+        "k4.tribes.more_groups": "*… y {n} grupos más con menor confianza.*",
+        "k4.tribes.empty": "📭 No hay tribus registradas ni grupos predecidos aún.",
+        "k4.tribes.empty_hint": "💡 Usa `/tribu_propia crear` para marcar tu base, o `/fijar_tribu` para conocidas.",
+        "k4.tribes.footer": (
+            "Total jugadores conocidos: {total}  •  ⚫ Offline · 🟢 Online  •  /tribu_propia · /fijar_tribu"
+        ),
+        # --- Status global dashboard ---
+        "status.title": "🌐 ESTADO GLOBAL DE SERVIDORES",
+        "status.no_servers": "⚠️ No hay servidores configurados. Usa `/inicio_ark` para añadirlos.",
+        "status.nobody": "Nadie conectado.",
+        "status.total_players": "👥 **Total de jugadores en la red:** {occupancy}",
+        "status.no_data": "*sin datos*",
+        "status.badges": "🟢 `{pop:02d}` Activos  ·  🟡 `{empty:02d}` Vacíos  ·  🔴 `{off:02d}` Offline",
+        "status.section.active": "## 🟢 SERVIDORES ACTIVOS",
+        "status.section.empty": "## 🟡 SERVIDORES VACÍOS",
+        "status.section.offline": "## 🔴 SERVIDORES OFFLINE / TIMEOUT",
+        "status.footer": "Auto-actualizado cada 2 minutos  •  /status para ver un mapa concreto",
         # --- /idioma ---
         "idioma.denied": "❌ Acceso denegado. Necesitas permisos de administrador.",
         "idioma.set.es": (
@@ -188,6 +246,64 @@ STRINGS: dict[str, dict[str, str]] = {
         "breeding.btn.muta": "New mutation",
         "breeding.btn.alarms": "Alarms",
         "breeding.btn.logs": "View Mut. Logs",
+        # --- Alarms dashboard (shared panel) ---
+        "alarm.title": "🔔 TRIBE INTRUDER ALARMS PANEL",
+        "alarm.empty": (
+            "💤 Nobody in the tribe has active alarms right now.\n\n"
+            "💡 Pick a map in the menu below or use `/alarma mapa:X estado:on` to enable yours."
+        ),
+        "alarm.empty_footer": "The bot warns in the channel when an unknown player enters a watched map.",
+        "alarm.badges": "🗺️ `{maps:02d}` Watched maps  ·  👥 `{unique:02d}` Unique watchers  ·  📊 `{subs:02d}` Subscriptions",
+        "alarm.section": "## 🟢 MAPS UNDER WATCH",
+        "alarm.map_line": "`#{idx:02d}` 🟢 **{map}**  ·  👥 `{count}` {word}",
+        "alarm.watcher_one": "watcher",
+        "alarm.watcher_many": "watchers",
+        "alarm.footer": "Pick a map in the menu below to toggle your alarm  •  /alarma for the direct command",
+        "alarm.select_placeholder": "Pick a cluster map...",
+        "alarm.btn.refresh": "Refresh",
+        # --- K4Ultra dashboard (radar) ---
+        "k4.radar.title": "🌐 K4ULTRA TRACKER — Live Radar",
+        "k4.radar.header": "📡 `{online:02d}` Online  ·  🏆 `{total:02d}` Ranked  ·  📄 Page `{page}/{pages}`",
+        "k4.radar.online_section": "## 📡 ONLINE NOW",
+        "k4.radar.online_item": "🟢 **{name}**{alias}  ·  🗺️ {map}  ·  ⏱️ since {since}",
+        "k4.radar.nobody_online": "*No players connected right now.*",
+        "k4.radar.top_section": "## 🏆 TOP PLAYERS",
+        "k4.radar.top_section_cont": "## 🏆 TOP PLAYERS (Cont.)",
+        "k4.radar.no_activity": "  └ *(no recent activity)*",
+        "k4.radar.no_data": "*Not enough data.*",
+        "k4.radar.footer_single": "Radar  •  Page 1/1  •  Use the selector to view a player's detail",
+        "k4.radar.footer": "Radar  •  Page {page}/{pages}  •  Use ◀️ ▶️ to navigate or the selector for detail",
+        # --- K4Ultra dashboard (tribes) ---
+        "k4.tribes.title": "🌐 K4ULTRA TRACKER — Tribes & Groups",
+        "k4.tribes.header": (
+            "🏰 `{own:02d}` Ours  ·  🛡️ `{fixed:02d}` Pinned  ·  "
+            "🔗 `{pred:02d}` Predicted  ·  🟢 `{online:02d}` online"
+        ),
+        "k4.tribes.own_section": "## 🏰 OUR TRIBE",
+        "k4.tribes.fixed_section": "## 🛡️ PINNED TRIBES",
+        "k4.tribes.pred_section": "## 🔗 PREDICTED GROUPS",
+        "k4.tribes.tribe_header": "**{name}**  ·  👥 `{count:02d}`  ·  🟢 `{online:02d}` online{map_info}",
+        "k4.tribes.group_name": "Group {i}",
+        "k4.tribes.group_header": (
+            "**{group}**  ·  👥 `{count:02d}`  ·  🟢 `{online:02d}` online{map_info}  ·  📊 `{bar}` {score}%"
+        ),
+        "k4.tribes.more_groups": "*… and {n} more groups with lower confidence.*",
+        "k4.tribes.empty": "📭 No tribes registered or groups predicted yet.",
+        "k4.tribes.empty_hint": "💡 Use `/tribu_propia crear` to mark your base, or `/fijar_tribu` for known ones.",
+        "k4.tribes.footer": (
+            "Total known players: {total}  •  ⚫ Offline · 🟢 Online  •  /tribu_propia · /fijar_tribu"
+        ),
+        # --- Status global dashboard ---
+        "status.title": "🌐 GLOBAL SERVER STATUS",
+        "status.no_servers": "⚠️ No servers configured. Use `/inicio_ark` to add them.",
+        "status.nobody": "Nobody connected.",
+        "status.total_players": "👥 **Total players on the network:** {occupancy}",
+        "status.no_data": "*no data*",
+        "status.badges": "🟢 `{pop:02d}` Active  ·  🟡 `{empty:02d}` Empty  ·  🔴 `{off:02d}` Offline",
+        "status.section.active": "## 🟢 ACTIVE SERVERS",
+        "status.section.empty": "## 🟡 EMPTY SERVERS",
+        "status.section.offline": "## 🔴 OFFLINE / TIMEOUT SERVERS",
+        "status.footer": "Auto-updated every 2 minutes  •  /status to view a specific map",
         # --- /idioma ---
         "idioma.set.en_total": (
             "🌐 Language set: **English (everything)**.\n"

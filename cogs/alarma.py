@@ -9,6 +9,7 @@ from discord.ext import commands, tasks
 
 from cogs.server_status import get_guild_servers
 from utils import bus
+from utils.i18n import resolve_lang, t
 
 logger = logging.getLogger("ArkTribeBot")
 
@@ -116,8 +117,9 @@ async def build_alarmas_embed(bot, guild_id: int) -> discord.Embed:
     - Sección con items en formato ``#NN 🟢 **mapa** + watchers``
     - Footer con hint del comando
     """
+    lang = await resolve_lang(bot, guild_id, "periodic")
     embed = discord.Embed(
-        title="🔔 PANEL DE ALARMAS DE LA TRIBU",
+        title=t("alarm.title", lang),
         color=discord.Color.from_rgb(255, 100, 0),
     )
 
@@ -125,11 +127,8 @@ async def build_alarmas_embed(bot, guild_id: int) -> discord.Embed:
     logger.info(f"[Alarma] build_alarmas_embed guild={guild_id} → {len(alarms)} alarmas activas")
 
     if not alarms:
-        embed.description = (
-            "💤 Nadie en la tribu tiene alarmas activas ahora mismo.\n\n"
-            "💡 Selecciona un mapa en el menú inferior o usa `/alarma mapa:X estado:on` para activar la tuya."
-        )
-        embed.set_footer(text="El bot avisa en el canal cuando entra un jugador desconocido al mapa vigilado.")
+        embed.description = t("alarm.empty", lang)
+        embed.set_footer(text=t("alarm.empty_footer", lang))
         return embed
 
     # Agrupar por mapa.
@@ -141,25 +140,21 @@ async def build_alarmas_embed(bot, guild_id: int) -> discord.Embed:
     unique_watchers = len({uid for uids in by_map.values() for uid in uids})
 
     lines: list[str] = [
-        f"🗺️ `{len(by_map):02d}` Mapas vigilados  ·  👥 `{unique_watchers:02d}` Vigilantes únicos  ·  📊 `{total_watchers:02d}` Suscripciones",
+        t("alarm.badges", lang, maps=len(by_map), unique=unique_watchers, subs=total_watchers),
         "",
-        "## 🟢 MAPAS BAJO VIGILANCIA",
+        t("alarm.section", lang),
     ]
 
     for idx, map_name in enumerate(sorted(by_map.keys()), start=1):
         watchers = by_map[map_name]
         mentions = " · ".join(f"<@{uid}>" for uid in watchers)
         count = len(watchers)
-        lines.append(f"`#{idx:02d}` 🟢 **{map_name}**  ·  👥 `{count}` vigilante{'s' if count != 1 else ''}")
+        word = t("alarm.watcher_one", lang) if count == 1 else t("alarm.watcher_many", lang)
+        lines.append(t("alarm.map_line", lang, idx=idx, map=map_name, count=count, word=word))
         lines.append(f"  └ {mentions}")
 
     embed.description = "\n".join(lines).strip()
-    embed.set_footer(
-        text=(
-            "Selecciona un mapa en el menú inferior para activar/desactivar tu alarma  "
-            "•  /alarma para comando directo"
-        )
-    )
+    embed.set_footer(text=t("alarm.footer", lang))
     return embed
 
 
@@ -174,9 +169,14 @@ class AlarmasPanelView(discord.ui.View):
     configuraciones distintas — el estado individual aparece al pulsar.
     """
 
-    def __init__(self, bot, servers: list = None):
+    def __init__(self, bot, servers: list = None, lang: str = "es"):
         super().__init__(timeout=None)
         self.bot = bot
+        self.lang = lang
+
+        # Etiquetas traducibles de la vista.
+        self.select_mapa.placeholder = t("alarm.select_placeholder", lang)
+        self.refresh_btn.label = t("alarm.btn.refresh", lang)
 
         options = []
         if servers:
@@ -234,7 +234,8 @@ class AlarmasPanelView(discord.ui.View):
         # queda neutro (sin marca de "activa" porque el panel lo ven varios
         # usuarios con configs distintas). Cada usuario verá su estado
         # personal en el ephemeral que aparece al pulsar.
-        new_view = AlarmasPanelView(self.bot, server_names)
+        lang = await resolve_lang(self.bot, guild_id, "periodic")
+        new_view = AlarmasPanelView(self.bot, server_names, lang=lang)
         new_embed = await build_alarmas_embed(self.bot, guild_id)
         await interaction.response.edit_message(embed=new_embed, view=new_view)
 
@@ -423,7 +424,8 @@ class Alarma(commands.Cog):
         embed = await build_alarmas_embed(self.bot, interaction.guild_id)
         # Panel compartido: el Select queda neutro (todos los mapas ⚪).
         # Cada usuario gestiona sus alarmas individualmente vía ephemeral.
-        view = AlarmasPanelView(self.bot, server_names)
+        lang = await resolve_lang(self.bot, interaction.guild_id, "periodic")
+        view = AlarmasPanelView(self.bot, server_names, lang=lang)
 
         # NO efímero — debe ser visible para toda la tribu.
         await interaction.response.send_message(embed=embed, view=view, ephemeral=False)

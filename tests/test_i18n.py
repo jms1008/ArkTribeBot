@@ -45,6 +45,23 @@ class TestT:
         assert i18n.t("demo.bad", "en", other=1) == "{missing}"
 
 
+class TestCatalogConsistency:
+    """El catálogo ES es la base de fallback: toda clave EN debe existir en ES."""
+
+    def test_every_en_key_exists_in_es(self):
+        es_keys = set(STRINGS["es"].keys())
+        en_keys = set(STRINGS["en"].keys())
+        # idioma.set.en_total vive solo en EN (es un mensaje intrínsecamente inglés).
+        exceptions = {"idioma.set.en_total"}
+        missing = (en_keys - es_keys) - exceptions
+        assert not missing, f"Claves EN sin equivalente ES (rompen el fallback): {sorted(missing)}"
+
+    def test_no_empty_templates(self):
+        for lang, table in STRINGS.items():
+            for key, val in table.items():
+                assert val.strip(), f"Plantilla vacía: {lang}/{key}"
+
+
 class TestResolveLang:
     """resolve_lang depende del modo del guild y del scope."""
 
