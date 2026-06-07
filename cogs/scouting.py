@@ -6,6 +6,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from cogs.server_status import get_guild_servers
+from utils.i18n import resolve_lang, t
 
 logger = logging.getLogger("ArkTribeBot")
 
@@ -153,12 +154,18 @@ class ScoutSelect(discord.ui.Select):
 
 
 class ScoutView(discord.ui.View):
-    def __init__(self, bot, map_filter, chunk=None, page: int = 0, total_rows: int = 0):
+    def __init__(self, bot, map_filter, chunk=None, page: int = 0, total_rows: int = 0, lang: str = "es"):
         super().__init__(timeout=None)
         self.bot = bot
         self.map_filter = map_filter
         self.page = page
         self.total_rows = total_rows
+        self.lang = lang
+
+        # Etiquetas traducibles de los botones de acción.
+        self.add_scout_btn.label = t("scout.btn.add", lang)
+        self.modify_scout_btn.label = t("scout.btn.modify", lang)
+        self.delete_scout_btn.label = t("scout.btn.delete", lang)
 
         if chunk:
             self.add_item(ScoutSelect(bot, chunk))
@@ -203,7 +210,7 @@ class ScoutView(discord.ui.View):
 
         current_page = 0
         if interaction.message.embeds and interaction.message.embeds[0].footer.text:
-            m = re.search(r"Página (\d+)/\d+", interaction.message.embeds[0].footer.text)
+            m = re.search(r"(\d+)/(\d+)", interaction.message.embeds[0].footer.text)
             if m:
                 current_page = int(m.group(1)) - 1
         new_page = max(0, current_page - 1)
@@ -220,7 +227,7 @@ class ScoutView(discord.ui.View):
         current_page = 0
         total_pages = 1
         if interaction.message.embeds and interaction.message.embeds[0].footer.text:
-            m = re.search(r"Página (\d+)/(\d+)", interaction.message.embeds[0].footer.text)
+            m = re.search(r"(\d+)/(\d+)", interaction.message.embeds[0].footer.text)
             if m:
                 current_page = int(m.group(1)) - 1
                 total_pages = int(m.group(2))
@@ -244,11 +251,12 @@ class ScoutView(discord.ui.View):
             )
         rows = await cursor.fetchall()
 
-        embed, page, view = await build_scout_embed_view(self.bot, rows, self.map_filter, new_page)
+        lang = await resolve_lang(self.bot, interaction.guild_id, "periodic")
+        embed, page, view = await build_scout_embed_view(self.bot, rows, self.map_filter, new_page, lang=lang)
         await interaction.response.edit_message(embed=embed, view=view)
 
 
-async def build_scout_embed_view(bot, rows: list, map_filter: str, page: int = 0):
+async def build_scout_embed_view(bot, rows: list, map_filter: str, page: int = 0, lang: str = "es"):
     page_size = 10
     total = len(rows)
     total_pages = max(1, (total + page_size - 1) // page_size)
@@ -258,14 +266,14 @@ async def build_scout_embed_view(bot, rows: list, map_filter: str, page: int = 0
     chunk = rows[start : start + page_size]
 
     embed = discord.Embed(
-        title=f"🛰️ SCOUTING: {map_filter.upper()}", color=discord.Color.from_rgb(200, 50, 50)
+        title=t("scout.title", lang, map=map_filter.upper()), color=discord.Color.from_rgb(200, 50, 50)
     )
 
     if not rows:
-        embed.description = "No hay reportes de bases enemigas.\n💡 Usa `/scout_add` para registrar una."
+        embed.description = t("scout.empty", lang)
     else:
         lines = []
-        lines.append(f"📊 `{total}` bases registradas")
+        lines.append(t("scout.badges", lang, total=total))
         lines.append("")
 
         for row in chunk:
@@ -308,8 +316,8 @@ async def build_scout_embed_view(bot, rows: list, map_filter: str, page: int = 0
             lines.append("")
 
         embed.description = "\n".join(lines).strip()
-        embed.set_footer(text=f"Página {page + 1}/{total_pages} • /scout_add_image [id] para foto")
-    view = ScoutView(bot, map_filter, chunk, page=page, total_rows=total)
+        embed.set_footer(text=t("scout.footer", lang, page=page + 1, pages=total_pages))
+    view = ScoutView(bot, map_filter, chunk, page=page, total_rows=total, lang=lang)
     return embed, page, view
 
 
@@ -355,7 +363,8 @@ async def update_scout_dashboards(bot, guild_id: int, target_map=None, page: int
             )
         rows = await cursor.fetchall()
 
-        embed, _, view = await build_scout_embed_view(bot, rows, map_filter, page)
+        lang = await resolve_lang(bot, guild_id, "periodic")
+        embed, _, view = await build_scout_embed_view(bot, rows, map_filter, page, lang=lang)
 
         try:
             channel = bot.get_channel(dash["channel_id"]) or await bot.fetch_channel(dash["channel_id"])
@@ -559,7 +568,8 @@ class Scouting(commands.Cog):
         )
         rows = await cursor.fetchall()
 
-        embed, _, view = await build_scout_embed_view(self.bot, rows, "Global", 0)
+        lang = await resolve_lang(self.bot, guild_id, "periodic")
+        embed, _, view = await build_scout_embed_view(self.bot, rows, "Global", 0, lang=lang)
         msg = await channel.send(embed=embed, view=view)
         await asyncio.sleep(0.5)
 
@@ -807,7 +817,8 @@ class Scouting(commands.Cog):
             await self._send_private_scout_page(interaction, rows, target_map, page=0)
         else:
             # Modo Global público (Dashboard persistente)
-            embed, page, view = await build_scout_embed_view(self.bot, rows, target_map, 0)
+            lang = await resolve_lang(self.bot, interaction.guild_id, "periodic")
+            embed, page, view = await build_scout_embed_view(self.bot, rows, target_map, 0, lang=lang)
 
             await interaction.response.send_message(embed=embed, view=view, ephemeral=False)
             message = await interaction.original_response()

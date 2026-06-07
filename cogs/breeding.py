@@ -7,6 +7,8 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
+from utils.i18n import resolve_lang, t
+
 logger = logging.getLogger("ArkTribeBot")
 
 # Opciones del menú de estadísticas
@@ -249,11 +251,17 @@ class BreedingDinoSelectMenu(discord.ui.Select):
 
 
 class BreedingDashboardView(discord.ui.View):
-    def __init__(self, bot, rows=None, page: int = 0):
+    def __init__(self, bot, rows=None, page: int = 0, lang: str = "es"):
         super().__init__(timeout=None)
         self.bot = bot
         self.rows = rows or []
         self.page = page
+        self.lang = lang
+
+        # Etiquetas traducibles de los botones de acción.
+        self.nueva_muta_btn.label = t("breeding.btn.muta", lang)
+        self.alarmas_btn.label = t("breeding.btn.alarms", lang)
+        self.ver_logs_mutas_btn.label = t("breeding.btn.logs", lang)
 
         items_per_page = 10
         total_rows = len(self.rows)
@@ -419,8 +427,9 @@ class BreedingDashboardView(discord.ui.View):
         )
         rows = await cursor.fetchall()
 
-        embed, _, _, _ = build_breeding_embed(rows, new_page)
-        new_view = BreedingDashboardView(self.bot, rows, new_page)
+        lang = await resolve_lang(self.bot, interaction.guild_id, "periodic")
+        embed, _, _, _ = build_breeding_embed(rows, new_page, lang=lang)
+        new_view = BreedingDashboardView(self.bot, rows, new_page, lang=lang)
         await interaction.response.edit_message(embed=embed, view=new_view)
 
 
@@ -443,7 +452,7 @@ def _format_stat(value) -> str:
     return f"`{value:>3}`" if value else "` — `"
 
 
-def build_breeding_embed(rows, page=0):
+def build_breeding_embed(rows, page=0, lang: str = "es"):
     """Construye el embed del dashboard de breeding con el patrón visual unificado.
 
     Diseño (consistente con Blacklist/Scouting):
@@ -464,23 +473,20 @@ def build_breeding_embed(rows, page=0):
     display_rows = rows[start_idx : start_idx + items_per_page]
 
     embed = discord.Embed(
-        title="🧬 LÍNEAS DE CRIANZA (Top Stats)",
+        title=t("breeding.title", lang),
         color=discord.Color.from_rgb(255, 215, 0),
     )
 
     if not rows:
-        embed.description = (
-            "📭 No hay líneas registradas aún.\n\n"
-            "💡 Usa `/linea_add dino:Rex estadistica:HP puntos:50` para empezar."
-        )
-        embed.set_footer(text="Página 1/1 • 0 especies")
+        embed.description = t("breeding.empty", lang)
+        embed.set_footer(text=t("breeding.empty_footer", lang))
         return embed, [], 0, 1
 
     # Cabecera con badges.
     lines = [
-        f"📊 `{total_rows:02d}` especies registradas  ·  📄 Página `{page + 1}/{total_pages}`",
+        t("breeding.badges", lang, total=total_rows, page=page + 1, pages=total_pages),
         "",
-        "## 🦖 ESPECIES",
+        t("breeding.section", lang),
     ]
 
     # Listado tabular: nombre con padding fijo + 7 stats compactas.
@@ -489,13 +495,7 @@ def build_breeding_embed(rows, page=0):
         lines.append(f"`{row['especie']:<14}` {stats_line}")
 
     embed.description = "\n".join(lines).strip()
-    embed.set_footer(
-        text=(
-            f"Página {page + 1}/{total_pages}  •  {total_rows} especies totales  "
-            f"•  ❤️HP ⚔️Melee ⚡Stam ⚖️Peso 🫧Oxy 🍖Food 💨Speed  "
-            f"•  /linea_add"
-        )
-    )
+    embed.set_footer(text=t("breeding.footer", lang, page=page + 1, pages=total_pages, total=total_rows))
     return embed, [r["especie"] for r in display_rows], page, total_pages
 
 
@@ -522,6 +522,7 @@ async def update_breeding_dashboards(bot, guild_id: int, specific_message_id=Non
     cursor = await db.execute("SELECT * FROM dinos WHERE guild_id = ? ORDER BY especie ASC", (guild_id,))
     rows = await cursor.fetchall()
 
+    lang = await resolve_lang(bot, guild_id, "periodic")
     messages_to_remove = []
     for dash in dashboards:
         try:
@@ -539,12 +540,12 @@ async def update_breeding_dashboards(bot, guild_id: int, specific_message_id=Non
                 if message.embeds and message.embeds[0].footer and message.embeds[0].footer.text:
                     import re
 
-                    m = re.search(r"Página (\d+)/(\d+)", message.embeds[0].footer.text)
+                    m = re.search(r"(\d+)/(\d+)", message.embeds[0].footer.text)
                     if m:
                         target_page = int(m.group(1)) - 1  # Convertir a 0-indexed
 
-            new_embed, _, current_page, _ = build_breeding_embed(rows, target_page)
-            new_view = BreedingDashboardView(bot, rows, current_page)
+            new_embed, _, current_page, _ = build_breeding_embed(rows, target_page, lang=lang)
+            new_view = BreedingDashboardView(bot, rows, current_page, lang=lang)
             await message.edit(embed=new_embed, view=new_view)
 
         except (discord.NotFound, discord.Forbidden):
@@ -595,8 +596,9 @@ class Breeding(commands.Cog):
         )
         rows = await cursor.fetchall()
 
-        embed, _, _, _ = build_breeding_embed(rows, 0)
-        view = BreedingDashboardView(self.bot, rows)
+        lang = await resolve_lang(self.bot, guild_id, "periodic")
+        embed, _, _, _ = build_breeding_embed(rows, 0, lang=lang)
+        view = BreedingDashboardView(self.bot, rows, lang=lang)
         msg = await channel.send(embed=embed, view=view)
         await asyncio.sleep(0.5)
 
@@ -812,8 +814,9 @@ class Breeding(commands.Cog):
         )
         rows = await cursor.fetchall()
 
-        embed, _, page, total_pages = build_breeding_embed(rows, 0)
-        view = BreedingDashboardView(self.bot, rows, page)
+        lang = await resolve_lang(self.bot, interaction.guild_id, "periodic")
+        embed, _, page, total_pages = build_breeding_embed(rows, 0, lang=lang)
+        view = BreedingDashboardView(self.bot, rows, page, lang=lang)
 
         await interaction.response.send_message(embed=embed, view=view)
         message = await interaction.original_response()

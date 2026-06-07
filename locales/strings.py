@@ -70,6 +70,30 @@ STRINGS: dict[str, dict[str, str]] = {
             "Tribu líder en donación involuntaria de inventario.\n"
             "Respawneamos más rápido que los dinos salvajes."
         ),
+        # --- Scouting dashboard ---
+        "scout.title": "🛰️ SCOUTING: {map}",
+        "scout.empty": "No hay reportes de bases enemigas.\n💡 Usa `/scout_add` para registrar una.",
+        "scout.badges": "📊 `{total}` bases registradas",
+        "scout.footer": "Página {page}/{pages} • /scout_add_image [id] para foto",
+        "scout.btn.add": "Añadir Scout",
+        "scout.btn.modify": "Modificar Scout",
+        "scout.btn.delete": "Eliminar Scout",
+        # --- Breeding / Líneas dashboard ---
+        "breeding.title": "🧬 LÍNEAS DE CRIANZA (Top Stats)",
+        "breeding.empty": (
+            "📭 No hay líneas registradas aún.\n\n"
+            "💡 Usa `/linea_add dino:Rex estadistica:HP puntos:50` para empezar."
+        ),
+        "breeding.empty_footer": "Página 1/1 • 0 especies",
+        "breeding.badges": "📊 `{total:02d}` especies registradas  ·  📄 Página `{page}/{pages}`",
+        "breeding.section": "## 🦖 ESPECIES",
+        "breeding.footer": (
+            "Página {page}/{pages}  •  {total} especies totales  "
+            "•  ❤️HP ⚔️Melee ⚡Stam ⚖️Peso 🫧Oxy 🍖Food 💨Speed  •  /linea_add"
+        ),
+        "breeding.btn.muta": "Nueva muta",
+        "breeding.btn.alarms": "Alarmas",
+        "breeding.btn.logs": "Ver Logs Muta",
         # --- /idioma ---
         "idioma.denied": "❌ Acceso denegado. Necesitas permisos de administrador.",
         "idioma.set.es": (
@@ -140,6 +164,30 @@ STRINGS: dict[str, dict[str, str]] = {
             "Tribe leader in involuntary inventory donation.\n"
             "We respawn faster than wild dinos."
         ),
+        # --- Scouting dashboard ---
+        "scout.title": "🛰️ SCOUTING: {map}",
+        "scout.empty": "No enemy base reports.\n💡 Use `/scout_add` to register one.",
+        "scout.badges": "📊 `{total}` registered bases",
+        "scout.footer": "Page {page}/{pages} • /scout_add_image [id] for photo",
+        "scout.btn.add": "Add Scout",
+        "scout.btn.modify": "Edit Scout",
+        "scout.btn.delete": "Delete Scout",
+        # --- Breeding / Lines dashboard ---
+        "breeding.title": "🧬 BREEDING LINES (Top Stats)",
+        "breeding.empty": (
+            "📭 No lines registered yet.\n\n"
+            "💡 Use `/linea_add dino:Rex estadistica:HP puntos:50` to start."
+        ),
+        "breeding.empty_footer": "Page 1/1 • 0 species",
+        "breeding.badges": "📊 `{total:02d}` registered species  ·  📄 Page `{page}/{pages}`",
+        "breeding.section": "## 🦖 SPECIES",
+        "breeding.footer": (
+            "Page {page}/{pages}  •  {total} species total  "
+            "•  ❤️HP ⚔️Melee ⚡Stam ⚖️Weight 🫧Oxy 🍖Food 💨Speed  •  /linea_add"
+        ),
+        "breeding.btn.muta": "New mutation",
+        "breeding.btn.alarms": "Alarms",
+        "breeding.btn.logs": "View Mut. Logs",
         # --- /idioma ---
         "idioma.set.en_total": (
             "🌐 Language set: **English (everything)**.\n"
