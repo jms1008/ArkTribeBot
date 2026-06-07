@@ -6,16 +6,23 @@ from discord import app_commands
 from discord.ext import commands
 
 from utils import bus
+from utils.i18n import resolve_lang, t
 
 logger = logging.getLogger("ArkTribeBot")
 
 
 class TodoView(discord.ui.View):
-    def __init__(self, bot, page: int = 0, total_rows: int = 0):
+    def __init__(self, bot, page: int = 0, total_rows: int = 0, lang: str = "es"):
         super().__init__(timeout=None)
         self.bot = bot
         self.page = page
         self.total_rows = total_rows
+        self.lang = lang
+
+        # Etiquetas traducibles de los botones de acción.
+        self.add_task_btn.label = t("todo.btn.add", lang)
+        self.claim_task.label = t("todo.btn.claim", lang)
+        self.delete_task.label = t("todo.btn.delete", lang)
 
         # Deshabilitar botones de paginación si procede
         total_pages = max(1, (self.total_rows + 10 - 1) // 10)
@@ -56,7 +63,8 @@ class TodoView(discord.ui.View):
 
         current_page = 0
         if interaction.message.embeds and interaction.message.embeds[0].footer.text:
-            m = re.search(r"Página (\d+)/\d+", interaction.message.embeds[0].footer.text)
+            # Language-agnostic: extrae el patrón "N/N" sin depender de "Página"/"Page".
+            m = re.search(r"(\d+)/(\d+)", interaction.message.embeds[0].footer.text)
             if m:
                 current_page = int(m.group(1)) - 1
         new_page = max(0, current_page - 1)
@@ -73,7 +81,8 @@ class TodoView(discord.ui.View):
         current_page = 0
         total_pages = 1
         if interaction.message.embeds and interaction.message.embeds[0].footer.text:
-            m = re.search(r"Página (\d+)/(\d+)", interaction.message.embeds[0].footer.text)
+            # Language-agnostic: extrae "N/N" sin depender del literal "Página"/"Page".
+            m = re.search(r"(\d+)/(\d+)", interaction.message.embeds[0].footer.text)
             if m:
                 current_page = int(m.group(1)) - 1
                 total_pages = int(m.group(2))
@@ -85,14 +94,15 @@ class TodoView(discord.ui.View):
         cursor = await db.execute("SELECT * FROM todos WHERE guild_id = ?", (interaction.guild_id,))
         rows = await cursor.fetchall()
 
-        embed, page, view = build_todo_embed_view(self.bot, rows, new_page)
+        lang = await resolve_lang(self.bot, interaction.guild_id, "periodic")
+        embed, page, view = build_todo_embed_view(self.bot, rows, new_page, lang=lang)
         await interaction.response.edit_message(embed=embed, view=view)
 
 
-def _format_assignees(raw: str | None) -> str:
+def _format_assignees(raw: str | None, lang: str = "es") -> str:
     """Normaliza el campo asignado_a a una cadena de menciones Discord."""
     if not raw:
-        return "*Sin asignar*"
+        return t("todo.unassigned", lang)
     parts = [p.strip() for p in str(raw).split(",") if p.strip()]
     fixed = []
     for p in parts:
@@ -101,10 +111,10 @@ def _format_assignees(raw: str | None) -> str:
             fixed.append(f"<@{core}>")
         else:
             fixed.append(core)
-    return ", ".join(fixed) if fixed else "*Sin asignar*"
+    return ", ".join(fixed) if fixed else t("todo.unassigned", lang)
 
 
-def _render_todo_item(row) -> list[str]:
+def _render_todo_item(row, lang: str = "es") -> list[str]:
     """Renderiza una tarea como 2 líneas: encabezado + asignado.
 
     Patrón visual unificado con Blacklist/Scouting:
@@ -113,11 +123,11 @@ def _render_todo_item(row) -> list[str]:
     icon = "🔨" if row["estado"] != "Pendiente" else "⏳"
     return [
         f"`#{row['id']:03d}` {icon} **{row['tarea']}**",
-        f"  └ 👤 {_format_assignees(row['asignado_a'])}",
+        f"  └ 👤 {_format_assignees(row['asignado_a'], lang)}",
     ]
 
 
-def build_todo_embed_view(bot, rows: list, page: int = 0):
+def build_todo_embed_view(bot, rows: list, page: int = 0, lang: str = "es"):
     """Construye el embed del panel de To-Do con el patrón visual unificado.
 
     Diseño (consistente con Blacklist/Scouting/Ranking):
@@ -135,15 +145,12 @@ def build_todo_embed_view(bot, rows: list, page: int = 0):
     start = page * page_size
     chunk = rows[start : start + page_size]
 
-    embed = discord.Embed(title="📋 LISTA DE TAREAS", color=discord.Color.from_rgb(255, 165, 0))
+    embed = discord.Embed(title=t("todo.title", lang), color=discord.Color.from_rgb(255, 165, 0))
 
     if not rows:
-        embed.description = (
-            "✅ ¡Sin tareas pendientes! La tribu está al día. 🎉\n\n"
-            "*Pulsa **Añadir Tarea** o usa `/todo_add` para crear una nueva.*"
-        )
-        embed.set_footer(text="Página 1/1 • 0 tareas")
-        view = TodoView(bot, page=0, total_rows=0)
+        embed.description = t("todo.empty", lang)
+        embed.set_footer(text=t("todo.empty_footer", lang))
+        view = TodoView(bot, page=0, total_rows=0, lang=lang)
         return embed, 0, view
 
     n_pending = sum(1 for r in rows if r["estado"] == "Pendiente")
@@ -151,7 +158,7 @@ def build_todo_embed_view(bot, rows: list, page: int = 0):
 
     # Cabecera con counter de badges en code-block (estilo Blacklist).
     lines: list[str] = [
-        f"🔨 `{n_progress:02d}` En Progreso  ·  ⏳ `{n_pending:02d}` Pendientes  ·  📊 `{total:02d}` Total",
+        t("todo.badges", lang, progress=n_progress, pending=n_pending, total=total),
         "",
     ]
 
@@ -160,22 +167,22 @@ def build_todo_embed_view(bot, rows: list, page: int = 0):
     pending = [r for r in chunk if r["estado"] == "Pendiente"]
 
     if in_progress:
-        lines.append("## 🔨 EN PROGRESO")
+        lines.append(t("todo.section.progress", lang))
         for row in in_progress:
-            lines.extend(_render_todo_item(row))
+            lines.extend(_render_todo_item(row, lang))
             lines.append("")
 
     if pending:
         if in_progress:
             lines.append("")  # separador extra entre secciones
-        lines.append("## ⏳ PENDIENTES")
+        lines.append(t("todo.section.pending", lang))
         for row in pending:
-            lines.extend(_render_todo_item(row))
+            lines.extend(_render_todo_item(row, lang))
             lines.append("")
 
     embed.description = "\n".join(lines).strip()
-    embed.set_footer(text=f"Página {page + 1}/{total_pages} • {total} tareas totales • /todo_add para añadir")
-    view = TodoView(bot, page=page, total_rows=total)
+    embed.set_footer(text=t("todo.footer", lang, page=page + 1, pages=total_pages, total=total))
+    view = TodoView(bot, page=page, total_rows=total, lang=lang)
     return embed, page, view
 
 
@@ -186,7 +193,8 @@ async def update_all_dashboards(bot, guild_id: int, page: int = 0):
     cursor = await db.execute("SELECT * FROM todos WHERE guild_id = ?", (guild_id,))
     rows = await cursor.fetchall()
 
-    embed, current_page, view = build_todo_embed_view(bot, rows, page)
+    lang = await resolve_lang(bot, guild_id, "periodic")
+    embed, current_page, view = build_todo_embed_view(bot, rows, page, lang=lang)
     # 2. Búsqueda y edición de mensajes registrados
     messages_to_remove = []
     db = bot.db
@@ -670,7 +678,8 @@ class Management(commands.Cog, name="Management"):
         rows = await cursor.fetchall()
 
         # Usar el builder unificado para consistencia visual con /todo_list.
-        todo_embed, _page, view = build_todo_embed_view(self.bot, rows, page=0)
+        lang = await resolve_lang(self.bot, guild_id, "periodic")
+        todo_embed, _page, view = build_todo_embed_view(self.bot, rows, page=0, lang=lang)
         msg = await channel.send(embed=todo_embed, view=view)
         await asyncio.sleep(0.5)
 
@@ -715,7 +724,8 @@ class Management(commands.Cog, name="Management"):
         cursor = await db.execute("SELECT * FROM todos WHERE guild_id = ?", (interaction.guild_id,))
         rows = await cursor.fetchall()
 
-        embed, _page, view = build_todo_embed_view(self.bot, rows, page=0)
+        lang = await resolve_lang(self.bot, interaction.guild_id, "periodic")
+        embed, _page, view = build_todo_embed_view(self.bot, rows, page=0, lang=lang)
         await interaction.response.send_message(embed=embed, view=view)
         message = await interaction.original_response()
 

@@ -9,6 +9,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from cogs.server_status import get_guild_servers
+from utils.i18n import resolve_lang, t
 
 logger = logging.getLogger("ArkTribeBot")
 
@@ -16,7 +17,7 @@ logger = logging.getLogger("ArkTribeBot")
 PAGE_SIZE = 10  # Entradas por página en el dashboard de Blacklist
 
 
-def build_blacklist_embed(rows: list, page: int = 0) -> discord.Embed:
+def build_blacklist_embed(rows: list, page: int = 0, lang: str = "es") -> discord.Embed:
     """Construye el embed de la Blacklist en formato compacto paginado."""
     total = len(rows)
     total_pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
@@ -29,18 +30,18 @@ def build_blacklist_embed(rows: list, page: int = 0) -> discord.Embed:
     n_neutrals = total - n_enemies
 
     embed = discord.Embed(
-        title="☠️ BLACKLIST DE TRIBU",
+        title=t("blacklist.title", lang),
         color=discord.Color.from_rgb(40, 40, 40),
     )
 
     if not rows:
-        embed.description = "La lista está limpia. No hay jugadores registrados.\n💡 Usa el botón **Añadir** para registrar el primero."
+        embed.description = t("blacklist.empty", lang)
     else:
         lines = []
         current_section = None
 
         # Cabecera con estadísticas
-        lines.append(f"🔴 `{n_enemies}` Enemigos  ·  ⚪ `{n_neutrals}` Neutrales  ·  📊 `{total}` Total")
+        lines.append(t("blacklist.badges", lang, enemies=n_enemies, neutrals=n_neutrals, total=total))
         lines.append("")
 
         for row in chunk:
@@ -48,11 +49,11 @@ def build_blacklist_embed(rows: list, page: int = 0) -> discord.Embed:
 
             # Separadores de sección
             if is_enemy == 1 and current_section != "Enemigos":
-                lines.append("## 🔴 ENEMIGOS (KOS)")
+                lines.append(t("blacklist.section.enemies", lang))
                 current_section = "Enemigos"
             elif is_enemy == 0 and current_section != "Neutrales":
                 lines.append("")
-                lines.append("## ⚪ REGISTROS (NEUTRALES)")
+                lines.append(t("blacklist.section.neutrals", lang))
                 current_section = "Neutrales"
 
             # Ocultar notas genéricas de K4Ultra que son repetitivas
@@ -83,7 +84,7 @@ def build_blacklist_embed(rows: list, page: int = 0) -> discord.Embed:
 
         embed.description = "\n".join(lines).strip()
         embed.set_footer(
-            text=f"Página {page + 1}/{total_pages} • {total} entradas totales • /bl_editar para modificar"
+            text=t("blacklist.footer", lang, page=page + 1, pages=total_pages, total=total)
         )
     return embed, page, total_pages
 
@@ -106,8 +107,9 @@ async def update_blacklist_dashboards(bot, guild_id: int, page: int = 0):
     )
     rows = await cursor.fetchall()
 
-    embed, current_page, total_pages = build_blacklist_embed(rows, page)
-    view = BlacklistView(bot, rows, current_page)
+    lang = await resolve_lang(bot, guild_id, "periodic")
+    embed, current_page, total_pages = build_blacklist_embed(rows, page, lang=lang)
+    view = BlacklistView(bot, rows, current_page, lang=lang)
     messages_to_remove = []
 
     for dash in dashboards:
@@ -139,6 +141,8 @@ async def update_kda_dashboards(bot, guild_id: int):
 
     if not dashboards:
         return
+
+    lang = await resolve_lang(bot, guild_id, "periodic")
 
     # Generación del Leaderboard de Mortalidad
     db = bot.db
@@ -197,26 +201,26 @@ async def update_kda_dashboards(bot, guild_id: int):
 
     if not rows:
         embed = discord.Embed(
-            title="☠️ El Salón de la Infamia",
-            description="Todavía no hay registros de mortalidad en la tribu. ¡Seguid así! 🛡️",
+            title=t("kda.empty_title", lang),
+            description=t("kda.empty_desc", lang),
             color=discord.Color.from_rgb(43, 45, 49),
         )
-        embed.set_footer(text="💡 Los perfiles se vinculan con /perfil_tribu")
+        embed.set_footer(text=t("kda.empty_footer", lang))
     else:
         import random as _rng
 
         def get_mortality_rank(d):
             if d <= 5:
-                return ("Novato Inocente", "🐣")
+                return (t("kda.rank.1", lang), "🐣")
             if d <= 15:
-                return ("Pienso de Dodo", "🥚")
+                return (t("kda.rank.2", lang), "🥚")
             if d <= 40:
-                return ("Ceviche de Raptor", "🦖")
+                return (t("kda.rank.3", lang), "🦖")
             if d <= 80:
-                return ("Saco de Dormir Humano", "🛌")
+                return (t("kda.rank.4", lang), "🛌")
             if d <= 150:
-                return ("Leyenda del Respawn", "⚰️")
-            return ("ALPHA MANCO SUPREMO", "👑")
+                return (t("kda.rank.5", lang), "⚰️")
+            return (t("kda.rank.6", lang), "👑")
 
         def get_bar(d, total, length=10):
             if total == 0:
@@ -233,14 +237,22 @@ async def update_kda_dashboards(bot, guild_id: int):
         top1_peak = peak_dph_map.get(top1["player_name"])
 
         lines = []
-        lines.append(f"## 🏆 Rey de los Mancos: **{top1_name}**")
-        lines.append(f"> Con **{top1['deaths']}** muertes ostenta el trono de la vergüenza.")
-        peak_txt = f" · 🔥 Pico: `{top1_peak}`/h" if top1_peak else ""
+        lines.append(t("kda.king", lang, name=top1_name))
+        lines.append(t("kda.king_desc", lang, deaths=top1["deaths"]))
+        peak_txt = t("kda.king_peak", lang, peak=top1_peak) if top1_peak else ""
         lines.append(
-            f"> {top1_emoji} **{top1_rank}** — `{get_bar(top1['deaths'], total_tribe_deaths)}` {top1_pct:.0f}%{peak_txt}"
+            t(
+                "kda.king_line",
+                lang,
+                emoji=top1_emoji,
+                rank=top1_rank,
+                bar=get_bar(top1["deaths"], total_tribe_deaths),
+                pct=f"{top1_pct:.0f}",
+                peak=peak_txt,
+            )
         )
         lines.append("")
-        lines.append(f"Muertes totales de la tribu: **{total_tribe_deaths}** 📉")
+        lines.append(t("kda.total_deaths", lang, total=total_tribe_deaths))
         lines.append("─────────────────────────────")
 
         # Resto de jugadores en texto compacto
@@ -253,28 +265,31 @@ async def update_kda_dashboards(bot, guild_id: int):
             peak = peak_dph_map.get(row["player_name"])
 
             medalla = "🥈" if idx == 2 else "🥉" if idx == 3 else "☠️"
-            peak_str = f" · 🔥`{peak}`/h" if peak else ""
+            peak_str = t("kda.entry_peak", lang, peak=peak) if peak else ""
 
-            lines.append(f"**{medalla} #{idx} {player}**")
-            lines.append(f"  {rank_emoji} *{rank_title}*  ·  `{bar}` **{deaths}** ({pct:.0f}%){peak_str}")
+            lines.append(t("kda.entry_name", lang, medal=medalla, idx=idx, player=player))
+            lines.append(
+                t(
+                    "kda.entry_line",
+                    lang,
+                    emoji=rank_emoji,
+                    rank=rank_title,
+                    bar=bar,
+                    deaths=deaths,
+                    pct=f"{pct:.0f}",
+                    peak=peak_str,
+                )
+            )
             lines.append("")
 
         embed = discord.Embed(
-            title="☠️ EL SALÓN DE LA INFAMIA",
+            title=t("kda.title", lang),
             description="\n".join(lines),
             color=discord.Color.from_rgb(139, 0, 0),
         )
 
-        footer_frases = [
-            "Morir es de guapos, y nosotros somos modelos.",
-            "¿Para qué farmear si puedes donar tu loot al suelo?",
-            "El verdadero endgame es el respawn.",
-            "No estamos muriendo, estamos practicando.",
-            "Cada muerte nos hace más fuertes... mentalmente.",
-            "Tribu líder en donación involuntaria de inventario.",
-            "Respawneamos más rápido que los dinos salvajes.",
-        ]
-        embed.set_footer(text=f"💡 {_rng.choice(footer_frases)} • 🔥/h = pico máximo en 1 hora")
+        footer_frases = t("kda.footer_phrases", lang).split("\n")
+        embed.set_footer(text=t("kda.footer", lang, phrase=_rng.choice(footer_frases)))
 
     messages_to_remove = []
 
@@ -739,12 +754,18 @@ class PlayerDetailSelect(discord.ui.Select):
 
 
 class BlacklistView(discord.ui.View):
-    def __init__(self, bot, rows=None, page: int = 0):
+    def __init__(self, bot, rows=None, page: int = 0, lang: str = "es"):
         super().__init__(timeout=None)
         self.bot = bot
         self.rows = rows or []
         self.page = page
+        self.lang = lang
         total_pages = max(1, (len(self.rows) + PAGE_SIZE - 1) // PAGE_SIZE)
+
+        # Etiquetas traducibles de los botones de acción.
+        self.add_btn.label = t("blacklist.btn.add", lang)
+        self.modify_btn.label = t("blacklist.btn.modify", lang)
+        self.delete_btn.label = t("blacklist.btn.delete", lang)
 
         # Select de Jugadores para esta página
         start = page * PAGE_SIZE
@@ -835,8 +856,9 @@ class BlacklistView(discord.ui.View):
         )
         rows = await cursor.fetchall()
 
-        embed, current_page, _ = build_blacklist_embed(rows, new_page)
-        new_view = BlacklistView(self.bot, rows, current_page)
+        lang = await resolve_lang(self.bot, interaction.guild_id, "periodic")
+        embed, current_page, _ = build_blacklist_embed(rows, new_page, lang=lang)
+        new_view = BlacklistView(self.bot, rows, current_page, lang=lang)
         await interaction.response.edit_message(embed=embed, view=new_view)
 
 
@@ -879,8 +901,9 @@ class Warfare(commands.Cog):
         )
         rows = await cursor.fetchall()
 
-        embed, _, _ = build_blacklist_embed(rows, 0)
-        view = BlacklistView(self.bot, rows)
+        lang = await resolve_lang(self.bot, guild_id, "periodic")
+        embed, _, _ = build_blacklist_embed(rows, 0, lang=lang)
+        view = BlacklistView(self.bot, rows, lang=lang)
         msg = await channel.send(embed=embed, view=view)
         await asyncio.sleep(0.5)
 
