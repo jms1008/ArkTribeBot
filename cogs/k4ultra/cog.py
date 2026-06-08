@@ -14,6 +14,13 @@ logger = logging.getLogger("ArkTribeBot")
 
 
 class K4Ultra(commands.Cog, name="K4Ultra"):
+    # --- Grupo unificado de gestión de tribus e identidades (/tribu ...) ---
+    # Reúne lo que antes eran /tribu_propia, /fijar_tribu, /unfijar_tribu,
+    # /perfil_tribu, /aliados y los k4ultra_merge/split/cleanup.
+    tribu = app_commands.Group(name="tribu", description="Gestión de tribus, miembros e identidades.")
+    propia = app_commands.Group(name="propia", description="Tu tribu principal del servidor.", parent=tribu)
+    aliada = app_commands.Group(name="aliada", description="Tribus aliadas (no disparan alarmas).", parent=tribu)
+
     def __init__(self, bot):
         self.bot = bot
         self.gather_player_data.start()
@@ -156,8 +163,8 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
             )
             await db.commit()
 
-    @app_commands.command(
-        name="k4ultra_cleanup",
+    @tribu.command(
+        name="limpiar",
         description="[Admin] Limpia y fusiona perfiles duplicados (_1, _2) con su nombre base.",
     )
     async def k4ultra_cleanup(self, interaction: discord.Interaction):
@@ -284,8 +291,8 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
             ephemeral=True,
         )
 
-    @app_commands.command(
-        name="fijar_tribu",
+    @tribu.command(
+        name="fijar",
         description="[Admin] Fija una tribu para que el algoritmo no añada jugadores externos.",
     )
     @app_commands.describe(
@@ -337,12 +344,7 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
             ephemeral=True,
         )
 
-    tribu_propia_group = app_commands.Group(
-        name="tribu_propia",
-        description="Gestión de la tribu principal del servidor.",
-    )
-
-    @tribu_propia_group.command(
+    @propia.command(
         name="crear",
         description="[Admin] Crea y establece la tribu propia predeterminada.",
     )
@@ -389,9 +391,7 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
             ephemeral=True,
         )
 
-    @tribu_propia_group.command(
-        name="modificar", description="[Admin] Modifica parámetros de la tribu propia."
-    )
+    @propia.command(name="modificar", description="[Admin] Modifica parámetros de la tribu propia.")
     @app_commands.describe(
         opcion="Qué tipo de modificación deseas aplicar",
         valor="El nuevo nombre o el miembro a alterar",
@@ -424,7 +424,7 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
 
         if not row:
             await interaction.response.send_message(
-                "❌ No hay tribu propia configurada. Usa `/tribu_propia crear` primero.", ephemeral=True
+                "❌ No hay tribu propia configurada. Usa `/tribu propia crear` primero.", ephemeral=True
             )
             return
 
@@ -474,7 +474,7 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
                 f"✅ Se eliminó a **{valor}** de la tribu propia (**{row['name']}**).", ephemeral=True
             )
 
-    @tribu_propia_group.command(name="borrar", description="[Admin] Elimina la tribu propia del registro.")
+    @propia.command(name="borrar", description="[Admin] Elimina la tribu propia del registro.")
     @app_commands.describe(seguro="True si estás seguro de que deseas borrarla por completo.")
     async def tribu_propia_borrar(self, interaction: discord.Interaction, seguro: bool):
         if not await interaction.client.is_authorized_admin(interaction):
@@ -504,8 +504,8 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
             "✅ Has borrado permanentemente la tribu propia del servidor.", ephemeral=True
         )
 
-    @app_commands.command(
-        name="unfijar_tribu",
+    @tribu.command(
+        name="desfijar",
         description="[Admin] Elimina una tribu fijada por su nombre exacto.",
     )
     @app_commands.describe(nombre="Nombre exacto de la tribu a eliminar")
@@ -544,114 +544,153 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
                 ephemeral=True,
             )
 
-    @app_commands.command(
-        name="k4ultra_merge",
-        description="[Admin] Fusiona MANUALMENTE un perfil duplicado (origen) hacia un perfil base (destino).",
+    @tribu.command(
+        name="fusionar",
+        description="[Admin] Fusiona toda la identidad de un nombre antiguo (origen) hacia el definitivo (destino).",
     )
     @app_commands.describe(
-        origen="Perfil a eliminar y fusionar (ej: 123_1)",
-        destino="Perfil base que absorberá las horas (ej: 123)",
+        origen="Nombre antiguo/secundario que ya no se usa (ej: 123_1)",
+        destino="Nombre oficial y definitivo que absorberá el historial (ej: 123)",
     )
-    async def k4ultra_merge(self, interaction: discord.Interaction, origen: str, destino: str):
+    async def tribu_fusionar(self, interaction: discord.Interaction, origen: str, destino: str):
+        """Unifica DOS identidades en una. Superset de los antiguos /fusionar_perfiles
+        y /k4ultra_merge: encadena player_identities_link, traslada sesiones, suma
+        playtimes, reasigna relaciones del radar, preserva notas de blacklist y
+        limpia alias/log. Tras esto, las futuras conexiones del nombre antiguo se
+        reasignan al definitivo."""
         if not await interaction.client.is_authorized_admin(interaction):
             await interaction.response.send_message("❌ Acceso denegado.", ephemeral=True)
             return
 
         origen = origen.strip()
         destino = destino.strip()
-
-        if origen == destino:
+        if origen.lower() == destino.lower():
             await interaction.response.send_message(
                 "❌ El origen y el destino no pueden ser el mismo.", ephemeral=True
             )
             return
 
-        await interaction.response.defer(ephemeral=True)
-
+        await interaction.response.defer(ephemeral=False)
+        guild_id = interaction.guild_id
         db = self.bot.db
 
-        # Verificación de existencia del perfil de origen
-        cursor = await db.execute(
-            "SELECT * FROM k4ultra_playtime WHERE player_name = ? AND guild_id = ?",
-            (origen, interaction.guild_id),
+        # 1. Encadenar identidades: cualquier alias que apuntaba a 'origen' pasa a 'destino'.
+        await db.execute(
+            "UPDATE player_identities_link SET primary_name = ? WHERE primary_name = ? AND guild_id = ?",
+            (destino, origen, guild_id),
         )
-        origen_maps = await cursor.fetchall()
-        if not origen_maps:
-            await interaction.followup.send(
-                f"❌ El jugador origen **{origen}** no tiene registros de tiempo, o no existe.",
-                ephemeral=True,
-            )
-            return
+        await db.execute(
+            "INSERT OR REPLACE INTO player_identities_link (guild_id, secondary_name, primary_name) VALUES (?, ?, ?)",
+            (guild_id, origen, destino),
+        )
 
-        # 1. Merge Playtime
-        for dm in origen_maps:
-            c2 = await db.execute(
-                "SELECT total_minutes, last_seen FROM k4ultra_playtime WHERE player_name = ? AND map_name = ? AND guild_id = ?",
-                (destino, dm["map_name"], interaction.guild_id),
-            )
-            base_map = await c2.fetchone()
+        # 2. Trasladar sesiones (activas e inactivas).
+        await db.execute(
+            "UPDATE k4ultra_sessions SET player_name = ? WHERE player_name = ? AND guild_id = ?",
+            (destino, origen, guild_id),
+        )
 
-            if base_map:
-                new_mins = base_map["total_minutes"] + dm["total_minutes"]
-                new_last_seen = max(base_map["last_seen"], dm["last_seen"])
+        # 3. Fusión de playtimes (suma por mapa) + métricas para el embed.
+        old_playtimes = await db.fetchall(
+            "SELECT map_name, total_minutes, last_seen FROM k4ultra_playtime WHERE player_name = ? AND guild_id = ?",
+            (origen, guild_id),
+        )
+        transferred_minutes = sum(int(p["total_minutes"] or 0) for p in old_playtimes)
+        transferred_maps = sorted({p["map_name"] for p in old_playtimes if p["map_name"]})
+        for p in old_playtimes:
+            prim_row = await db.fetchone(
+                "SELECT total_minutes FROM k4ultra_playtime WHERE player_name = ? AND map_name = ? AND guild_id = ?",
+                (destino, p["map_name"], guild_id),
+            )
+            if prim_row:
                 await db.execute(
-                    "UPDATE k4ultra_playtime SET total_minutes = ?, last_seen = ? WHERE player_name = ? AND map_name = ? AND guild_id = ?",
-                    (new_mins, new_last_seen, destino, dm["map_name"], interaction.guild_id),
+                    "UPDATE k4ultra_playtime SET total_minutes = ?, last_seen = max(last_seen, ?) "
+                    "WHERE player_name = ? AND map_name = ? AND guild_id = ?",
+                    (prim_row["total_minutes"] + p["total_minutes"], p["last_seen"], destino, p["map_name"], guild_id),
                 )
             else:
                 await db.execute(
                     "INSERT INTO k4ultra_playtime (guild_id, player_name, map_name, total_minutes, last_seen) VALUES (?, ?, ?, ?, ?)",
-                    (interaction.guild_id, destino, dm["map_name"], dm["total_minutes"], dm["last_seen"]),
+                    (guild_id, destino, p["map_name"], p["total_minutes"], p["last_seen"]),
                 )
-
         await db.execute(
-            "DELETE FROM k4ultra_playtime WHERE player_name = ? AND guild_id = ?",
-            (origen, interaction.guild_id),
+            "DELETE FROM k4ultra_playtime WHERE player_name = ? AND guild_id = ?", (origen, guild_id)
         )
 
-        # 2. Update Sessions
+        # 4. Personajes in-game (alts).
         await db.execute(
-            "UPDATE k4ultra_sessions SET player_name = ? WHERE player_name = ? AND guild_id = ?",
-            (destino, origen, interaction.guild_id),
+            "UPDATE tribe_characters SET player_name = ? WHERE player_name = ? AND guild_id = ?",
+            (destino, origen, guild_id),
         )
 
-        # 3. Update Relationships
+        # 5. Reasignar relaciones del radar y limpiar auto-relaciones.
         await db.execute(
             "UPDATE k4ultra_relationships SET player1 = ? WHERE player1 = ? AND guild_id = ?",
-            (destino, origen, interaction.guild_id),
+            (destino, origen, guild_id),
         )
         await db.execute(
             "UPDATE k4ultra_relationships SET player2 = ? WHERE player2 = ? AND guild_id = ?",
-            (destino, origen, interaction.guild_id),
+            (destino, origen, guild_id),
         )
         await db.execute(
-            "DELETE FROM k4ultra_relationships WHERE player1 = player2 AND guild_id = ?",
-            (interaction.guild_id,),
+            "DELETE FROM k4ultra_relationships WHERE player1 = player2 AND guild_id = ?", (guild_id,)
         )
 
-        # 4. Cleanup Blacklist and Aliases
-        await db.execute(
-            "DELETE FROM blacklist WHERE player = ? AND guild_id = ?", (origen, interaction.guild_id)
+        # 6. Preservar notas de blacklist al fusionar.
+        row_bl = await db.fetchone(
+            "SELECT notes FROM blacklist WHERE player = ? AND guild_id = ?", (origen, guild_id)
         )
+        if row_bl:
+            row_p_bl = await db.fetchone(
+                "SELECT id, notes FROM blacklist WHERE player = ? AND guild_id = ?", (destino, guild_id)
+            )
+            if row_p_bl:
+                combined = f"{row_p_bl['notes']} | [De {origen}]: {row_bl['notes']}"
+                await db.execute("UPDATE blacklist SET notes = ? WHERE id = ?", (combined, row_p_bl["id"]))
+            else:
+                new_note = f"[Heredado de {origen}]: {row_bl['notes']}"
+                await db.execute(
+                    "UPDATE blacklist SET player = ?, notes = ? WHERE player = ? AND guild_id = ?",
+                    (destino, new_note, origen, guild_id),
+                )
+        await db.execute("DELETE FROM blacklist WHERE player = ? AND guild_id = ?", (origen, guild_id))
+
+        # 7. Limpieza de alias y log del nombre antiguo.
         await db.execute(
-            "DELETE FROM k4ultra_aliases WHERE player_name = ? AND guild_id = ?",
-            (origen, interaction.guild_id),
+            "DELETE FROM k4ultra_aliases WHERE player_name = ? AND guild_id = ?", (origen, guild_id)
         )
         await db.execute(
             "UPDATE k4ultra_players_log SET player_name = ? WHERE player_name = ? AND guild_id = ?",
-            (destino, origen, interaction.guild_id),
+            (destino, origen, guild_id),
         )
+
+        # 8. Dedup de personajes que ambos pudieran compartir.
+        await db.execute("""
+            DELETE FROM tribe_characters
+            WHERE rowid NOT IN (
+                SELECT max(rowid) FROM tribe_characters GROUP BY player_name, character_name, guild_id
+            )
+        """)
 
         await db.commit()
 
-        await interaction.followup.send(
-            f"✅ ¡Fusión manual completada con éxito!\nTodas las horas e información de **{origen}** han sido traspasadas a **{destino}**.",
-            ephemeral=True,
+        h_total, m_total = divmod(transferred_minutes, 60)
+        horas_str = f"{h_total}h {m_total}m" if h_total else f"{m_total}m"
+        mapas_str = ", ".join(transferred_maps) if transferred_maps else "—"
+        embed = discord.Embed(title="✅ IDENTIDADES FUSIONADAS", color=discord.Color.brand_green())
+        embed.description = (
+            f"`{origen}`  ➡️  `{destino}`\n\n"
+            f"> 📊 **Horas transferidas:** `{horas_str}`\n"
+            f"> 🗺️ **Mapas afectados:** `{len(transferred_maps)}` ({mapas_str})\n"
+            f"> 📅 **Registros movidos:** sesiones, relaciones, blacklist y alias del K4Ultra"
         )
+        embed.set_footer(text="El bot convertirá automáticamente las próximas conexiones del nombre antiguo.")
+        await interaction.followup.send(embed=embed)
+        self.bot.dispatch(bus.BLACKLIST_UPDATED, guild_id)
 
-    @app_commands.command(
-        name="k4ultra_split",
-        description="[Admin] Separa la SESIÓN ACTUAL de un jugador (origen) hacia un nuevo perfil (destino).",
+    @tribu.command(
+        name="separar",
+        description="[Admin] Separa la sesión actual de un jugador (origen) hacia un nuevo perfil (destino).",
     )
     @app_commands.describe(
         origen="Jugador que está conectado AHORA (ej: 123_1)",
@@ -725,6 +764,292 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
             f"✅ ¡Sesión separada!\nEl impostor que estaba usando **{origen}** ahora es rastreado como **{destino}**.\nLa sesión actual ya ha sido purgada del historial de **{origen}**.",
             ephemeral=True,
         )
+
+    # ------------------------------------------------------------------
+    # /tribu miembro — registra la ficha de un miembro (antes /perfil_tribu)
+    # ------------------------------------------------------------------
+    @tribu.command(
+        name="miembro",
+        description="Registra la ficha completa de un miembro (Discord, Personaje, Steam, Apodo).",
+    )
+    @app_commands.describe(
+        usuario="Usuario de Discord del jugador",
+        personaje="Nombre exacto in-game del personaje en ARK",
+        steam="Nombre de Steam (Como aparece en la lista de jugadores)",
+        apodo="Apodo interno (Se usará de forma predeterminada si no se indica)",
+        idioma="Idioma personal del usuario para las respuestas del bot (ES/EN).",
+    )
+    @app_commands.choices(
+        idioma=[
+            app_commands.Choice(name="🇪🇸 Español", value="es"),
+            app_commands.Choice(name="🇬🇧 English", value="en"),
+        ]
+    )
+    async def tribu_miembro(
+        self,
+        interaction: discord.Interaction,
+        usuario: discord.Member,
+        personaje: str,
+        steam: str = None,
+        apodo: str = None,
+        idioma: app_commands.Choice[str] = None,
+    ):
+        if not await interaction.client.is_authorized_admin(interaction):
+            await interaction.response.send_message("❌ Acceso denegado.", ephemeral=True)
+            return
+
+        jugador_nombre = usuario.display_name
+        apodo_final = apodo if apodo else jugador_nombre
+        steam_safe = steam if steam else "No Registrado"
+
+        db = self.bot.db
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS tribe_profiles (
+                guild_id INTEGER,
+                discord_id INTEGER,
+                ark_character TEXT,
+                steam_id TEXT,
+                alias TEXT,
+                UNIQUE(guild_id, discord_id)
+            )
+        """)
+        await db.execute(
+            """
+            INSERT INTO tribe_profiles (guild_id, discord_id, ark_character, steam_id, alias)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(guild_id, discord_id) DO UPDATE SET
+                ark_character=excluded.ark_character,
+                steam_id=excluded.steam_id,
+                alias=excluded.alias
+        """,
+            (interaction.guild_id, usuario.id, personaje, steam_safe, apodo_final),
+        )
+
+        await db.execute(
+            """
+            INSERT INTO tribe_characters (guild_id, character_name, player_name)
+            VALUES (?, ?, ?)
+            ON CONFLICT(guild_id, character_name) DO UPDATE SET player_name = excluded.player_name
+            """,
+            (interaction.guild_id, personaje, jugador_nombre),
+        )
+        await db.execute(
+            "INSERT OR IGNORE INTO tribe_kda (guild_id, player_name, kills, deaths) VALUES (?, ?, 0, 0)",
+            (interaction.guild_id, jugador_nombre),
+        )
+        await db.execute(
+            "INSERT INTO k4ultra_aliases (guild_id, player_name, alias) VALUES (?, ?, ?) ON CONFLICT(guild_id, player_name) DO UPDATE SET alias=excluded.alias",
+            (interaction.guild_id, personaje, apodo_final),
+        )
+
+        # Preferencia de idioma personal (opcional).
+        idioma_txt = ""
+        if idioma is not None:
+            await db.execute(
+                "INSERT INTO user_language (guild_id, user_id, lang) VALUES (?, ?, ?) "
+                "ON CONFLICT(guild_id, user_id) DO UPDATE SET lang = excluded.lang",
+                (interaction.guild_id, usuario.id, idioma.value),
+            )
+            flag = "🇪🇸" if idioma.value == "es" else "🇬🇧"
+            idioma_txt = f"\n> 🌐 **Idioma:** {flag} `{idioma.value}`"
+
+        await db.commit()
+
+        embed = discord.Embed(title="✅ PERFIL DE TRIBU CONFIGURADO", color=discord.Color.green())
+        embed.description = (
+            f"> 👤 **Usuario:** {usuario.mention}\n"
+            f"> 📛 **In-Game:** `{personaje}`\n"
+            f"> 🎭 **Apodo:** `{apodo_final}`\n"
+            f"> 🎮 **Steam:** `{steam_safe}`"
+            f"{idioma_txt}"
+        )
+        embed.set_footer(text="Vinculado al Rancómetro y al Radar K4Ultra  •  /ranking para ver tu posición")
+        await interaction.response.send_message(embed=embed, ephemeral=False)
+        self.bot.dispatch(bus.KDA_UPDATED, interaction.guild_id)
+
+    # ------------------------------------------------------------------
+    # /tribu aliada — tribus aliadas (antes /aliados)
+    # ------------------------------------------------------------------
+    @aliada.command(name="crear", description="[Admin] Registra una tribu aliada (no dispara alarmas).")
+    @app_commands.describe(
+        nombre="Nombre de la tribu aliada",
+        jugadores="Jugadores aliados (separados por comas)",
+    )
+    async def aliada_crear(self, interaction: discord.Interaction, nombre: str, jugadores: str):
+        if not await interaction.client.is_authorized_admin(interaction):
+            await interaction.response.send_message("❌ Acceso denegado.", ephemeral=True)
+            return
+
+        miembros = [j.strip() for j in jugadores.split(",") if j.strip()]
+        if not miembros:
+            await interaction.response.send_message("❌ Debes indicar al menos un jugador.", ephemeral=True)
+            return
+
+        db = self.bot.db
+        await db.execute(
+            "DELETE FROM k4ultra_fixed_tribes WHERE guild_id = ? AND name = ?",
+            (interaction.guild_id, nombre),
+        )
+        await db.execute(
+            "INSERT INTO k4ultra_fixed_tribes (guild_id, name, members_json, is_own, is_ally) "
+            "VALUES (?, ?, ?, 0, 1)",
+            (interaction.guild_id, nombre, json.dumps(miembros)),
+        )
+        await db.commit()
+        self.bot.dispatch(bus.TRUSTED_MEMBERS_CHANGED, interaction.guild_id)
+        await interaction.response.send_message(
+            f"🤝 Tribu aliada **{nombre}** registrada con {len(miembros)} jugador"
+            f"{'es' if len(miembros) != 1 else ''}: {', '.join(miembros)}.\n"
+            f"Estos jugadores ya no dispararán alarmas de intrusos.",
+            ephemeral=True,
+        )
+
+    @aliada.command(name="modificar", description="[Admin] Modifica una tribu aliada existente.")
+    @app_commands.describe(
+        nombre="Nombre exacto de la tribu aliada a modificar",
+        opcion="Tipo de modificación",
+        valor="Nuevo nombre o jugador a añadir/quitar",
+    )
+    @app_commands.choices(
+        opcion=[
+            app_commands.Choice(name="Cambiar Nombre", value="nombre"),
+            app_commands.Choice(name="Añadir Jugador", value="add"),
+            app_commands.Choice(name="Quitar Jugador", value="remove"),
+        ]
+    )
+    async def aliada_modificar(
+        self,
+        interaction: discord.Interaction,
+        nombre: str,
+        opcion: app_commands.Choice[str],
+        valor: str,
+    ):
+        if not await interaction.client.is_authorized_admin(interaction):
+            await interaction.response.send_message("❌ Acceso denegado.", ephemeral=True)
+            return
+
+        valor = valor.strip().strip("'\"")
+        db = self.bot.db
+        row = await db.fetchone(
+            "SELECT id, name, members_json FROM k4ultra_fixed_tribes "
+            "WHERE guild_id = ? AND name = ? AND is_ally = 1",
+            (interaction.guild_id, nombre),
+        )
+        if not row:
+            await interaction.response.send_message(
+                f"❌ No existe la tribu aliada **{nombre}**. Usa `/tribu aliada lista` para ver las registradas.",
+                ephemeral=True,
+            )
+            return
+
+        if opcion.value == "nombre":
+            await db.execute("UPDATE k4ultra_fixed_tribes SET name = ? WHERE id = ?", (valor, row["id"]))
+            await db.commit()
+            await interaction.response.send_message(
+                f"✅ Tribu aliada renombrada de **{nombre}** a **{valor}**.", ephemeral=True
+            )
+            return
+
+        miembros = json.loads(row["members_json"])
+        if opcion.value == "add":
+            if any(m.lower() == valor.lower() for m in miembros):
+                await interaction.response.send_message(
+                    f"⚠️ **{valor}** ya está en la tribu aliada **{row['name']}**.", ephemeral=True
+                )
+                return
+            miembros.append(valor)
+            await db.execute(
+                "UPDATE k4ultra_fixed_tribes SET members_json = ? WHERE id = ?",
+                (json.dumps(miembros), row["id"]),
+            )
+            await db.commit()
+            self.bot.dispatch(bus.TRUSTED_MEMBERS_CHANGED, interaction.guild_id)
+            await interaction.response.send_message(
+                f"✅ Se añadió a **{valor}** a la tribu aliada **{row['name']}**.", ephemeral=True
+            )
+            return
+
+        original = len(miembros)
+        miembros = [m for m in miembros if m.lower() != valor.lower()]
+        if len(miembros) == original:
+            await interaction.response.send_message(
+                f"❌ **{valor}** no está en la tribu aliada **{row['name']}**.", ephemeral=True
+            )
+            return
+        await db.execute(
+            "UPDATE k4ultra_fixed_tribes SET members_json = ? WHERE id = ?",
+            (json.dumps(miembros), row["id"]),
+        )
+        await db.commit()
+        self.bot.dispatch(bus.TRUSTED_MEMBERS_CHANGED, interaction.guild_id)
+        await interaction.response.send_message(
+            f"✅ Se eliminó a **{valor}** de la tribu aliada **{row['name']}**.", ephemeral=True
+        )
+
+    @aliada.command(
+        name="borrar", description="[Admin] Elimina una tribu aliada (volverán a disparar alarmas)."
+    )
+    @app_commands.describe(nombre="Nombre exacto de la tribu aliada a borrar")
+    async def aliada_borrar(self, interaction: discord.Interaction, nombre: str):
+        if not await interaction.client.is_authorized_admin(interaction):
+            await interaction.response.send_message("❌ Acceso denegado.", ephemeral=True)
+            return
+
+        db = self.bot.db
+        cursor = await db.execute(
+            "DELETE FROM k4ultra_fixed_tribes WHERE guild_id = ? AND name = ? AND is_ally = 1",
+            (interaction.guild_id, nombre),
+        )
+        await db.commit()
+        if cursor.rowcount == 0:
+            await interaction.response.send_message(
+                f"❌ No existe la tribu aliada **{nombre}**.", ephemeral=True
+            )
+            return
+        self.bot.dispatch(bus.TRUSTED_MEMBERS_CHANGED, interaction.guild_id)
+        await interaction.response.send_message(
+            f"🗑️ Tribu aliada **{nombre}** eliminada. Sus jugadores volverán a disparar alarmas.",
+            ephemeral=True,
+        )
+
+    @aliada.command(name="lista", description="Muestra las tribus aliadas registradas en el servidor.")
+    async def aliada_lista(self, interaction: discord.Interaction):
+        db = self.bot.db
+        rows = await db.fetchall(
+            "SELECT name, members_json FROM k4ultra_fixed_tribes "
+            "WHERE guild_id = ? AND is_ally = 1 ORDER BY name",
+            (interaction.guild_id,),
+        )
+
+        embed = discord.Embed(title="🤝 TRIBUS ALIADAS", color=discord.Color.from_rgb(80, 200, 120))
+        if not rows:
+            embed.description = (
+                "💤 No hay tribus aliadas registradas.\n\n"
+                "💡 Un admin puede añadir una con `/tribu aliada crear nombre:X jugadores:a,b,c`."
+            )
+            embed.set_footer(text="Los jugadores de tribus aliadas no disparan alarmas de intrusos.")
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+
+        total_players = 0
+        lines: list[str] = []
+        for idx, tribe in enumerate(rows, start=1):
+            try:
+                members = json.loads(tribe["members_json"])
+            except (json.JSONDecodeError, TypeError):
+                members = []
+            total_players += len(members)
+            members_fmt = ", ".join(f"`{m}`" for m in members) if members else "*(vacía)*"
+            lines.append(
+                f"`#{idx:02d}` 🤝 **{tribe['name']}**  ·  👥 `{len(members)}` jugador"
+                f"{'es' if len(members) != 1 else ''}"
+            )
+            lines.append(f"  └ {members_fmt}")
+
+        header = f"🤝 `{len(rows):02d}` Tribus aliadas  ·  👥 `{total_players:02d}` Jugadores cubiertos"
+        embed.description = header + "\n\n## 🤝 ALIADOS REGISTRADOS\n" + "\n".join(lines)
+        embed.set_footer(text="Los jugadores aquí listados NO dispararán alarmas al entrar en mapas vigilados.")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 async def setup(bot):

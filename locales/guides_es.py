@@ -144,18 +144,17 @@ K4Ultra monitoriza de forma pasiva el cluster para calcular el comportamiento, s
   - **Tribus / Relaciones**: grafo de alianzas predictivo. Cada par de jugadores acumula puntos por minutos compartidos en el mismo mapa, logins/logouts sincronizados y transferencias simultáneas. Decae **5% al día** si dejan de coincidir.
 
 ### :crown: Identificación de tu propia tribu
-- **/tribu_propia crear nombre:"MiTribu" jugadores:"a, b, c"** — marca tu base.
-- **/tribu_propia modificar opcion:... valor:...** — añade/quita miembros o renombra.
-- **/tribu_propia borrar seguro:True** — limpia el registro.
-- **/fijar_tribu / /unfijar_tribu** — para marcar **otras** tribus conocidas (enemigos confirmados, aliados, etc.) y que aparezcan etiquetadas en el modo Tribus.
+- **/tribu propia crear nombre:"MiTribu" jugadores:"a, b, c"** — marca tu base.
+- **/tribu propia modificar opcion:... valor:...** — añade/quita miembros o renombra.
+- **/tribu propia borrar seguro:True** — limpia el registro.
+- **/tribu fijar / /tribu desfijar** — para marcar **otras** tribus conocidas (enemigos confirmados, aliados, etc.) y que aparezcan etiquetadas en el modo Tribus.
 
 ### :busts_in_silhouette: Gestión de Identidades
 Imprescindible para que el ranking y la blacklist no se llenen de duplicados:
-- **/perfil_tribu usuario:@x personaje:Bob steam:"BobSteam" apodo:"Bobby"** — registra un miembro completo en una sola llamada.
-- **/fusionar_perfiles secundario:NombreViejo primario:NombreNuevo** — todo lo que el bot registró bajo el nombre antiguo (horas, mapas, sesiones) se reasigna al nuevo de forma perpetua.
-- **/k4ultra_merge origen:"123_1" destino:"123"** — fusiona perfiles duplicados manualmente.
-- **/k4ultra_split origen:... destino:...** — separa un perfil que el bot agrupó por error.
-- **/k4ultra_cleanup** — [Admin] limpieza masiva: une todos los `nombre_1`/`_2` con su base.
+- **/tribu miembro usuario:@x personaje:Bob steam:"BobSteam" apodo:"Bobby"** — registra un miembro completo en una sola llamada.
+- **/tribu fusionar origen:NombreViejo destino:NombreNuevo** — todo lo que el bot registró bajo el nombre antiguo (horas, mapas, sesiones, relaciones, blacklist) se reasigna al nuevo de forma perpetua.
+- **/tribu separar origen:... destino:...** — separa la sesión actual de un perfil que el bot agrupó por error.
+- **/tribu limpiar** — [Admin] limpieza masiva: une todos los `nombre_1`/`_2` con su base.
 
 ### :mouse_three_button: Botones del Panel
 - **➕ Añadir Relación / ➖ Eliminar Relación**: declarar/desdeclarar alianzas manuales (no decaen).
@@ -167,13 +166,13 @@ El bot usa un **Log Processor** que escucha 24/7 el canal de Logs del servidor y
 
 ### :chart_with_downwards_trend: Funcionamiento
 - **Detección automática:** cada `fue 🔪` o `was :knife:` en los logs incrementa el contador de muertes del personaje. Las kills se ignoran a propósito (solo contamos muertes).
-- **Anti-fuego-amigo:** si el asesino también es miembro registrado de tu tribu (vía `/perfil_tribu`), la muerte NO suma — solo se queda en el log con un aviso de "fuego amigo".
+- **Anti-fuego-amigo:** si el asesino también es miembro registrado de tu tribu (vía `/tribu miembro`), la muerte NO suma — solo se queda en el log con un aviso de "fuego amigo".
 - **Sarcasmos:** el bot responde a cada muerte con una frase aleatoria + emoji aleatorio (💀🤡🪦🥚🍗🧻🗑️).
 - **Hitos especiales:** las muertes números **1, 10, 50, 69, 100, 300, 420, 666, 777, 1000** y todos los múltiplos de 100 disparan mensajes con GIF dedicado. Vete acumulando.
 
 ### :busts_in_silhouette: Configuración Obligatoria
 Para que el sistema pueda atribuir muertes:
-- **/perfil_tribu usuario:@x personaje:Bob steam:"BobSteam" apodo:"Bobby"** — registra a un miembro.
+- **/tribu miembro usuario:@x personaje:Bob steam:"BobSteam" apodo:"Bobby"** — registra a un miembro.
 - **/ranking** — Dashboard del Death Counter ordenado por bajas.
 
 ### :sunrise: Recordatorios de Votos
@@ -186,13 +185,13 @@ Sistema de defensa pasiva: el bot vigila los mapas que elijas y te **menciona en
 - **/alarma mapa:Fjordur estado:on** — Activa la vigilancia de un mapa.
 - **/alarma mapa:Fjordur estado:off** — La desactiva.
 - **/alarmas** — Abre el **panel interactivo** con todas las alarmas configurables del cluster (más cómodo que el comando suelto).
-- **/aliados crear / modificar / borrar / lista** *(admin)* — Registra tribus aliadas para que sus jugadores no disparen alarmas.
+- **/tribu aliada crear / modificar / borrar / lista** *(admin)* — Registra tribus aliadas para que sus jugadores no disparen alarmas.
 
 ### :brain: Cómo decide si alguien es intruso
 Cada minuto el bot lee el caché de Status (no genera tráfico extra) y compara contra el último snapshot del mapa. Para cada jugador NUEVO:
-1. Si está en tu tribu propia (`/tribu_propia`) → ignora.
-2. Si está en una tribu aliada (`/aliados`) → ignora.
-3. Si está registrado como personaje conocido (`/perfil_tribu`) → ignora.
+1. Si está en tu tribu propia (`/tribu propia`) → ignora.
+2. Si está en una tribu aliada (`/tribu aliada`) → ignora.
+3. Si está registrado como personaje conocido (`/tribu miembro`) → ignora.
 4. Si no → :rotating_light: **alarma**: el bot te menciona en el canal donde activaste la alarma con la lista de intrusos.
 
 ### :pushpin: Detalle

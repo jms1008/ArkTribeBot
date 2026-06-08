@@ -45,7 +45,7 @@ STRINGS: dict[str, dict[str, str]] = {
         "kda.title": "☠️ EL SALÓN DE LA INFAMIA",
         "kda.empty_title": "☠️ El Salón de la Infamia",
         "kda.empty_desc": "Todavía no hay registros de mortalidad en la tribu. ¡Seguid así! 🛡️",
-        "kda.empty_footer": "💡 Los perfiles se vinculan con /perfil_tribu",
+        "kda.empty_footer": "💡 Los perfiles se vinculan con /tribu miembro",
         "kda.rank.1": "Novato Inocente",
         "kda.rank.2": "Pienso de Dodo",
         "kda.rank.3": "Ceviche de Raptor",
@@ -137,9 +137,9 @@ STRINGS: dict[str, dict[str, str]] = {
         ),
         "k4.tribes.more_groups": "*… y {n} grupos más con menor confianza.*",
         "k4.tribes.empty": "📭 No hay tribus registradas ni grupos predecidos aún.",
-        "k4.tribes.empty_hint": "💡 Usa `/tribu_propia crear` para marcar tu base, o `/fijar_tribu` para conocidas.",
+        "k4.tribes.empty_hint": "💡 Usa `/tribu propia crear` para marcar tu base, o `/tribu fijar` para conocidas.",
         "k4.tribes.footer": (
-            "Total jugadores conocidos: {total}  •  ⚫ Offline · 🟢 Online  •  /tribu_propia · /fijar_tribu"
+            "Total jugadores conocidos: {total}  •  ⚫ Offline · 🟢 Online  •  /tribu propia · /tribu fijar"
         ),
         # --- Status global dashboard ---
         "status.title": "🌐 ESTADO GLOBAL DE SERVIDORES",
@@ -158,7 +158,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "Selecciona una sección del menú inferior para conocer los comandos y "
             "funcionamiento de cada módulo.\n\n"
             "## 🚀 Empezar\n"
-            "> 💡 **Nuevo miembro:** usa `/perfil_tribu` para registrarte (necesario para "
+            "> 💡 **Nuevo miembro:** usa `/tribu miembro` para registrarte (necesario para "
             "el ranking de muertes y el radar K4Ultra).\n"
             "> ⚙️ **Admin del servidor:** comienza por la sección *Setup & Admin* para "
             "configurar el bot con `/inicio_ark`."
@@ -223,7 +223,7 @@ STRINGS: dict[str, dict[str, str]] = {
         "kda.title": "☠️ THE HALL OF INFAMY",
         "kda.empty_title": "☠️ The Hall of Infamy",
         "kda.empty_desc": "No mortality records in the tribe yet. Keep it up! 🛡️",
-        "kda.empty_footer": "💡 Profiles are linked with /perfil_tribu",
+        "kda.empty_footer": "💡 Profiles are linked with /tribu miembro",
         "kda.rank.1": "Innocent Rookie",
         "kda.rank.2": "Dodo Feed",
         "kda.rank.3": "Raptor Ceviche",
@@ -315,9 +315,9 @@ STRINGS: dict[str, dict[str, str]] = {
         ),
         "k4.tribes.more_groups": "*… and {n} more groups with lower confidence.*",
         "k4.tribes.empty": "📭 No tribes registered or groups predicted yet.",
-        "k4.tribes.empty_hint": "💡 Use `/tribu_propia crear` to mark your base, or `/fijar_tribu` for known ones.",
+        "k4.tribes.empty_hint": "💡 Use `/tribu propia crear` to mark your base, or `/tribu fijar` for known ones.",
         "k4.tribes.footer": (
-            "Total known players: {total}  •  ⚫ Offline · 🟢 Online  •  /tribu_propia · /fijar_tribu"
+            "Total known players: {total}  •  ⚫ Offline · 🟢 Online  •  /tribu propia · /tribu fijar"
         ),
         # --- Status global dashboard ---
         "status.title": "🌐 GLOBAL SERVER STATUS",
@@ -336,7 +336,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "Pick a section from the menu below to learn the commands and how each "
             "module works.\n\n"
             "## 🚀 Getting started\n"
-            "> 💡 **New member:** use `/perfil_tribu` to register (required for the "
+            "> 💡 **New member:** use `/tribu miembro` to register (required for the "
             "death ranking and the K4Ultra radar).\n"
             "> ⚙️ **Server admin:** start with the *Setup & Admin* section to "
             "configure the bot with `/inicio_ark`."

@@ -81,7 +81,7 @@ async def get_guild_mode(bot, guild_id: int | None) -> str:
 async def get_user_lang(bot, guild_id: int | None, user_id: int | None) -> str | None:
     """Preferencia de idioma personal de un usuario en un guild, o ``None``.
 
-    Configurable vía /perfil_tribu. Sobrescribe el idioma de servidor SOLO para
+    Configurable vía /tribu miembro. Sobrescribe el idioma de servidor SOLO para
     las respuestas de comandos dirigidas a ese usuario (scope ``command``).
     """
     if guild_id is None or user_id is None:

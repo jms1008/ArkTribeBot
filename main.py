@@ -222,10 +222,10 @@ class ArkTribeBot(commands.Bot):
             "> 📆 **Eventos LFG** — Encuestas con votación y persistencia\n"
             "> 💾 **Backups** — Diario automático + `/db_backup` manual\n\n"
             "## 👥 PARA QUE FUNCIONE TODO\n"
-            "> **1.** `/tribu_propia crear` — Marca tu base para descartarla del radar.\n"
-            "> **2.** `/perfil_tribu usuario:@x personaje:Bob steam:... apodo:...` — "
+            "> **1.** `/tribu propia crear` — Marca tu base para descartarla del radar.\n"
+            "> **2.** `/tribu miembro usuario:@x personaje:Bob steam:... apodo:...` — "
             "Registra cada miembro (vincula in-game + Discord).\n"
-            "> **3.** `/fijar_tribu nombre:...` — (Opcional) Tribus conocidas (aliados/enemigos).\n\n"
+            "> **3.** `/tribu fijar nombre:...` — (Opcional) Tribus conocidas (aliados/enemigos).\n\n"
             "💡 **Ayuda en cualquier momento:** `/info modulo:...` o `/help` para el manual."
         )
         embed.set_footer(text="ArkTribeBot v3.0  •  by @K4NEKIs  •  /help para el manual completo")
