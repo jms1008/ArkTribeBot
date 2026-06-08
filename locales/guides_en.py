@@ -49,12 +49,12 @@ Add pending tasks, claim the ones you'll do yourself, and delete them when done.
 Here we register and track our tribe's lines (Top Stats).
 
 ### :sauropod: Breeding Commands
-- **/linea_add**: Registers a new dino or updates a stat if yours is higher.
-  - *Usage:* `/linea_add dino:Rex estadistica:HP puntos:50`
-- **/linea_mod**: Modifies a specific stat (in case of a typo or a fresh mutation).
-- **/linea_ver**: Private lookup of all stats for a species (hidden message).
-- **/lineas**: Refreshes the main Dashboard with all stats and live buttons.
-- **/log_mutas**: Shows the last 20 mutations registered on the server.
+- **/linea add**: Registers a new dino or updates a stat if yours is higher.
+  - *Usage:* `/linea add dino:Rex estadistica:HP puntos:50`
+- **/linea mod**: Modifies a specific stat (in case of a typo or a fresh mutation).
+- **/linea ver**: Private lookup of all stats for a species (hidden message).
+- **/linea panel**: Refreshes the main Dashboard with all stats and live buttons.
+- **/linea log**: Shows the last 20 mutations registered on the server.
 
 ### :bar_chart: Available Stats
 HP · Stamina · Weight · Melee · Oxygen · Food · Speed · Mutations (pure counter).
@@ -63,7 +63,7 @@ HP · Stamina · Weight · Melee · Oxygen · Food · Speed · Mutations (pure c
 1. :arrow_backward: :arrow_forward: **Pagination**: 10 species per page, persistent across restarts.
 2. **New Mutation**: Adds +2 to a dino stat and logs it in the mutation log automatically.
 3. **Alarms**: Schedules imprint/growth timers. Options: **1.5h · 2.5h · 4h · 10h**. It pings you in the channel when it expires.
-4. **View Mut. Logs**: Same as the `/log_mutas` command but a click away.
+4. **View Mut. Logs**: Same as the `/linea log` command but a click away.
 5. **Individual Selector**: Bottom dropdown to isolate a specific dino and see its detailed sheet privately.""",
     "blacklist": """# :skull_crossbones: Blacklist
 

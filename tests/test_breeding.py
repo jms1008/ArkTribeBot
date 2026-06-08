@@ -18,7 +18,9 @@ async def test_upsert_stat_inserts_new_dino(breeding_cog, mock_bot):
     await mock_bot.init_mock_db()
     action = await breeding_cog.upsert_stat("Rex", "hp", 50, guild_id=1)
 
-    assert "nueva línea" in action.lower() or "registrada" in action.lower()
+    # upsert_stat devuelve un código de acción ("created"/"updated") que el
+    # comando traduce vía catálogo i18n.
+    assert action == "created"
     row = await mock_bot.db.fetchone(
         "SELECT hp, melee FROM dinos WHERE especie = ? AND guild_id = ?", ("Rex", 1)
     )

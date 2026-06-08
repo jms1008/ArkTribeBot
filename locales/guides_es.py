@@ -49,12 +49,12 @@ Añade tareas pendientes, reclama las que vayas a hacer tú y bórralas cuando e
 Aquí registramos y controlamos las líneas (Top Stats) de nuestra tribu.
 
 ### :sauropod: Comandos de Crianza
-- **/linea_add**: Registra un nuevo dino o actualiza una stat si la tuya es superior.
-  - *Uso:* `/linea_add dino:Rex estadistica:HP puntos:50`
-- **/linea_mod**: Modifica una estadística específica (por si te equivocaste o entró muta).
-- **/linea_ver**: Consulta privada de todas las stats de una especie (mensaje oculto).
-- **/lineas**: Renueva el Dashboard principal con todas las estadísticas y botones en vivo.
-- **/log_mutas**: Muestra las últimas 20 mutaciones registradas en el servidor.
+- **/linea add**: Registra un nuevo dino o actualiza una stat si la tuya es superior.
+  - *Uso:* `/linea add dino:Rex estadistica:HP puntos:50`
+- **/linea mod**: Modifica una estadística específica (por si te equivocaste o entró muta).
+- **/linea ver**: Consulta privada de todas las stats de una especie (mensaje oculto).
+- **/linea panel**: Renueva el Dashboard principal con todas las estadísticas y botones en vivo.
+- **/linea log**: Muestra las últimas 20 mutaciones registradas en el servidor.
 
 ### :bar_chart: Stats Disponibles
 HP · Estamina · Peso · Melee · Oxígeno · Comida · Velocidad · Mutaciones (contador puro).
@@ -63,7 +63,7 @@ HP · Estamina · Peso · Melee · Oxígeno · Comida · Velocidad · Mutaciones
 1. :arrow_backward: :arrow_forward: **Paginación**: 10 especies por página, persistente entre reinicios.
 2. **Nueva Muta**: Suma +2 a una stat de un dino y lo registra en el log de mutaciones automáticamente.
 3. **Alarmas**: Programa temporizadores de impronta/crecimiento. Opciones: **1.5h · 2.5h · 4h · 10h**. Te avisa por mención en el canal cuando expire.
-4. **Ver Logs Muta**: Equivalente al comando `/log_mutas` pero accesible con un click.
+4. **Ver Logs Muta**: Equivalente al comando `/linea log` pero accesible con un click.
 5. **Selector Individual**: Menú desplegable inferior para aislar a un dino concreto y ver su ficha detallada en privado.""",
     "blacklist": """# :skull_crossbones: Blacklist
 

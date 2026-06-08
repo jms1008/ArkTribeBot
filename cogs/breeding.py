@@ -246,7 +246,7 @@ class BreedingDinoSelectMenu(discord.ui.Select):
             color=discord.Color.green(),
         )
         embed.description = "\n".join(lines)
-        embed.set_footer(text="💡 Usa /linea_add para añadir o actualizar una stat")
+        embed.set_footer(text="💡 Usa /linea add para añadir o actualizar una stat")
         await interaction.followup.send(embed=embed, ephemeral=True)
 
 
@@ -399,7 +399,7 @@ class BreedingDashboardView(discord.ui.View):
                     f"📊 `{len(mutations)}` mutaciones totales · mostrando las `{len(recent_mutations)}` más recientes\n\n"
                     f"{response_text}"
                 )
-                embed.set_footer(text="💡 Usa /log_mutas para el log completo")
+                embed.set_footer(text="💡 Usa /linea log para el log completo")
                 await interaction.response.send_message(embed=embed, ephemeral=True)
         except Exception as e:
             await interaction.response.send_message(f"Error al leer logs: {e}", ephemeral=True)
@@ -561,6 +561,10 @@ async def update_breeding_dashboards(bot, guild_id: int, specific_message_id=Non
 
 
 class Breeding(commands.Cog):
+    # Grupo unificado de crianza (antes /linea_add, /linea_mod, /linea_ver,
+    # /log_mutas, /lineas).
+    linea = app_commands.Group(name="linea", description="Líneas genéticas de crianza.")
+
     def __init__(self, bot):
         self.bot = bot
         # Migraciones delegadas a db/schema.py.
@@ -702,7 +706,7 @@ class Breeding(commands.Cog):
                     guild_id,
                 ),
             )
-            action = "stats actualizados"
+            action = "updated"
 
             # Registro de mutaciones en log
             if diff == 2:
@@ -716,13 +720,13 @@ class Breeding(commands.Cog):
                 f"INSERT INTO dinos (guild_id, especie, {stat_col}) VALUES (?, ?, ?)",
                 (guild_id, dino, puntos),
             )
-            action = "registrada (nueva línea)"
+            action = "created"
 
         await db.commit()
         return action
 
-    @app_commands.command(
-        name="linea_add",
+    @linea.command(
+        name="add",
         description="Registra/Actualiza una estadística para una línea.",
     )
     @app_commands.choices(estadistica=STAT_CHOICES)
@@ -740,8 +744,10 @@ class Breeding(commands.Cog):
     ):
         action = await self.upsert_stat(dino, estadistica.value, puntos, interaction.guild_id)
 
+        lang = await resolve_lang(self.bot, interaction.guild_id, "command", interaction.user.id)
+        action_txt = t(f"linea.action.{action}", lang)
         await interaction.response.send_message(
-            f"✅ 🧬 **{dino}** con **{puntos}** en **{estadistica.name}** {action}.",
+            t("linea.cmd.add", lang, dino=dino, puntos=puntos, stat=estadistica.name, action=action_txt),
             ephemeral=False,
         )
         await update_breeding_dashboards(self.bot, interaction.guild_id)
@@ -768,9 +774,9 @@ class Breeding(commands.Cog):
 
         return [app_commands.Choice(name=row[0], value=row[0]) for row in rows]
 
-    @app_commands.command(
-        name="linea_mod",
-        description="Modifica una estadística específica (Igual que linea_add).",
+    @linea.command(
+        name="mod",
+        description="Modifica una estadística específica (Igual que /linea add).",
     )
     @app_commands.choices(estadistica=STAT_CHOICES)
     @app_commands.describe(
@@ -786,11 +792,12 @@ class Breeding(commands.Cog):
         estadistica: app_commands.Choice[str],
         puntos: int,
     ):
-        # Flujo idéntico a linea_add utilizando lógica Single Row
+        # Flujo idéntico a /linea add utilizando lógica Single Row
         await self.upsert_stat(dino, estadistica.value, puntos, interaction.guild_id)
 
+        lang = await resolve_lang(self.bot, interaction.guild_id, "command", interaction.user.id)
         await interaction.response.send_message(
-            f"✅ Estadística modificada: **{dino}** -> **{estadistica.name}**: {puntos}.",
+            t("linea.cmd.mod", lang, dino=dino, stat=estadistica.name, puntos=puntos),
             ephemeral=False,
         )
         await update_breeding_dashboards(self.bot, interaction.guild_id)
@@ -802,8 +809,8 @@ class Breeding(commands.Cog):
         except (discord.NotFound, discord.Forbidden) as e:
             logger.debug(f"[Breeding] Auto-delete falló (mensaje ya borrado): {e}")
 
-    @app_commands.command(
-        name="lineas",
+    @linea.command(
+        name="panel",
         description="Muestra el panel de líneas de crianza (Auto-actualizable).",
     )
     async def lineas(self, interaction: discord.Interaction):
@@ -829,10 +836,11 @@ class Breeding(commands.Cog):
         )
         await db.commit()
 
-    @app_commands.command(name="linea_ver", description="Consulta las stats de una especie (Epímero).")
+    @linea.command(name="ver", description="Consulta las stats de una especie (Efímero).")
     @app_commands.describe(dino="Especie a consultar")
     @app_commands.autocomplete(dino=dino_autocomplete)
     async def linea_ver(self, interaction: discord.Interaction, dino: str):
+        lang = await resolve_lang(self.bot, interaction.guild_id, "command", interaction.user.id)
         db = self.bot.db
         cursor = await db.execute(
             "SELECT * FROM dinos WHERE especie = ? AND guild_id = ?",
@@ -845,53 +853,54 @@ class Breeding(commands.Cog):
 
         if not row:
             await interaction.response.send_message(
-                f"❌ No se encontró la especie **{dino}**.", ephemeral=True
+                t("linea.cmd.not_found", lang, dino=dino), ephemeral=True
             )
             return
 
-        # Orden canónico de las 7 stats con su emoji y nombre largo.
+        # Orden canónico de las 7 stats con su emoji; el nombre viene del catálogo
+        # y se rellena a 8 chars para mantener la alineación visual.
         STATS_ORDER = [
-            ("hp",     "❤️", "HP      "),
-            ("melee",  "⚔️", "Melee   "),
-            ("stam",   "⚡", "Stam    "),
-            ("weight", "⚖️", "Peso    "),
-            ("oxy",    "🫧", "Oxígeno "),
-            ("food",   "🍖", "Comida  "),
-            ("speed",  "💨", "Speed   "),
+            ("hp", "❤️"),
+            ("melee", "⚔️"),
+            ("stam", "⚡"),
+            ("weight", "⚖️"),
+            ("oxy", "🫧"),
+            ("food", "🍖"),
+            ("speed", "💨"),
         ]
-        registered = sum(1 for col, _, _ in STATS_ORDER if row[col])
+        registered = sum(1 for col, _ in STATS_ORDER if row[col])
 
         lines = [
-            f"🔢 Stats registradas: `{registered}/7`",
+            t("linea.ver.registered", lang, n=registered),
             "",
         ]
-        for col, emoji, name in STATS_ORDER:
+        for col, emoji in STATS_ORDER:
+            name = t(f"linea.stat.{col}", lang).ljust(8)
             v = row[col]
             value = f"`{v:>3}`" if v else "` — `"
             lines.append(f"{emoji} {name} {value}")
 
         embed = discord.Embed(
-            title=f"🧬 STATS: {dino}",
+            title=t("linea.ver.title", lang, dino=dino),
             color=discord.Color.purple(),
         )
         embed.description = "\n".join(lines)
-        embed.set_footer(text="💡 Usa /linea_add para añadir o actualizar una stat")
+        embed.set_footer(text=t("linea.ver.footer", lang))
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @app_commands.command(
-        name="log_mutas",
+    @linea.command(
+        name="log",
         description="Muestra las últimas 20 mutaciones registradas en el servidor.",
     )
     async def log_mutas(self, interaction: discord.Interaction):
         import os
 
+        lang = await resolve_lang(self.bot, interaction.guild_id, "command", interaction.user.id)
         log_dir = os.path.join(os.path.dirname(self.bot.log_filename), str(interaction.guild_id))
         mutations = []
 
         if not os.path.exists(log_dir):
-            await interaction.response.send_message(
-                "No hay logs de mutaciones para este servidor.", ephemeral=True
-            )
+            await interaction.response.send_message(t("linea.log.no_logs", lang), ephemeral=True)
             return
 
         try:
@@ -912,46 +921,40 @@ class Breeding(commands.Cog):
 
                                 try:
                                     dino, stat, amount = content.rsplit(maxsplit=2)
-                                    if "DOUBLE" in line:
-                                        mutations.append(
-                                            (
-                                                timestamp,
-                                                f"⏰ `{timestamp}`: **Doble muta** 🧬 **{dino}** en **{stat}**",
-                                            )
+                                    kind = t(
+                                        "linea.log.double" if "DOUBLE" in line else "linea.log.single",
+                                        lang,
+                                    )
+                                    mutations.append(
+                                        (
+                                            timestamp,
+                                            t("linea.log.entry", lang, ts=timestamp, kind=kind, dino=dino, stat=stat),
                                         )
-                                    else:
-                                        mutations.append(
-                                            (
-                                                timestamp,
-                                                f"⏰ `{timestamp}`: **Muta** 🧬 **{dino}** en **{stat}**",
-                                            )
-                                        )
+                                    )
                                 except Exception as e:
                                     logger.debug(f"[Breeding] Parseo de mutación falló, usando raw: {e}")
                                     mutations.append((timestamp, f"`{timestamp}`: {content}"))
 
             if not mutations:
-                await interaction.response.send_message(
-                    "No se han registrado mutaciones históricamente.", ephemeral=True
-                )
+                await interaction.response.send_message(t("linea.log.none", lang), ephemeral=True)
             else:
                 mutations.sort(key=lambda x: x[0], reverse=True)
                 recent_mutations = [mut[1] for mut in mutations[:20]]
                 response_text = "\n".join(recent_mutations)
 
                 embed = discord.Embed(
-                    title="🧬 REGISTRO DE MUTACIONES",
+                    title=t("linea.log.title", lang),
                     color=discord.Color.green(),
                 )
                 embed.description = (
-                    f"📊 `{len(mutations)}` mutaciones totales · mostrando las `{len(recent_mutations)}` más recientes\n\n"
-                    f"{response_text}"
+                    t("linea.log.header", lang, total=len(mutations), shown=len(recent_mutations))
+                    + f"\n\n{response_text}"
                 )
-                embed.set_footer(text="💡 Usa el botón 'Nueva muta' del dashboard para registrar una")
+                embed.set_footer(text=t("linea.log.footer", lang))
                 await interaction.response.send_message(embed=embed, ephemeral=True)
 
         except Exception as e:
-            await interaction.response.send_message(f"Error leyendo logs: {e}", ephemeral=True)
+            await interaction.response.send_message(t("linea.log.error", lang, err=e), ephemeral=True)
 
 
 async def setup(bot):

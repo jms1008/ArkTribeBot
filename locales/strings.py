@@ -99,18 +99,43 @@ STRINGS: dict[str, dict[str, str]] = {
         "breeding.title": "🧬 LÍNEAS DE CRIANZA (Top Stats)",
         "breeding.empty": (
             "📭 No hay líneas registradas aún.\n\n"
-            "💡 Usa `/linea_add dino:Rex estadistica:HP puntos:50` para empezar."
+            "💡 Usa `/linea add dino:Rex estadistica:HP puntos:50` para empezar."
         ),
         "breeding.empty_footer": "Página 1/1 • 0 especies",
         "breeding.badges": "📊 `{total:02d}` especies registradas  ·  📄 Página `{page}/{pages}`",
         "breeding.section": "## 🦖 ESPECIES",
         "breeding.footer": (
             "Página {page}/{pages}  •  {total} especies totales  "
-            "•  ❤️HP ⚔️Melee ⚡Stam ⚖️Peso 🫧Oxy 🍖Food 💨Speed  •  /linea_add"
+            "•  ❤️HP ⚔️Melee ⚡Stam ⚖️Peso 🫧Oxy 🍖Food 💨Speed  •  /linea add"
         ),
         "breeding.btn.muta": "Nueva muta",
         "breeding.btn.alarms": "Alarmas",
         "breeding.btn.logs": "Ver Logs Muta",
+        # --- /linea (respuestas de comando) ---
+        "linea.action.created": "registrada (nueva línea)",
+        "linea.action.updated": "stats actualizados",
+        "linea.cmd.add": "✅ 🧬 **{dino}** con **{puntos}** en **{stat}** {action}.",
+        "linea.cmd.mod": "✅ Estadística modificada: **{dino}** -> **{stat}**: {puntos}.",
+        "linea.cmd.not_found": "❌ No se encontró la especie **{dino}**.",
+        "linea.ver.title": "🧬 STATS: {dino}",
+        "linea.ver.registered": "🔢 Stats registradas: `{n}/7`",
+        "linea.ver.footer": "💡 Usa /linea add para añadir o actualizar una stat",
+        "linea.stat.hp": "HP",
+        "linea.stat.melee": "Melee",
+        "linea.stat.stam": "Stam",
+        "linea.stat.weight": "Peso",
+        "linea.stat.oxy": "Oxígeno",
+        "linea.stat.food": "Comida",
+        "linea.stat.speed": "Speed",
+        "linea.log.no_logs": "No hay logs de mutaciones para este servidor.",
+        "linea.log.none": "No se han registrado mutaciones históricamente.",
+        "linea.log.double": "Doble muta",
+        "linea.log.single": "Muta",
+        "linea.log.entry": "⏰ `{ts}`: **{kind}** 🧬 **{dino}** en **{stat}**",
+        "linea.log.title": "🧬 REGISTRO DE MUTACIONES",
+        "linea.log.header": "📊 `{total}` mutaciones totales · mostrando las `{shown}` más recientes",
+        "linea.log.footer": "💡 Usa el botón 'Nueva muta' del dashboard para registrar una",
+        "linea.log.error": "Error leyendo logs: {err}",
         # --- Alarmas dashboard (panel compartido) ---
         "alarm.title": "🔔 PANEL DE ALARMAS DE LA TRIBU",
         "alarm.empty": (
@@ -339,18 +364,43 @@ STRINGS: dict[str, dict[str, str]] = {
         "breeding.title": "🧬 BREEDING LINES (Top Stats)",
         "breeding.empty": (
             "📭 No lines registered yet.\n\n"
-            "💡 Use `/linea_add dino:Rex estadistica:HP puntos:50` to start."
+            "💡 Use `/linea add dino:Rex estadistica:HP puntos:50` to start."
         ),
         "breeding.empty_footer": "Page 1/1 • 0 species",
         "breeding.badges": "📊 `{total:02d}` registered species  ·  📄 Page `{page}/{pages}`",
         "breeding.section": "## 🦖 SPECIES",
         "breeding.footer": (
             "Page {page}/{pages}  •  {total} species total  "
-            "•  ❤️HP ⚔️Melee ⚡Stam ⚖️Weight 🫧Oxy 🍖Food 💨Speed  •  /linea_add"
+            "•  ❤️HP ⚔️Melee ⚡Stam ⚖️Weight 🫧Oxy 🍖Food 💨Speed  •  /linea add"
         ),
         "breeding.btn.muta": "New mutation",
         "breeding.btn.alarms": "Alarms",
         "breeding.btn.logs": "View Mut. Logs",
+        # --- /linea (command replies) ---
+        "linea.action.created": "registered (new line)",
+        "linea.action.updated": "stats updated",
+        "linea.cmd.add": "✅ 🧬 **{dino}** with **{puntos}** in **{stat}** {action}.",
+        "linea.cmd.mod": "✅ Stat modified: **{dino}** -> **{stat}**: {puntos}.",
+        "linea.cmd.not_found": "❌ Species **{dino}** not found.",
+        "linea.ver.title": "🧬 STATS: {dino}",
+        "linea.ver.registered": "🔢 Registered stats: `{n}/7`",
+        "linea.ver.footer": "💡 Use /linea add to add or update a stat",
+        "linea.stat.hp": "HP",
+        "linea.stat.melee": "Melee",
+        "linea.stat.stam": "Stam",
+        "linea.stat.weight": "Weight",
+        "linea.stat.oxy": "Oxygen",
+        "linea.stat.food": "Food",
+        "linea.stat.speed": "Speed",
+        "linea.log.no_logs": "No mutation logs for this server.",
+        "linea.log.none": "No mutations recorded historically.",
+        "linea.log.double": "Double mutation",
+        "linea.log.single": "Mutation",
+        "linea.log.entry": "⏰ `{ts}`: **{kind}** 🧬 **{dino}** in **{stat}**",
+        "linea.log.title": "🧬 MUTATION LOG",
+        "linea.log.header": "📊 `{total}` total mutations · showing the `{shown}` most recent",
+        "linea.log.footer": "💡 Use the 'New mutation' button on the dashboard to record one",
+        "linea.log.error": "Error reading logs: {err}",
         # --- Alarms dashboard (shared panel) ---
         "alarm.title": "🔔 TRIBE INTRUDER ALARMS PANEL",
         "alarm.empty": (
