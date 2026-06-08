@@ -178,6 +178,41 @@ STRINGS: dict[str, dict[str, str]] = {
         "help.opt.eventos": "Eventos LFG",
         "help.opt.admin": "Setup & Admin",
         "help.opt.backup": "Backups DB",
+        # --- Ranking de muertes: hitos y sarcasmos (log_processor) ---
+        "death.friendly_fire": "fuego amigo",
+        "death.milestone.1": "¡Bienvenido a ARK! Tu primera muerte oficial de muchas... 🎉",
+        "death.milestone.10": "Doble dígito de muertes... Ya eres un veterano en besar el suelo. 🥉",
+        "death.milestone.50": "¡Medio centenar de muertes! 🥈 Estás a medias de convertirte en el mayor donante de loot del servidor.",
+        "death.milestone.69": "69 muertes... Nice. Pero sigues estando muerto. 😏",
+        "death.milestone.100": "¡100 MUERTES! 🥇 Oficialmente eres el jugador más manco de la tribu. Eres leyenda.",
+        "death.milestone.300": "¡ESTO ES ESPARTA! Y tú eres el mensajero que acaban de tirar al pozo. 300 muertes.",
+        "death.milestone.420": "420 muertes... 🌿 Demasiado humo en esa base, ¡deja de fumar flor rara!",
+        "death.milestone.666": "666 muertes... 😈 Has invocado al Demonio de la Inutilidad. Vas directo al infierno.",
+        "death.milestone.777": "¡VEGETTA777! ⛏️ Muy bonito, pero te acaba de farmear un dodo por la espalda.",
+        "death.milestone.1000": "1000 MUERTES. 🏆 Hemos contactado con Wildcard. Te vamos a borrar el juego de Steam para que dejes de sufrir.",
+        "death.milestone.century": "Sigues sumando de 100 en 100... ¿no te cansas? Ya van **{n}** muertes. 💀",
+        "death.sarcasm": (
+            "Estás pendejo... ya te moriste **{n}** veces...\n"
+            "¡Felicidades! Has desbloqueado el logro: *Morir por {n}ª vez*. 🏆\n"
+            "¿Otra vez? A este ritmo te van a cobrar alquiler en el respawn. (Muertes: **{n}**)\n"
+            "Tranquilo, la **{n}ª** es la vencida... o no. 🤡\n"
+            "Eres como un dodo, pero con menos instinto de supervivencia. (Total: **{n}**)\n"
+            "¡Míralo! Si es que no se le puede dejar solo... Muertes: **{n}** 🤦‍♂️\n"
+            "¿Has probado lo de no morir? Dicen que funciona bastante bien. (Contador: **{n}**)\n"
+            "A este paso vas a amansar a los dinos salvajes a base de darles de comer tu propio cadáver. (**{n}** muertes)\n"
+            "En el menú del servidor hoy toca: Carpaccio de {victim}. Ya llevas **{n}** muertes.\n"
+            "Ni un mosco en verano muere tantas veces... Contador sube a **{n}**.\n"
+            "Vete preparando saco, porque la cama ya la has derretido del uso. (Total: **{n}**)\n"
+            "Tus padres no te criaron para feedear de esta manera tan vergonzosa. (**{n}** ☠️)\n"
+            "Si la tribu dependiera de ti, seguiríamos con herramientas de piedra. (**{n}** veces)\n"
+            "Muertes totales: **{n}**. El servidor está empezando a sentir lástima por ti.\n"
+            "Bob the Builder construía mejor y moría menos que tú. (**{n}** defunciones)\n"
+            "Tómate un respiro, ve a beber agua, porque madre mía la que estás liando... (**{n}**)\n"
+            "Cuidado de no tropezar con una piedra y resbalar, que igual mueres por **{n}ª** vez consecutiva.\n"
+            "Oye, que en este servidor no dan premio por ser el que más veces mira la pantalla de muerte. (**{n}**)\n"
+            "Hasta un Triceratops despistado vive más tiempo que tú. Y eso que extinguieron hace milenios. (**{n}** bajas)\n"
+            "¿Quién dejó la puerta abierta? Ah, no, que fuiste tú intentando huir... otra vez. (**{n}** muertes)"
+        ),
         # --- /idioma ---
         "idioma.denied": "❌ Acceso denegado. Necesitas permisos de administrador.",
         "idioma.set.es": (
@@ -356,6 +391,41 @@ STRINGS: dict[str, dict[str, str]] = {
         "help.opt.eventos": "LFG Events",
         "help.opt.admin": "Setup & Admin",
         "help.opt.backup": "DB Backups",
+        # --- Death ranking: milestones and sarcasm (log_processor) ---
+        "death.friendly_fire": "friendly fire",
+        "death.milestone.1": "Welcome to ARK! Your first official death of many... 🎉",
+        "death.milestone.10": "Double-digit deaths... You're a veteran ground-kisser now. 🥉",
+        "death.milestone.50": "Half a hundred deaths! 🥈 You're halfway to being the server's biggest loot donor.",
+        "death.milestone.69": "69 deaths... Nice. But you're still dead. 😏",
+        "death.milestone.100": "100 DEATHS! 🥇 Officially the clumsiest player in the tribe. You're a legend.",
+        "death.milestone.300": "THIS IS SPARTA! And you're the messenger they just kicked down the well. 300 deaths.",
+        "death.milestone.420": "420 deaths... 🌿 Too much smoke in that base, stop smoking the rare flower!",
+        "death.milestone.666": "666 deaths... 😈 You've summoned the Demon of Uselessness. Straight to hell.",
+        "death.milestone.777": "VEGETTA777! ⛏️ Very nice, but a dodo just farmed you from behind.",
+        "death.milestone.1000": "1000 DEATHS. 🏆 We've contacted Wildcard. We're deleting the game from your Steam so you stop suffering.",
+        "death.milestone.century": "Still racking them up 100 at a time... don't you get tired? Already **{n}** deaths. 💀",
+        "death.sarcasm": (
+            "You're hopeless... you've already died **{n}** times...\n"
+            "Congrats! You unlocked the achievement: *Die for the {n}th time*. 🏆\n"
+            "Again? At this rate they'll charge you rent at the respawn. (Deaths: **{n}**)\n"
+            "Relax, the **{n}th** time's the charm... or not. 🤡\n"
+            "You're like a dodo, but with less survival instinct. (Total: **{n}**)\n"
+            "Look at this one! Can't be left alone for a second... Deaths: **{n}** 🤦‍♂️\n"
+            "Have you tried just not dying? They say it works pretty well. (Counter: **{n}**)\n"
+            "At this rate you'll tame wild dinos by feeding them your own corpse. (**{n}** deaths)\n"
+            "Today's server menu: Carpaccio of {victim}. You're up to **{n}** deaths.\n"
+            "Not even a summer mosquito dies this much... Counter climbs to **{n}**.\n"
+            "Better get a sleeping bag ready, you've melted the bed from overuse. (Total: **{n}**)\n"
+            "Your parents didn't raise you to feed this shamefully. (**{n}** ☠️)\n"
+            "If the tribe depended on you, we'd still have stone tools. (**{n}** times)\n"
+            "Total deaths: **{n}**. The server is starting to feel sorry for you.\n"
+            "Bob the Builder built better and died less than you. (**{n}** demises)\n"
+            "Take a breather, drink some water, because oh boy what a mess... (**{n}**)\n"
+            "Careful not to trip on a rock and slip, you might die for the **{n}th** time in a row.\n"
+            "Hey, this server gives no prize for staring at the death screen the most. (**{n}**)\n"
+            "Even a clueless Triceratops lives longer than you. And they went extinct ages ago. (**{n}** casualties)\n"
+            "Who left the door open? Oh wait, it was you trying to flee... again. (**{n}** deaths)"
+        ),
         # --- /idioma ---
         "idioma.set.en_total": (
             "🌐 Language set: **English (everything)**.\n"

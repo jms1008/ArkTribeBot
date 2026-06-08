@@ -8,6 +8,7 @@ from discord.ext import commands
 
 from main import PoliciaSosView, get_guild_logger
 from utils import bus
+from utils.i18n import resolve_lang, t
 
 logger = logging.getLogger("ArkTribeBot")
 
@@ -201,80 +202,38 @@ class LogProcessor(commands.Cog, name="LogProcessor"):
                             )
                             num_muertes = d_row["deaths"] if d_row else 1
 
-                            # Respuestas sarcásticas variadas e Hitos
-                            hitos = {
-                                1: (
-                                    "¡Bienvenido a ARK! Tu primera muerte oficial de muchas... 🎉",
-                                    "https://tenor.com/view/welcome-to-jurassic-park-gif-11623192",
-                                ),
-                                10: (
-                                    "Doble dígito de muertes... Ya eres un veterano en besar el suelo. 🥉",
-                                    "https://tenor.com/view/facepalm-picard-star-trek-disappointment-gif-14639209",
-                                ),
-                                50: (
-                                    "¡Medio centenar de muertes! 🥈 Estás a medias de convertirte en el mayor donante de loot del servidor.",
-                                    "https://tenor.com/view/sarcastic-clapping-golf-clap-cheers-well-done-jon-stewart-gif-16167909",
-                                ),
-                                69: (
-                                    "69 muertes... Nice. Pero sigues estando muerto. 😏",
-                                    "https://tenor.com/view/nice-south-park-gif-9226462",
-                                ),
-                                100: (
-                                    "¡100 MUERTES! 🥇 Oficialmente eres el jugador más manco de la tribu. Eres leyenda.",
-                                    "https://tenor.com/view/nuclear-explosion-boom-blast-atomic-bomb-gif-16056637",
-                                ),
-                                300: (
-                                    "¡ESTO ES ESPARTA! Y tú eres el mensajero que acaban de tirar al pozo. 300 muertes.",
-                                    "https://tenor.com/view/sparta-kick-hole-fall-leonidas-gif-3420829",
-                                ),
-                                420: (
-                                    "420 muertes... 🌿 Demasiado humo en esa base, ¡deja de fumar flor rara!",
-                                    "https://tenor.com/view/snoop-dogg-smoke-smoke-weed-420-gif-14352528",
-                                ),
-                                666: (
-                                    "666 muertes... 😈 Has invocado al Demonio de la Inutilidad. Vas directo al infierno.",
-                                    "https://tenor.com/view/hell-elmo-fire-flames-elmo-fire-gif-17631853",
-                                ),
-                                777: (
-                                    "¡VEGETTA777! ⛏️ Muy bonito, pero te acaba de farmear un dodo por la espalda.",
-                                    "https://tenor.com/view/vegetta777-minecraft-saludo-gif-14546416",
-                                ),
-                                1000: (
-                                    "1000 MUERTES. 🏆 Hemos contactado con Wildcard. Te vamos a borrar el juego de Steam para que dejes de sufrir.",
-                                    "https://tenor.com/view/mind-blown-explosion-boom-explode-gif-12051642",
-                                ),
+                            # Idioma del servidor para los mensajes públicos de muerte
+                            # (scope command: solo inglés si el modo es en_total).
+                            lang = await resolve_lang(self.bot, guild_id, "command")
+
+                            # GIF por hito (el texto viene del catálogo i18n).
+                            hito_gifs = {
+                                1: "https://tenor.com/view/welcome-to-jurassic-park-gif-11623192",
+                                10: "https://tenor.com/view/facepalm-picard-star-trek-disappointment-gif-14639209",
+                                50: "https://tenor.com/view/sarcastic-clapping-golf-clap-cheers-well-done-jon-stewart-gif-16167909",
+                                69: "https://tenor.com/view/nice-south-park-gif-9226462",
+                                100: "https://tenor.com/view/nuclear-explosion-boom-blast-atomic-bomb-gif-16056637",
+                                300: "https://tenor.com/view/sparta-kick-hole-fall-leonidas-gif-3420829",
+                                420: "https://tenor.com/view/snoop-dogg-smoke-smoke-weed-420-gif-14352528",
+                                666: "https://tenor.com/view/hell-elmo-fire-flames-elmo-fire-gif-17631853",
+                                777: "https://tenor.com/view/vegetta777-minecraft-saludo-gif-14546416",
+                                1000: "https://tenor.com/view/mind-blown-explosion-boom-explode-gif-12051642",
                             }
 
                             final_msg = ""
-                            if num_muertes in hitos:
-                                texto, gif = hitos[num_muertes]
-                                final_msg = f"{texto}\n{gif}"
+                            if num_muertes in hito_gifs:
+                                texto = t(f"death.milestone.{num_muertes}", lang)
+                                final_msg = f"{texto}\n{hito_gifs[num_muertes]}"
                             elif num_muertes > 0 and num_muertes % 100 == 0:
-                                final_msg = f"Sigues sumando de 100 en 100... ¿no te cansas? Ya van **{num_muertes}** muertes. 💀\nhttps://tenor.com/view/confused-john-travolta-pulp-fiction-where-gif-14436531"
+                                final_msg = (
+                                    t("death.milestone.century", lang, n=num_muertes)
+                                    + "\nhttps://tenor.com/view/confused-john-travolta-pulp-fiction-where-gif-14436531"
+                                )
                             else:
-                                sarcasmos_base = [
-                                    f"Estás pendejo... ya te moriste **{num_muertes}** veces...",
-                                    f"¡Felicidades! Has desbloqueado el logro: *Morir por {num_muertes}ª vez*. 🏆",
-                                    f"¿Otra vez? A este ritmo te van a cobrar alquiler en el respawn. (Muertes: **{num_muertes}**)",
-                                    f"Tranquilo, la **{num_muertes}ª** es la vencida... o no. 🤡",
-                                    f"Eres como un dodo, pero con menos instinto de supervivencia. (Total: **{num_muertes}**)",
-                                    f"¡Míralo! Si es que no se le puede dejar solo... Muertes: **{num_muertes}** 🤦‍♂️",
-                                    f"¿Has probado lo de no morir? Dicen que funciona bastante bien. (Contador: **{num_muertes}**)",
-                                    f"A este paso vas a amansar a los dinos salvajes a base de darles de comer tu propio cadáver. (**{num_muertes}** muertes)",
-                                    f"En el menú del servidor hoy toca: Carpaccio de {victima_player}. Ya llevas **{num_muertes}** muertes.",
-                                    f"Ni un mosco en verano muere tantas veces... Contador sube a **{num_muertes}**.",
-                                    f"Vete preparando saco, porque la cama ya la has derretido del uso. (Total: **{num_muertes}**)",
-                                    f"Tus padres no te criaron para feedear de esta manera tan vergonzosa. (**{num_muertes}** ☠️)",
-                                    f"Si la tribu dependiera de ti, seguiríamos con herramientas de piedra. (**{num_muertes}** veces)",
-                                    f"Muertes totales: **{num_muertes}**. El servidor está empezando a sentir lástima por ti.",
-                                    f"Bob the Builder construía mejor y moría menos que tú. (**{num_muertes}** defunciones)",
-                                    f"Tómate un respiro, ve a beber agua, porque madre mía la que estás liando... (**{num_muertes}**)",
-                                    f"Cuidado de no tropezar con una piedra y resbalar, que igual mueres por **{num_muertes}ª** vez consecutiva.",
-                                    f"Oye, que en este servidor no dan premio por ser el que más veces mira la pantalla de muerte. (**{num_muertes}**)",
-                                    f"Hasta un Triceratops despistado vive más tiempo que tú. Y eso que extinguieron hace milenios. (**{num_muertes}** bajas)",
-                                    f"¿Quién dejó la puerta abierta? Ah, no, que fuiste tú intentando huir... otra vez. (**{num_muertes}** muertes)",
-                                ]
-                                final_msg = random.choice(sarcasmos_base)
+                                phrases = t("death.sarcasm", lang).split("\n")
+                                final_msg = random.choice(phrases).format(
+                                    n=num_muertes, victim=victima_player
+                                )
 
                             sent_msg = await message.reply(final_msg)
 
