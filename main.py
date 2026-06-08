@@ -226,9 +226,9 @@ class ArkTribeBot(commands.Bot):
             "> **2.** `/perfil_tribu usuario:@x personaje:Bob steam:... apodo:...` — "
             "Registra cada miembro (vincula in-game + Discord).\n"
             "> **3.** `/fijar_tribu nombre:...` — (Opcional) Tribus conocidas (aliados/enemigos).\n\n"
-            "💡 **Ayuda en cualquier momento:** `/info modulo:...` o `/guia` para el manual."
+            "💡 **Ayuda en cualquier momento:** `/info modulo:...` o `/help` para el manual."
         )
-        embed.set_footer(text="ArkTribeBot v3.0  •  by @K4NEKIs  •  /guia para el manual completo")
+        embed.set_footer(text="ArkTribeBot v3.0  •  by @K4NEKIs  •  /help para el manual completo")
 
         try:
             await canal.send(embed=embed)

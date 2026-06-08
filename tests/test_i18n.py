@@ -109,6 +109,32 @@ class TestResolveLang:
         assert await i18n.resolve_lang(mock_bot, None, "periodic") == "es"
 
     @pytest.mark.asyncio
+    async def test_user_override_applies_to_command_scope(self, mock_bot):
+        """Una preferencia personal de usuario manda en scope command, aunque el
+        servidor esté en español."""
+        await mock_bot.init_mock_db()
+        await mock_bot.db.execute(
+            "INSERT INTO user_language (guild_id, user_id, lang) VALUES (?, ?, ?)", (1, 42, "en")
+        )
+        await mock_bot.db.commit()
+
+        # Servidor en español por defecto, pero el usuario 42 prefiere inglés.
+        assert await i18n.resolve_lang(mock_bot, 1, "command", 42) == "en"
+        # Otro usuario sin preferencia sigue el servidor (es).
+        assert await i18n.resolve_lang(mock_bot, 1, "command", 99) == "es"
+
+    @pytest.mark.asyncio
+    async def test_user_override_ignored_for_periodic_scope(self, mock_bot):
+        """Los dashboards (periodic) son compartidos: la preferencia de usuario NO aplica."""
+        await mock_bot.init_mock_db()
+        await mock_bot.db.execute(
+            "INSERT INTO user_language (guild_id, user_id, lang) VALUES (?, ?, ?)", (1, 42, "en")
+        )
+        await mock_bot.db.commit()
+        # Aunque el usuario prefiera inglés, el panel sigue el idioma del servidor (es).
+        assert await i18n.resolve_lang(mock_bot, 1, "periodic", 42) == "es"
+
+    @pytest.mark.asyncio
     async def test_cache_invalidation_reflects_change(self, mock_bot):
         await mock_bot.init_mock_db()
         await mock_bot.db.execute(

@@ -152,6 +152,32 @@ STRINGS: dict[str, dict[str, str]] = {
         "status.section.empty": "## 🟡 SERVIDORES VACÍOS",
         "status.section.offline": "## 🔴 SERVIDORES OFFLINE / TIMEOUT",
         "status.footer": "Auto-actualizado cada 2 minutos  •  /status para ver un mapa concreto",
+        # --- /help (manual interactivo) ---
+        "help.title": "📚 MANUAL DE USUARIO — ARKTRIBEBOT",
+        "help.intro": (
+            "Selecciona una sección del menú inferior para conocer los comandos y "
+            "funcionamiento de cada módulo.\n\n"
+            "## 🚀 Empezar\n"
+            "> 💡 **Nuevo miembro:** usa `/perfil_tribu` para registrarte (necesario para "
+            "el ranking de muertes y el radar K4Ultra).\n"
+            "> ⚙️ **Admin del servidor:** comienza por la sección *Setup & Admin* para "
+            "configurar el bot con `/inicio_ark`."
+        ),
+        "help.placeholder": "Selecciona una sección de la guía...",
+        "help.construction": "Sección en construcción.",
+        "help.opt.sos": "SOS & Alertas",
+        "help.opt.alarmas": "Alarmas de Intrusos",
+        "help.opt.todo_list": "To-Do List",
+        "help.opt.lineas": "Líneas de Genética",
+        "help.opt.blacklist": "Blacklist",
+        "help.opt.scouting": "Scouting",
+        "help.opt.status": "Status Servidores",
+        "help.opt.k4ultra": "K4Ultra Radar",
+        "help.opt.ranking": "Ranking de Muertes",
+        "help.opt.puntos_diarios": "Puntos Diarios",
+        "help.opt.eventos": "Eventos LFG",
+        "help.opt.admin": "Setup & Admin",
+        "help.opt.backup": "Backups DB",
         # --- /idioma ---
         "idioma.denied": "❌ Acceso denegado. Necesitas permisos de administrador.",
         "idioma.set.es": (
@@ -304,6 +330,32 @@ STRINGS: dict[str, dict[str, str]] = {
         "status.section.empty": "## 🟡 EMPTY SERVERS",
         "status.section.offline": "## 🔴 OFFLINE / TIMEOUT SERVERS",
         "status.footer": "Auto-updated every 2 minutes  •  /status to view a specific map",
+        # --- /help (interactive manual) ---
+        "help.title": "📚 USER MANUAL — ARKTRIBEBOT",
+        "help.intro": (
+            "Pick a section from the menu below to learn the commands and how each "
+            "module works.\n\n"
+            "## 🚀 Getting started\n"
+            "> 💡 **New member:** use `/perfil_tribu` to register (required for the "
+            "death ranking and the K4Ultra radar).\n"
+            "> ⚙️ **Server admin:** start with the *Setup & Admin* section to "
+            "configure the bot with `/inicio_ark`."
+        ),
+        "help.placeholder": "Pick a guide section...",
+        "help.construction": "Section under construction.",
+        "help.opt.sos": "SOS & Alerts",
+        "help.opt.alarmas": "Intruder Alarms",
+        "help.opt.todo_list": "To-Do List",
+        "help.opt.lineas": "Breeding Lines",
+        "help.opt.blacklist": "Blacklist",
+        "help.opt.scouting": "Scouting",
+        "help.opt.status": "Server Status",
+        "help.opt.k4ultra": "K4Ultra Radar",
+        "help.opt.ranking": "Death Ranking",
+        "help.opt.puntos_diarios": "Daily Points",
+        "help.opt.eventos": "LFG Events",
+        "help.opt.admin": "Setup & Admin",
+        "help.opt.backup": "DB Backups",
         # --- /idioma ---
         "idioma.set.en_total": (
             "🌐 Language set: **English (everything)**.\n"

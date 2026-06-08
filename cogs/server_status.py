@@ -122,10 +122,11 @@ class ServerStatus(commands.Cog):
         """Inicializa el dashboard interactivo de Estado de Servidores."""
         import asyncio
 
-        from cogs.management import INFO_TEXTS
+        from cogs.management import get_info_texts
 
+        info_lang = await resolve_lang(self.bot, guild_id, "periodic")
         info_embed = discord.Embed(
-            description=INFO_TEXTS["status"],
+            description=get_info_texts(info_lang)["status"],
             color=discord.Color.from_rgb(43, 45, 49),
         )
         await channel.send(embed=info_embed)

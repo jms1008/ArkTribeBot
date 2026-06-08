@@ -350,6 +350,16 @@ TABLES: list[str] = [
         last_a2s_run TIMESTAMP
     )
     """,
+    # Preferencia de idioma POR USUARIO (override del idioma de servidor para las
+    # respuestas de comandos dirigidas a ese usuario). 'es' | 'en'.
+    """
+    CREATE TABLE IF NOT EXISTS user_language (
+        guild_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        lang TEXT NOT NULL DEFAULT 'es',
+        PRIMARY KEY (guild_id, user_id)
+    )
+    """,
 ]
 
 

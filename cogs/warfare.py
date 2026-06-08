@@ -886,10 +886,11 @@ class Warfare(commands.Cog):
 
     async def setup_dashboard(self, guild_id: int, channel: discord.TextChannel):
         """Inicializa el dashboard interactivo de Blacklist."""
-        from cogs.management import INFO_TEXTS
+        from cogs.management import get_info_texts
 
+        info_lang = await resolve_lang(self.bot, guild_id, "periodic")
         info_embed = discord.Embed(
-            description=INFO_TEXTS["blacklist"],
+            description=get_info_texts(info_lang)["blacklist"],
             color=discord.Color.from_rgb(43, 45, 49),
         )
         await channel.send(embed=info_embed)

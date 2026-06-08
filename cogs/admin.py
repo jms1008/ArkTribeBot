@@ -360,10 +360,11 @@ class Admin(commands.Cog):
 
         # ------------------- AUTO-SETUP DE CANALES OPCIONALES -------------------
         # Enviar info de SOS al canal SOS obligatorio
-        from cogs.management import INFO_TEXTS
+        from cogs.management import get_info_texts
 
+        setup_lang = await i18n.resolve_lang(self.bot, interaction.guild_id, "periodic")
         info_sos_embed = discord.Embed(
-            description=INFO_TEXTS["sos"], color=discord.Color.from_rgb(43, 45, 49)
+            description=get_info_texts(setup_lang)["sos"], color=discord.Color.from_rgb(43, 45, 49)
         )
         try:
             await canal_sos.send(embed=info_sos_embed)

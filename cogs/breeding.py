@@ -581,10 +581,11 @@ class Breeding(commands.Cog):
         """Inicializa el dashboard de Líneas Genéticas y almacena su ID."""
         import asyncio
 
-        from cogs.management import INFO_TEXTS
+        from cogs.management import get_info_texts
 
+        lang = await resolve_lang(self.bot, guild_id, "periodic")
         info_embed = discord.Embed(
-            description=INFO_TEXTS["lineas"],
+            description=get_info_texts(lang)["lineas"],
             color=discord.Color.from_rgb(43, 45, 49),
         )
         await channel.send(embed=info_embed)
@@ -596,7 +597,6 @@ class Breeding(commands.Cog):
         )
         rows = await cursor.fetchall()
 
-        lang = await resolve_lang(self.bot, guild_id, "periodic")
         embed, _, _, _ = build_breeding_embed(rows, 0, lang=lang)
         view = BreedingDashboardView(self.bot, rows, lang=lang)
         msg = await channel.send(embed=embed, view=view)

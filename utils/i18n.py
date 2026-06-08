@@ -78,16 +78,47 @@ async def get_guild_mode(bot, guild_id: int | None) -> str:
     return mode
 
 
-async def resolve_lang(bot, guild_id: int | None, scope: str) -> str:
+async def get_user_lang(bot, guild_id: int | None, user_id: int | None) -> str | None:
+    """Preferencia de idioma personal de un usuario en un guild, o ``None``.
+
+    Configurable vía /perfil_tribu. Sobrescribe el idioma de servidor SOLO para
+    las respuestas de comandos dirigidas a ese usuario (scope ``command``).
+    """
+    if guild_id is None or user_id is None:
+        return None
+    try:
+        db = getattr(bot, "db", None)
+        if db is None:
+            return None
+        row = await db.fetchone(
+            "SELECT lang FROM user_language WHERE guild_id = ? AND user_id = ?",
+            (guild_id, user_id),
+        )
+        if row is not None and row["lang"] in SUPPORTED:
+            return row["lang"]
+    except Exception as e:  # tabla ausente, DB no lista, etc.
+        logger.debug(f"[i18n] No se pudo leer user_language ({guild_id}/{user_id}): {e}")
+    return None
+
+
+async def resolve_lang(bot, guild_id: int | None, scope: str, user_id: int | None = None) -> str:
     """Resuelve el idioma efectivo (``"es"`` / ``"en"``) para un *scope*.
 
-    - ``scope="periodic"`` → ``"en"`` si modo ∈ {en_periodic, en_total}.
-    - ``scope="command"``  → ``"en"`` solo si modo == en_total.
+    - ``scope="periodic"`` (dashboards compartidos) → ``"en"`` si modo ∈
+      {en_periodic, en_total}. La preferencia por usuario NO aplica aquí porque
+      los paneles los ve toda la tribu.
+    - ``scope="command"`` (respuestas dirigidas a un usuario) → si ese usuario
+      tiene preferencia personal, manda; si no, ``"en"`` solo si modo == en_total.
     """
     mode = await get_guild_mode(bot, guild_id)
     if scope == "periodic":
         return "en" if mode in (MODE_EN_PERIODIC, MODE_EN_TOTAL) else "es"
-    # scope == "command" (y cualquier otro valor → conservador: solo total)
+
+    # scope == "command": preferencia personal del usuario tiene prioridad.
+    if user_id is not None:
+        pref = await get_user_lang(bot, guild_id, user_id)
+        if pref is not None:
+            return pref
     return "en" if mode == MODE_EN_TOTAL else "es"
 
 

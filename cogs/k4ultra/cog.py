@@ -21,10 +21,12 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
     async def setup_dashboard(self, guild_id: int, channel: discord.TextChannel):
         """Inicializa el dashboard interactivo de K4Ultra."""
         from cogs.k4ultra.ui import K4UltraView
-        from cogs.management import INFO_TEXTS
+        from cogs.management import get_info_texts
+        from utils.i18n import resolve_lang
 
+        lang = await resolve_lang(self.bot, guild_id, "periodic")
         info_embed = discord.Embed(
-            description=INFO_TEXTS["k4ultra"],
+            description=get_info_texts(lang)["k4ultra"],
             color=discord.Color.from_rgb(43, 45, 49),
         )
         await channel.send(embed=info_embed)
