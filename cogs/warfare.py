@@ -1030,11 +1030,14 @@ class Warfare(commands.Cog):
         role_id = os.getenv("SOS_ROLE_ID")
         role_mention = f"<@&{role_id}>" if role_id else "@everyone"
 
+        # Idioma del servidor (el embed es público para toda la tribu).
+        lang = await resolve_lang(self.bot, interaction.guild_id, "command")
+
         # Cabecera unificada: emoji + tipo (o genérico). Mismo color en ambos
         # casos para que el cliente de Discord no agrupe distinto.
-        tipo_label = tipo.value.upper() if tipo else "AYUDA INMEDIATA"
+        tipo_label = tipo.value.upper() if tipo else t("sos.generic_label", lang)
         embed = discord.Embed(
-            title=f"🚨 ALERTA SOS · {tipo_label}",
+            title=t("sos.title", lang, tipo=tipo_label),
             color=discord.Color.brand_red(),
         )
 
@@ -1046,32 +1049,34 @@ class Warfare(commands.Cog):
         if mapa:
             badges.append(f"🗺️ `{mapa}`")
         if atacantes is not None:
-            badges.append(f"⚔️ `{atacantes}` enemigos")
+            badges.append(f"⚔️ `{atacantes}` {t('sos.enemies', lang)}")
         if defensores is not None:
-            badges.append(f"🛡️ `{defensores}` aliados")
+            badges.append(f"🛡️ `{defensores}` {t('sos.allies', lang)}")
         badges.append(f"🕒 `{hora}`")
 
         desc_lines = [
             "  ·  ".join(badges),
             "",
-            f"> **Solicitante:** {interaction.user.mention}",
+            t("sos.requester", lang, user=interaction.user.mention),
         ]
 
         if not tipo and not mapa and atacantes is None and defensores is None and not notas:
             # Sin parámetros: alerta genérica.
             desc_lines.append("")
-            desc_lines.append("> *Llamada general — entrad al canal de voz YA.*")
+            desc_lines.append(t("sos.general_call", lang))
         elif notas:
             desc_lines.append("")
-            desc_lines.append("## 📝 Notas")
+            desc_lines.append(t("sos.notes_header", lang))
             desc_lines.append(f"> {notas}")
 
         embed.description = "\n".join(desc_lines)
-        embed.set_footer(text="¡Dejad lo que estéis haciendo y venid!")
+        embed.set_footer(text=t("sos.footer", lang))
 
         # Broadcast de la alerta al canal de registro
         await interaction.channel.send(content=role_mention, embed=embed)
-        await interaction.response.send_message("✅ Alerta SOS enviada.", ephemeral=True)
+        # Confirmación efímera en el idioma del solicitante.
+        ack_lang = await resolve_lang(self.bot, interaction.guild_id, "command", interaction.user.id)
+        await interaction.response.send_message(t("sos.sent", ack_lang), ephemeral=True)
 
     # --- K/D/A Tracker (Ranking Manco) ---
 

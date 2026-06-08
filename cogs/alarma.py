@@ -353,20 +353,17 @@ class Alarma(commands.Cog):
         user_id = interaction.user.id
         guild_id = interaction.guild_id
         channel_id = interaction.channel_id
+        lang = await resolve_lang(self.bot, guild_id, "command", user_id)
 
         try:
             servers = await get_guild_servers(self.bot, guild_id)
             if not servers:
-                await interaction.followup.send(
-                    "❌ No hay servidores configurados. Usa `/inicio_ark` primero.",
-                    ephemeral=True,
-                )
+                await interaction.followup.send(t("common.no_servers", lang), ephemeral=True)
                 return
 
             if mapa not in servers:
                 await interaction.followup.send(
-                    f"❌ El mapa `{mapa}` no existe en la configuración actual.",
-                    ephemeral=True,
+                    t("alarm.cmd.map_not_found", lang, map=mapa), ephemeral=True
                 )
                 return
 
@@ -377,21 +374,17 @@ class Alarma(commands.Cog):
                     (guild_id, user_id, mapa),
                 )
                 await db.commit()
-                await interaction.followup.send(f"🔕 Alarma para **{mapa}** desactivada.", ephemeral=True)
+                await interaction.followup.send(t("alarm.cmd.off", lang, map=mapa), ephemeral=True)
             else:
                 await db.execute(
                     "INSERT OR REPLACE INTO map_alarms (guild_id, user_id, map_name, channel_id) VALUES (?, ?, ?, ?)",
                     (guild_id, user_id, mapa, channel_id),
                 )
                 await db.commit()
-                await interaction.followup.send(
-                    f"🚨 **Alarma activada** para `{mapa}`. Te mencionaré en este canal "
-                    f"cuando entre un intruso. 🔔",
-                    ephemeral=True,
-                )
+                await interaction.followup.send(t("alarm.cmd.on", lang, map=mapa), ephemeral=True)
         except Exception as e:
             logger.error(f"Error en comando /alarma: {e}")
-            await interaction.followup.send(f"❌ Ocurrió un error al procesar la alarma: {e}", ephemeral=True)
+            await interaction.followup.send(t("alarm.cmd.error", lang, err=e), ephemeral=True)
 
     @app_commands.command(
         name="alarmas",
@@ -400,10 +393,10 @@ class Alarma(commands.Cog):
     async def alarmas(self, interaction: discord.Interaction):
         servers = await get_guild_servers(self.bot, interaction.guild_id)
         if not servers:
-            await interaction.response.send_message(
-                "❌ No hay servidores configurados. Usa `/inicio_ark` primero.",
-                ephemeral=True,
+            cmd_lang = await resolve_lang(
+                self.bot, interaction.guild_id, "command", interaction.user.id
             )
+            await interaction.response.send_message(t("common.no_servers", cmd_lang), ephemeral=True)
             return
 
         server_names = list(servers.keys())

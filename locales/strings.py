@@ -13,6 +13,17 @@ from __future__ import annotations
 
 STRINGS: dict[str, dict[str, str]] = {
     "es": {
+        # --- Comunes (reutilizadas por varios comandos) ---
+        "common.denied": "❌ Acceso denegado.",
+        "common.no_servers": "❌ No hay servidores configurados. Usa `/inicio_ark` primero.",
+        # --- /alarma (respuestas de comando) ---
+        "alarm.cmd.map_not_found": "❌ El mapa `{map}` no existe en la configuración actual.",
+        "alarm.cmd.off": "🔕 Alarma para **{map}** desactivada.",
+        "alarm.cmd.on": (
+            "🚨 **Alarma activada** para `{map}`. Te mencionaré en este canal "
+            "cuando entre un intruso. 🔔"
+        ),
+        "alarm.cmd.error": "❌ Ocurrió un error al procesar la alarma: {err}",
         # --- To-Do dashboard ---
         "todo.title": "📋 LISTA DE TAREAS",
         "todo.empty": (
@@ -180,6 +191,16 @@ STRINGS: dict[str, dict[str, str]] = {
         "help.opt.backup": "Backups DB",
         # --- Ranking de muertes: hitos y sarcasmos (log_processor) ---
         "death.friendly_fire": "fuego amigo",
+        # --- /sos ---
+        "sos.title": "🚨 ALERTA SOS · {tipo}",
+        "sos.generic_label": "AYUDA INMEDIATA",
+        "sos.enemies": "enemigos",
+        "sos.allies": "aliados",
+        "sos.requester": "> **Solicitante:** {user}",
+        "sos.general_call": "> *Llamada general — entrad al canal de voz YA.*",
+        "sos.notes_header": "## 📝 Notas",
+        "sos.footer": "¡Dejad lo que estéis haciendo y venid!",
+        "sos.sent": "✅ Alerta SOS enviada.",
         "death.milestone.1": "¡Bienvenido a ARK! Tu primera muerte oficial de muchas... 🎉",
         "death.milestone.10": "Doble dígito de muertes... Ya eres un veterano en besar el suelo. 🥉",
         "death.milestone.50": "¡Medio centenar de muertes! 🥈 Estás a medias de convertirte en el mayor donante de loot del servidor.",
@@ -226,6 +247,17 @@ STRINGS: dict[str, dict[str, str]] = {
         ),
     },
     "en": {
+        # --- Common (reused across commands) ---
+        "common.denied": "❌ Access denied.",
+        "common.no_servers": "❌ No servers configured. Use `/inicio_ark` first.",
+        # --- /alarma (command replies) ---
+        "alarm.cmd.map_not_found": "❌ The map `{map}` does not exist in the current config.",
+        "alarm.cmd.off": "🔕 Alarm for **{map}** disabled.",
+        "alarm.cmd.on": (
+            "🚨 **Alarm enabled** for `{map}`. I'll mention you in this channel "
+            "when an intruder shows up. 🔔"
+        ),
+        "alarm.cmd.error": "❌ An error occurred while processing the alarm: {err}",
         # --- To-Do dashboard ---
         "todo.title": "📋 TASK LIST",
         "todo.empty": (
@@ -393,6 +425,16 @@ STRINGS: dict[str, dict[str, str]] = {
         "help.opt.backup": "DB Backups",
         # --- Death ranking: milestones and sarcasm (log_processor) ---
         "death.friendly_fire": "friendly fire",
+        # --- /sos ---
+        "sos.title": "🚨 SOS ALERT · {tipo}",
+        "sos.generic_label": "IMMEDIATE HELP",
+        "sos.enemies": "enemies",
+        "sos.allies": "allies",
+        "sos.requester": "> **Requested by:** {user}",
+        "sos.general_call": "> *General call — get in voice NOW.*",
+        "sos.notes_header": "## 📝 Notes",
+        "sos.footer": "Drop what you're doing and get over here!",
+        "sos.sent": "✅ SOS alert sent.",
         "death.milestone.1": "Welcome to ARK! Your first official death of many... 🎉",
         "death.milestone.10": "Double-digit deaths... You're a veteran ground-kisser now. 🥉",
         "death.milestone.50": "Half a hundred deaths! 🥈 You're halfway to being the server's biggest loot donor.",
