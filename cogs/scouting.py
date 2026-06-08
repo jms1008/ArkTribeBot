@@ -62,7 +62,7 @@ class AddScoutModal(discord.ui.Modal, title="Añadir Scout"):
 
         await interaction.response.send_message(
             f"✅ Scout **#{scout_id}** registrado: **{tribu}** en {mapa}.\n"
-            f"Para adjuntar una imagen usa `/scout_add_image` con el ID **{scout_id}**.",
+            f"Para adjuntar una imagen usa `/scout imagen` con el ID **{scout_id}**.",
             ephemeral=True,
         )
         await update_scout_dashboards(self.bot, interaction.guild_id, mapa)
@@ -122,7 +122,7 @@ class ScoutSelect(discord.ui.Select):
             f"> {notas}"
         )
         embed.set_footer(
-            text=f"Scout #{row['id']:03d}  •  /scout_delete id:{row['id']} para eliminar"
+            text=f"Scout #{row['id']:03d}  •  /scout borrar id:{row['id']} para eliminar"
         )
 
         img_url = None
@@ -538,6 +538,10 @@ class ModifyScoutModal(discord.ui.Modal, title="Modificar Scout"):
 
 
 class Scouting(commands.Cog):
+    # Grupo unificado de reconocimiento (antes /scout_add, /scout_add_image,
+    # /scout_delete, /scout_list).
+    scout = app_commands.Group(name="scout", description="Reconocimiento de bases enemigas.")
+
     def __init__(self, bot):
         self.bot = bot
 
@@ -592,7 +596,7 @@ class Scouting(commands.Cog):
             if current.lower() in name.lower()
         ][:25]
 
-    @app_commands.command(name="scout_add", description="Registra una base enemiga (Con imagen).")
+    @scout.command(name="add", description="Registra una base enemiga (Con imagen).")
     @app_commands.autocomplete(mapa=scouting_mapa_autocomplete)
     @app_commands.describe(
         tribu="Nombre de la tribu enemiga",
@@ -661,9 +665,8 @@ class Scouting(commands.Cog):
             )
             await db.commit()
 
-        await interaction.followup.send(
-            f"✅ Base de **{tribu}** ({mapa}) registrada. [Scout **#{scout_id}**]"
-        )
+        lang = await resolve_lang(self.bot, interaction.guild_id, "command", interaction.user.id)
+        await interaction.followup.send(t("scout.cmd.added", lang, tribu=tribu, mapa=mapa, id=scout_id))
         await update_scout_dashboards(self.bot, interaction.guild_id, mapa)
 
         await asyncio.sleep(5)
@@ -673,8 +676,8 @@ class Scouting(commands.Cog):
         except (discord.NotFound, discord.Forbidden) as e:
             logger.debug(f"[Scouting] Auto-delete falló: {e}")
 
-    @app_commands.command(
-        name="scout_add_image",
+    @scout.command(
+        name="imagen",
         description="Añade o reemplaza la imagen de un registro de scout existente.",
     )
     @app_commands.describe(
@@ -688,6 +691,7 @@ class Scouting(commands.Cog):
         imagen: discord.Attachment,
     ):
         await interaction.response.defer(ephemeral=False)
+        lang = await resolve_lang(self.bot, interaction.guild_id, "command", interaction.user.id)
 
         db = self.bot.db
         # Buscamos primero el scout sin filtrar por guild para diagnosticar si existe en otro lado
@@ -695,16 +699,14 @@ class Scouting(commands.Cog):
         row = await cursor.fetchone()
 
         if not row:
-            await interaction.followup.send(f"❌ No existe ningún registro de scout con ID **{id}**.")
+            await interaction.followup.send(t("scout.cmd.not_found", lang, id=id))
             return
 
         if row["guild_id"] != interaction.guild_id:
             logger.warning(
                 f"Intento de acceso a Scout #{id} desde Guild {interaction.guild_id}. Dueño real: {row['guild_id']}"
             )
-            await interaction.followup.send(
-                f"❌ No tienes permisos para modificar el Scout **#{id}** (pertenece a otro servidor)."
-            )
+            await interaction.followup.send(t("scout.cmd.no_perms", lang, id=id))
             return
 
         tribu = row["tribu_enemiga"]
@@ -741,9 +743,7 @@ class Scouting(commands.Cog):
         )
         await db.commit()
 
-        await interaction.followup.send(
-            f"✅ Imagen adjuntada satisfactoriamente al Scout **#{id}** ({tribu})."
-        )
+        await interaction.followup.send(t("scout.cmd.image_added", lang, id=id, tribu=tribu))
         await update_scout_dashboards(self.bot, interaction.guild_id, mapa)
 
         await asyncio.sleep(5)
@@ -753,9 +753,10 @@ class Scouting(commands.Cog):
         except (discord.NotFound, discord.Forbidden) as e:
             logger.debug(f"[Scouting] Auto-delete falló: {e}")
 
-    @app_commands.command(name="scout_delete", description="Elimina una entrada de scouting por ID.")
+    @scout.command(name="borrar", description="Elimina una entrada de scouting por ID.")
     @app_commands.describe(id="ID del registro a eliminar")
     async def scout_delete(self, interaction: discord.Interaction, id: int):
+        lang = await resolve_lang(self.bot, interaction.guild_id, "command", interaction.user.id)
         db = self.bot.db
         cursor = await db.execute(
             "SELECT mapa FROM scouts WHERE id = ? AND guild_id = ?",
@@ -768,7 +769,7 @@ class Scouting(commands.Cog):
 
         if not row:
             await interaction.response.send_message(
-                f"❌ ID {id} no encontrado o no tienes permisos.", ephemeral=True
+                t("scout.cmd.delete_not_found", lang, id=id), ephemeral=True
             )
             return
 
@@ -777,7 +778,7 @@ class Scouting(commands.Cog):
         await db.execute("DELETE FROM scouts WHERE id = ? AND guild_id = ?", (id, interaction.guild_id))
         await db.commit()
 
-        await interaction.response.send_message(f"🗑️ Registro #{id} eliminado.", ephemeral=False)
+        await interaction.response.send_message(t("scout.cmd.deleted", lang, id=id), ephemeral=False)
         await update_scout_dashboards(self.bot, interaction.guild_id, map_target)
 
         await asyncio.sleep(2)
@@ -787,8 +788,8 @@ class Scouting(commands.Cog):
         except (discord.NotFound, discord.Forbidden) as e:
             logger.debug(f"[Scouting] Auto-delete falló: {e}")
 
-    @app_commands.command(
-        name="scout_list",
+    @scout.command(
+        name="lista",
         description="Menú de Scouting: Sin argumentos = Dashboard PÚBLICO. Con mapa = Vista PRIVADA.",
     )
     @app_commands.autocomplete(mapa=scouting_mapa_autocomplete)
@@ -850,7 +851,7 @@ class Scouting(commands.Cog):
                 title=f"🛰️ SCOUTING: {target_map.upper()}",
                 description=(
                     "📭 No hay registros en este mapa.\n\n"
-                    "💡 Usa `/scout_add` para registrar una base enemiga."
+                    "💡 Usa `/scout add` para registrar una base enemiga."
                 ),
                 color=discord.Color.red(),
             )
@@ -874,7 +875,7 @@ class Scouting(commands.Cog):
                 lines.append("")
             embed.description = "\n".join(lines).strip()
             embed.set_footer(
-                text=f"Página {page + 1}/{total_pages}  •  {total} bases  •  /scout_add_image [id] para foto"
+                text=f"Página {page + 1}/{total_pages}  •  {total} bases  •  /scout imagen [id] para foto"
             )
 
         view = ScoutPrivateListView(self.bot, rows, target_map, page)

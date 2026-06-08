@@ -94,17 +94,17 @@ No tienes que rellenar nada a mano — el bot lo va completando en background.""
 Reporte de bases enemigas. La información es poder.
 
 ### :telescope: Comandos de Reconocimiento
-- **/scout_add**: Registra una base enemiga con todos los detalles (acepta imagen como enlace).
+- **/scout add**: Registra una base enemiga con todos los detalles (acepta imagen como enlace).
   - *Campos:* `tribu`, `mapa`, `coords`, `amenaza` (1-5 :star:, validado), `imagen`, `notas`.
-- **/scout_add_image**: Adjunta una imagen desde tu PC a un scout ya existente.
-  - *Uso:* `/scout_add_image id:12 imagen:[adjuntar archivo]`.
-- **/scout_list**: Abre el panel Dashboard.
+- **/scout imagen**: Adjunta una imagen desde tu PC a un scout ya existente.
+  - *Uso:* `/scout imagen id:12 imagen:[adjuntar archivo]`.
+- **/scout lista**: Abre el panel Dashboard.
   - *Sin argumentos:* lista **GLOBAL** paginada de todos los mapas.
   - *Con argumento `mapa:`*: filtro privado que te enseña solo las bases de ese mapa.
-- **/scout_delete**: Elimina un reporte obsoleto por ID.
+- **/scout borrar**: Elimina un reporte obsoleto por ID.
 
 ### :mouse_three_button: Botones y Menú del Panel
-- **Añadir Scout**: formulario sin imagen (para agregarla luego con `/scout_add_image`).
+- **Añadir Scout**: formulario sin imagen (para agregarla luego con `/scout imagen`).
 - **Modificar / Eliminar Scout**: por ID.
 - :arrow_backward: :arrow_forward: **Paginación** entre mapas.
 - :pushpin: **Selector inferior**: clic en un scout listado y ves su ficha **completa con imagen** en mensaje privado.

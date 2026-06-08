@@ -83,12 +83,18 @@ STRINGS: dict[str, dict[str, str]] = {
         ),
         # --- Scouting dashboard ---
         "scout.title": "🛰️ SCOUTING: {map}",
-        "scout.empty": "No hay reportes de bases enemigas.\n💡 Usa `/scout_add` para registrar una.",
+        "scout.empty": "No hay reportes de bases enemigas.\n💡 Usa `/scout add` para registrar una.",
         "scout.badges": "📊 `{total}` bases registradas",
-        "scout.footer": "Página {page}/{pages} • /scout_add_image [id] para foto",
+        "scout.footer": "Página {page}/{pages} • /scout imagen [id] para foto",
         "scout.btn.add": "Añadir Scout",
         "scout.btn.modify": "Modificar Scout",
         "scout.btn.delete": "Eliminar Scout",
+        "scout.cmd.added": "✅ Base de **{tribu}** ({mapa}) registrada. [Scout **#{id}**]",
+        "scout.cmd.not_found": "❌ No existe ningún registro de scout con ID **{id}**.",
+        "scout.cmd.no_perms": "❌ No tienes permisos para modificar el Scout **#{id}** (pertenece a otro servidor).",
+        "scout.cmd.image_added": "✅ Imagen adjuntada satisfactoriamente al Scout **#{id}** ({tribu}).",
+        "scout.cmd.delete_not_found": "❌ ID {id} no encontrado o no tienes permisos.",
+        "scout.cmd.deleted": "🗑️ Registro #{id} eliminado.",
         # --- Breeding / Líneas dashboard ---
         "breeding.title": "🧬 LÍNEAS DE CRIANZA (Top Stats)",
         "breeding.empty": (
@@ -317,12 +323,18 @@ STRINGS: dict[str, dict[str, str]] = {
         ),
         # --- Scouting dashboard ---
         "scout.title": "🛰️ SCOUTING: {map}",
-        "scout.empty": "No enemy base reports.\n💡 Use `/scout_add` to register one.",
+        "scout.empty": "No enemy base reports.\n💡 Use `/scout add` to register one.",
         "scout.badges": "📊 `{total}` registered bases",
-        "scout.footer": "Page {page}/{pages} • /scout_add_image [id] for photo",
+        "scout.footer": "Page {page}/{pages} • /scout imagen [id] for photo",
         "scout.btn.add": "Add Scout",
         "scout.btn.modify": "Edit Scout",
         "scout.btn.delete": "Delete Scout",
+        "scout.cmd.added": "✅ Base of **{tribu}** ({mapa}) registered. [Scout **#{id}**]",
+        "scout.cmd.not_found": "❌ No scout record exists with ID **{id}**.",
+        "scout.cmd.no_perms": "❌ You don't have permission to edit Scout **#{id}** (it belongs to another server).",
+        "scout.cmd.image_added": "✅ Image successfully attached to Scout **#{id}** ({tribu}).",
+        "scout.cmd.delete_not_found": "❌ ID {id} not found or you lack permission.",
+        "scout.cmd.deleted": "🗑️ Record #{id} deleted.",
         # --- Breeding / Lines dashboard ---
         "breeding.title": "🧬 BREEDING LINES (Top Stats)",
         "breeding.empty": (

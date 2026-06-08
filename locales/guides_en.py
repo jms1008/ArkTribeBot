@@ -94,17 +94,17 @@ You don't have to fill anything by hand — the bot completes it in the backgrou
 Enemy base reports. Information is power.
 
 ### :telescope: Recon Commands
-- **/scout_add**: Registers an enemy base with full details (accepts an image as a link).
+- **/scout add**: Registers an enemy base with full details (accepts an image as a link).
   - *Fields:* `tribu`, `mapa`, `coords`, `amenaza` (1-5 :star:, validated), `imagen`, `notas`.
-- **/scout_add_image**: Attaches an image from your PC to an existing scout.
-  - *Usage:* `/scout_add_image id:12 imagen:[attach file]`.
-- **/scout_list**: Opens the Dashboard panel.
+- **/scout imagen**: Attaches an image from your PC to an existing scout.
+  - *Usage:* `/scout imagen id:12 imagen:[attach file]`.
+- **/scout lista**: Opens the Dashboard panel.
   - *No arguments:* paginated **GLOBAL** list of every map.
   - *With `mapa:` argument:* private filter showing only that map's bases.
-- **/scout_delete**: Removes an obsolete report by ID.
+- **/scout borrar**: Removes an obsolete report by ID.
 
 ### :mouse_three_button: Panel Buttons & Menu
-- **Add Scout**: form without image (add it later with `/scout_add_image`).
+- **Add Scout**: form without image (add it later with `/scout imagen`).
 - **Edit / Delete Scout**: by ID.
 - :arrow_backward: :arrow_forward: **Pagination** across maps.
 - :pushpin: **Bottom selector**: click a listed scout and see its **full sheet with image** in a private message.
