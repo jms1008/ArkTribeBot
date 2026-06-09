@@ -296,6 +296,9 @@ class AlarmActionView(discord.ui.View):
 
 
 class Alarma(commands.Cog):
+    # Grupo unificado de alarmas de intrusos (antes /alarma, /alarmas).
+    alarma_grp = app_commands.Group(name="alarma", description="Alarmas de intrusos por mapa.")
+
     def __init__(self, bot):
         self.bot = bot
 
@@ -333,9 +336,9 @@ class Alarma(commands.Cog):
             if current.lower() in name.lower()
         ][:25]
 
-    @app_commands.command(
-        name="alarma",
-        description="Establece una alarma que te avisará si entra un intruso en un mapa seleccionado.",
+    @alarma_grp.command(
+        name="activar",
+        description="Activa o desactiva tu alarma de intrusos para un mapa.",
     )
     @app_commands.describe(
         mapa="Nombre del mapa a vigilar (ej: Fjordur)",
@@ -386,8 +389,8 @@ class Alarma(commands.Cog):
             logger.error(f"Error en comando /alarma: {e}")
             await interaction.followup.send(t("alarm.cmd.error", lang, err=e), ephemeral=True)
 
-    @app_commands.command(
-        name="alarmas",
+    @alarma_grp.command(
+        name="panel",
         description="Abre el panel interactivo rápido de tus alarmas de intrusos.",
     )
     async def alarmas(self, interaction: discord.Interaction):

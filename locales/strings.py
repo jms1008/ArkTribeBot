@@ -168,7 +168,7 @@ STRINGS: dict[str, dict[str, str]] = {
         "alarm.title": "🔔 PANEL DE ALARMAS DE LA TRIBU",
         "alarm.empty": (
             "💤 Nadie en la tribu tiene alarmas activas ahora mismo.\n\n"
-            "💡 Selecciona un mapa en el menú inferior o usa `/alarma mapa:X estado:on` para activar la tuya."
+            "💡 Selecciona un mapa en el menú inferior o usa `/alarma activar mapa:X estado:on` para activar la tuya."
         ),
         "alarm.empty_footer": "El bot avisa en el canal cuando entra un jugador desconocido al mapa vigilado.",
         "alarm.badges": "🗺️ `{maps:02d}` Mapas vigilados  ·  👥 `{unique:02d}` Vigilantes únicos  ·  📊 `{subs:02d}` Suscripciones",
@@ -176,7 +176,7 @@ STRINGS: dict[str, dict[str, str]] = {
         "alarm.map_line": "`#{idx:02d}` 🟢 **{map}**  ·  👥 `{count}` {word}",
         "alarm.watcher_one": "vigilante",
         "alarm.watcher_many": "vigilantes",
-        "alarm.footer": "Selecciona un mapa en el menú inferior para activar/desactivar tu alarma  •  /alarma para comando directo",
+        "alarm.footer": "Selecciona un mapa en el menú inferior para activar/desactivar tu alarma  •  /alarma activar para comando directo",
         "alarm.select_placeholder": "Selecciona un mapa del clúster...",
         "alarm.btn.refresh": "Refrescar",
         # --- K4Ultra dashboard (radar) ---
@@ -463,7 +463,7 @@ STRINGS: dict[str, dict[str, str]] = {
         "alarm.title": "🔔 TRIBE INTRUDER ALARMS PANEL",
         "alarm.empty": (
             "💤 Nobody in the tribe has active alarms right now.\n\n"
-            "💡 Pick a map in the menu below or use `/alarma mapa:X estado:on` to enable yours."
+            "💡 Pick a map in the menu below or use `/alarma activar mapa:X estado:on` to enable yours."
         ),
         "alarm.empty_footer": "The bot warns in the channel when an unknown player enters a watched map.",
         "alarm.badges": "🗺️ `{maps:02d}` Watched maps  ·  👥 `{unique:02d}` Unique watchers  ·  📊 `{subs:02d}` Subscriptions",
@@ -471,7 +471,7 @@ STRINGS: dict[str, dict[str, str]] = {
         "alarm.map_line": "`#{idx:02d}` 🟢 **{map}**  ·  👥 `{count}` {word}",
         "alarm.watcher_one": "watcher",
         "alarm.watcher_many": "watchers",
-        "alarm.footer": "Pick a map in the menu below to toggle your alarm  •  /alarma for the direct command",
+        "alarm.footer": "Pick a map in the menu below to toggle your alarm  •  /alarma activar for the direct command",
         "alarm.select_placeholder": "Pick a cluster map...",
         "alarm.btn.refresh": "Refresh",
         # --- K4Ultra dashboard (radar) ---

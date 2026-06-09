@@ -129,8 +129,8 @@ Los paneles persistentes refrescan automáticamente y cambian de aspecto según 
 Las consultas A2S se centralizan con un caché compartido de 90 s, lo que permite que **Status**, **K4Ultra** y **Alarmas** reutilicen el mismo sondeo sin bombardear los servidores.
 
 ### :bell: Alarmas de Intrusos (resumen)
-- **/alarma mapa:Fjordur estado:on** activa la vigilancia de un mapa; **off** la desactiva.
-- **/alarmas** abre el panel rápido con todas tus alarmas configurables.
+- **/alarma activar mapa:Fjordur estado:on** activa la vigilancia de un mapa; **off** la desactiva.
+- **/alarma panel** abre el panel rápido con todas tus alarmas configurables.
 - El bot te menciona cuando entra al mapa un jugador que NO es de tu tribu propia ni de los personajes registrados. Cada alerta lleva un botón **✅ Completado** para silenciarla.
 
 > :bulb: Más detalle en `/info modulo:🔔 Alarmas de Intrusos`.""",
@@ -182,9 +182,9 @@ El módulo de **Puntos Diarios** (`/info modulo:🌅 Puntos Diarios`) es opciona
 Sistema de defensa pasiva: el bot vigila los mapas que elijas y te **menciona en el canal** donde activaste la alarma cuando entra un jugador que NO esté en tu tribu propia, en una tribu aliada, ni registrado como personaje conocido.
 
 ### :gear: Comandos
-- **/alarma mapa:Fjordur estado:on** — Activa la vigilancia de un mapa.
-- **/alarma mapa:Fjordur estado:off** — La desactiva.
-- **/alarmas** — Abre el **panel interactivo** con todas las alarmas configurables del cluster (más cómodo que el comando suelto).
+- **/alarma activar mapa:Fjordur estado:on** — Activa la vigilancia de un mapa.
+- **/alarma activar mapa:Fjordur estado:off** — La desactiva.
+- **/alarma panel** — Abre el **panel interactivo** con todas las alarmas configurables del cluster (más cómodo que el comando suelto).
 - **/tribu aliada crear / modificar / borrar / lista** *(admin)* — Registra tribus aliadas para que sus jugadores no disparen alarmas.
 
 ### :brain: Cómo decide si alguien es intruso
@@ -198,7 +198,7 @@ Cada minuto el bot lee el caché de Status (no genera tráfico extra) y compara 
 - Las alarmas son **por usuario** y por mapa: cada miembro puede tener su propia lista.
 - Multi-mapa: puedes vigilar varios mapas a la vez sin coste extra.
 - El mensaje de alarma incluye un botón **✅ Silenciar** para descartarlo.
-- El canal donde se enviará la alerta es el mismo en el que activaste la alarma (`/alarma` o panel `/alarmas`).""",
+- El canal donde se enviará la alerta es el mismo en el que activaste la alarma (`/alarma activar` o panel `/alarma panel`).""",
     "puntos_diarios": """# :sunrise: Puntos Diarios de Voto
 
 Recordatorio personal por DM para que canjees los puntos diarios votando tu cluster en los rankings públicos.

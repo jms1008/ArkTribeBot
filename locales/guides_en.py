@@ -129,8 +129,8 @@ Persistent panels refresh automatically and change their look based on status:
 A2S queries are centralized with a shared 90s cache, letting **Status**, **K4Ultra** and **Alarms** reuse the same poll without hammering the servers.
 
 ### :bell: Intruder Alarms (summary)
-- **/alarma mapa:Fjordur estado:on** enables watching a map; **off** disables it.
-- **/alarmas** opens the quick panel with all your configurable alarms.
+- **/alarma activar mapa:Fjordur estado:on** enables watching a map; **off** disables it.
+- **/alarma panel** opens the quick panel with all your configurable alarms.
 - The bot pings you when a player who is NOT in your own tribe nor a registered character enters the map. Each alert carries a **✅ Done** button to silence it.
 
 > :bulb: More detail in `/info modulo:🔔 Alarmas de Intrusos`.""",
@@ -182,9 +182,9 @@ The **Daily Points** module (`/info modulo:🌅 Puntos Diarios`) is optional and
 Passive defense system: the bot watches the maps you choose and **mentions you in the channel** where you enabled the alarm when a player enters who is NOT in your own tribe, an allied tribe, nor registered as a known character.
 
 ### :gear: Commands
-- **/alarma mapa:Fjordur estado:on** — Enables watching a map.
-- **/alarma mapa:Fjordur estado:off** — Disables it.
-- **/alarmas** — Opens the **interactive panel** with all the cluster's configurable alarms (handier than the standalone command).
+- **/alarma activar mapa:Fjordur estado:on** — Enables watching a map.
+- **/alarma activar mapa:Fjordur estado:off** — Disables it.
+- **/alarma panel** — Opens the **interactive panel** with all the cluster's configurable alarms (handier than the standalone command).
 - **/tribu aliada crear / modificar / borrar / lista** *(admin)* — Registers allied tribes so their players don't trigger alarms.
 
 ### :brain: How it decides someone is an intruder
@@ -198,7 +198,7 @@ Every minute the bot reads the Status cache (no extra traffic) and compares agai
 - Alarms are **per user** and per map: each member can have their own list.
 - Multi-map: you can watch several maps at once at no extra cost.
 - The alarm message includes a **✅ Silence** button to dismiss it.
-- The channel where the alert is sent is the same one where you enabled the alarm (`/alarma` or the `/alarmas` panel).""",
+- The channel where the alert is sent is the same one where you enabled the alarm (`/alarma activar` or the `/alarma panel`).""",
     "puntos_diarios": """# :sunrise: Daily Vote Points
 
 A personal DM reminder to redeem your daily points by voting your cluster on the public rankings.
