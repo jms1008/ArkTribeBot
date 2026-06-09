@@ -16,6 +16,17 @@ STRINGS: dict[str, dict[str, str]] = {
         # --- Comunes (reutilizadas por varios comandos) ---
         "common.denied": "❌ Acceso denegado.",
         "common.no_servers": "❌ No hay servidores configurados. Usa `/inicio_ark` primero.",
+        # --- /admin ---
+        "admin.config.updated": "✅ **Configuración actualizada correctamente.**",
+        "admin.config.not_setup": "❌ Este servidor no está configurado. Usa `/inicio_ark` primero.",
+        "admin.wipe.done": "✅ **BASE DE DATOS BORRADA.**\nTodos los registros han sido eliminados y los contadores reiniciados.",
+        "admin.wipe.error": "❌ Error al borrar DB: {err}",
+        "admin.clear.done": "✅ **DASHBOARDS LIMPIOS.** Si los mensajes viejos siguen existiendo en Discord, bórralos a mano.\nEl bot ya LOS HA OLVIDADO y no intentará editarlos más.",
+        "admin.clear.error": "❌ Error al limpiar dashboards: {err}",
+        "admin.log.empty": "No hay registros de comandos en esta sesión.",
+        "admin.log.error": "Error leyendo logs: {err}",
+        "admin.backup.done": "✅ Backup creado: `{file}` ({size} KB). Antiguos podados: {removed}.",
+        "admin.backup.error": "❌ Error: `{err}`",
         # --- /puntos (puntos diarios) ---
         "puntos.cmd.hour_invalid": "❌ La hora debe estar entre 0 y 23.",
         "puntos.cmd.disabled_server": "🔕 El sistema de puntos diarios está **desactivado** en este servidor.",
@@ -300,6 +311,17 @@ STRINGS: dict[str, dict[str, str]] = {
         # --- Common (reused across commands) ---
         "common.denied": "❌ Access denied.",
         "common.no_servers": "❌ No servers configured. Use `/inicio_ark` first.",
+        # --- /admin ---
+        "admin.config.updated": "✅ **Configuration updated successfully.**",
+        "admin.config.not_setup": "❌ This server is not configured. Use `/inicio_ark` first.",
+        "admin.wipe.done": "✅ **DATABASE WIPED.**\nAll records have been deleted and counters reset.",
+        "admin.wipe.error": "❌ Error wiping DB: {err}",
+        "admin.clear.done": "✅ **DASHBOARDS CLEARED.** If the old messages still exist in Discord, delete them by hand.\nThe bot has FORGOTTEN them and won't try to edit them anymore.",
+        "admin.clear.error": "❌ Error clearing dashboards: {err}",
+        "admin.log.empty": "No command records in this session.",
+        "admin.log.error": "Error reading logs: {err}",
+        "admin.backup.done": "✅ Backup created: `{file}` ({size} KB). Old ones pruned: {removed}.",
+        "admin.backup.error": "❌ Error: `{err}`",
         # --- /puntos (daily points) ---
         "puntos.cmd.hour_invalid": "❌ The hour must be between 0 and 23.",
         "puntos.cmd.disabled_server": "🔕 The daily points system is **disabled** on this server.",

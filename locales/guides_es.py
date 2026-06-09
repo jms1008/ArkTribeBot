@@ -245,16 +245,16 @@ Comandos reservados a administradores del servidor o al rol/usuario marcado como
   - Roles admin, propietario.
   - Cluster: `battlemetrics_urls` con formato `Mapa1|IP:PORT,Mapa2|IP:PORT2`.
   - Crea automáticamente los hilos/canales de los dashboards.
-- **/config** — Mismo formulario que `/inicio_ark` pero para **editar** la configuración existente sin recrear los dashboards. Sin argumentos, muestra el estado actual.
-- **/idioma** — Cambia el idioma del bot en este servidor: Español, Inglés (solo dashboards) o Inglés (todo).
-- **/bind_k4ultra message_id:... channel_id:...** — Asocia un mensaje existente al dashboard de K4Ultra (útil tras reinstalar el bot).
+- **/admin config** — Mismo formulario que `/inicio_ark` pero para **editar** la configuración existente sin recrear los dashboards. Sin argumentos, muestra el estado actual.
+- **/admin idioma** — Cambia el idioma del bot en este servidor: Español, Inglés (solo dashboards) o Inglés (todo).
+- **/admin bind message_id:... channel_id:...** — Asocia un mensaje existente al dashboard de K4Ultra (útil tras reinstalar el bot).
 
 ### :recycle: Mantenimiento
-- **/clear_updates** — Borra solo los registros de mensajes/dashboards (no toca datos). Útil cuando los dashboards se han desincronizado.
-- **/wipe_db** — :radioactive: Borra **TODOS** los datos del servidor (scouts, blacklist, todo-list, líneas, etc.). Acción destructiva — pide confirmación. Solo el propietario.
+- **/admin clear** — Borra solo los registros de mensajes/dashboards (no toca datos). Útil cuando los dashboards se han desincronizado.
+- **/admin wipe** — :radioactive: Borra **TODOS** los datos del servidor (scouts, blacklist, todo-list, líneas, etc.). Acción destructiva — pide confirmación. Solo el propietario.
 
 ### :memo: Diagnóstico
-- **/log** — Muestra los últimos comandos ejecutados en la sesión actual del bot.
+- **/admin log** — Muestra los últimos comandos ejecutados en la sesión actual del bot.
 - **/help** — Guía completa textual del bot (resumen de todos los módulos).
 - **/info modulo:...** — Esta misma ayuda contextual por módulo.""",
     "backup": """# :floppy_disk: Backups de la Base de Datos
@@ -267,7 +267,7 @@ El bot guarda automáticamente una copia diaria de `tribe_data.db` para recupera
 - **Retención: 7 días**: los backups con más de una semana se borran automáticamente.
 
 ### :gear: Backup Manual
-- **/db_backup** — Genera un backup **al instante**. Útil antes de cambios destructivos (`/wipe_db`, migración de versión, etc.).
+- **/admin backup** — Genera un backup **al instante**. Útil antes de cambios destructivos (`/admin wipe`, migración de versión, etc.).
   - Devuelve el nombre del archivo y el tamaño en KB.
   - Aplica también la retención de 7 días.
 

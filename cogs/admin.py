@@ -13,6 +13,11 @@ logger = logging.getLogger("ArkTribeBot")
 
 
 class Admin(commands.Cog):
+    # Grupo unificado de administración (antes /config, /idioma, /wipe_db,
+    # /clear_updates, /log, /bind_k4ultra, /db_backup). /inicio_ark se mantiene
+    # suelto como comando de arranque canónico.
+    admin = app_commands.Group(name="admin", description="Administración y mantenimiento del bot.")
+
     def __init__(self, bot):
         self.bot = bot
 
@@ -20,8 +25,8 @@ class Admin(commands.Cog):
         # No hay tareas en segundo plano
         pass
 
-    @app_commands.command(
-        name="bind_k4ultra",
+    @admin.command(
+        name="bind",
         description="[Admin] Asocia un mensaje existente al dashboard de K4Ultra.",
     )
     @app_commands.describe(
@@ -78,7 +83,7 @@ class Admin(commands.Cog):
             ephemeral=True,
         )
 
-    @app_commands.command(
+    @admin.command(
         name="config",
         description="[Admin] Visualiza o modifica la configuración del bot para este servidor.",
     )
@@ -104,11 +109,9 @@ class Admin(commands.Cog):
         battlemetrics: str = None,
         puntos_diarios: bool = None,
     ):
+        lang = await i18n.resolve_lang(self.bot, interaction.guild_id, "command", interaction.user.id)
         if not await interaction.client.is_authorized_admin(interaction):
-            await interaction.response.send_message(
-                "❌ **Acceso denegado.** Necesitas permisos de Administrador o el Rol configurado.",
-                ephemeral=True,
-            )
+            await interaction.response.send_message(t("common.denied", lang), ephemeral=True)
             return
 
         guild_id = interaction.guild_id
@@ -148,7 +151,7 @@ class Admin(commands.Cog):
             await db.execute(sql, tuple(params))
             await db.commit()
             await interaction.response.send_message(
-                "✅ **Configuración actualizada correctamente.**", ephemeral=True
+                t("admin.config.updated", lang), ephemeral=True
             )
         else:
             await interaction.response.defer(ephemeral=False)
@@ -164,13 +167,13 @@ class Admin(commands.Cog):
 
         if not config:
             target = interaction.followup.send if not updates else interaction.edit_original_response
-            await target(content="❌ Este servidor no está configurado. Usa `/inicio_ark` primero.")
+            await target(content=t("admin.config.not_setup", lang))
             return
 
         embed = build_config_embed(config, num_miembros, guild_id)
         await interaction.followup.send(embed=embed)
 
-    @app_commands.command(
+    @admin.command(
         name="idioma",
         description="[Admin] Cambia el idioma del bot en este servidor (Español / Inglés).",
     )
@@ -391,14 +394,12 @@ class Admin(commands.Cog):
                 except Exception as e:
                     logger.error(f"Error inicializando dashboard de {cog_name}: {e}")
 
-    @app_commands.command(name="wipe_db", description="☢️ BORRA TODOS LOS DATOS (Solo Admin).")
+    @admin.command(name="wipe", description="☢️ BORRA TODOS LOS DATOS (Solo Admin).")
     async def wipe_db(self, interaction: discord.Interaction):
+        lang = await i18n.resolve_lang(self.bot, interaction.guild_id, "command", interaction.user.id)
         # Verificación de permisos de administrador
         if not await interaction.client.is_authorized_admin(interaction):
-            await interaction.response.send_message(
-                "❌ **ACCESO DENEGADO.** No tienes permisos para usar este comando.",
-                ephemeral=True,
-            )
+            await interaction.response.send_message(t("common.denied", lang), ephemeral=True)
             logger.warning(
                 f"Intento de WIPE no autorizado por {interaction.user.name} ({interaction.user.id})"
             )
@@ -429,27 +430,22 @@ class Admin(commands.Cog):
                 # Exclusión explícita de `sqlite_sequence` para proteger el autoincremental de datos unificados.
             await db.commit()
 
-            await interaction.followup.send(
-                "✅ **BASE DE DATOS BORRADA.**\nTodos los registros han sido eliminados y los contadores reiniciados.",
-                ephemeral=True,
-            )
+            await interaction.followup.send(t("admin.wipe.done", lang), ephemeral=True)
             logger.warning(f"☢️ BASE DE DATOS BORRADA por {interaction.user.name}")
 
         except Exception as e:
-            await interaction.followup.send(f"❌ Error al borrar DB: {e}", ephemeral=True)
+            await interaction.followup.send(t("admin.wipe.error", lang, err=e), ephemeral=True)
             logger.error(f"Error en WIPE DB: {e}")
 
-    @app_commands.command(
-        name="clear_updates",
+    @admin.command(
+        name="clear",
         description="🛑 DETIENE ACTUALIZACIONES (Borra dashboards, no datos).",
     )
     async def clear_updates(self, interaction: discord.Interaction):
+        lang = await i18n.resolve_lang(self.bot, interaction.guild_id, "command", interaction.user.id)
         # Verificación de permisos de administrador
         if not await interaction.client.is_authorized_admin(interaction):
-            await interaction.response.send_message(
-                "❌ **ACCESO DENEGADO.** No tienes permisos para usar este comando.",
-                ephemeral=True,
-            )
+            await interaction.response.send_message(t("common.denied", lang), ephemeral=True)
             return
 
         await interaction.response.defer(thinking=True, ephemeral=True)
@@ -472,27 +468,22 @@ class Admin(commands.Cog):
                 # Vaciado estructural simple preservando el conteo incremental.
             await db.commit()
 
-            await interaction.followup.send(
-                "✅ **DASHBOARDS LIMPIOS.** Si los mensajes viejos siguen existiendo en Discord, bórralos a mano.\nEl bot ya LOS HA OLVIDADO y no intentará editarlos más.",
-                ephemeral=True,
-            )
+            await interaction.followup.send(t("admin.clear.done", lang), ephemeral=True)
             logger.info(f"DASHBOARDS LIMPIADOS por {interaction.user.name}")
 
         except Exception as e:
-            await interaction.followup.send(f"❌ Error al limpiar dashboards: {e}", ephemeral=True)
+            await interaction.followup.send(t("admin.clear.error", lang, err=e), ephemeral=True)
             logger.error(f"Error en CLEAR UPDATES: {e}")
 
-    @app_commands.command(
+    @admin.command(
         name="log",
         description="Muestra los últimos comandos ejecutados (Sesión Actual).",
     )
     async def log(self, interaction: discord.Interaction):
+        lang = await i18n.resolve_lang(self.bot, interaction.guild_id, "command", interaction.user.id)
         # Verificación de permisos de administrador
         if not await interaction.client.is_authorized_admin(interaction):
-            await interaction.response.send_message(
-                "❌ **ACCESO DENEGADO.** Necesitas permisos de Administrador.",
-                ephemeral=True,
-            )
+            await interaction.response.send_message(t("common.denied", lang), ephemeral=True)
             return
 
         log_file = self.bot.log_filename
@@ -506,9 +497,7 @@ class Admin(commands.Cog):
                         logs.append(line.strip())
 
             if not logs:
-                await interaction.response.send_message(
-                    "No hay registros de comandos en esta sesión.", ephemeral=True
-                )
+                await interaction.response.send_message(t("admin.log.empty", lang), ephemeral=True)
             else:
                 # Ordenar desde el más reciente
                 logs.reverse()
@@ -520,7 +509,31 @@ class Admin(commands.Cog):
                 await interaction.response.send_message(formatted_text, ephemeral=True)
 
         except Exception as e:
-            await interaction.response.send_message(f"Error leyendo logs: {e}", ephemeral=True)
+            await interaction.response.send_message(t("admin.log.error", lang, err=e), ephemeral=True)
+
+    @admin.command(name="backup", description="[Admin] Genera un backup manual de la base de datos.")
+    async def db_backup(self, interaction: discord.Interaction):
+        import os
+
+        from cogs.backup import _do_backup, _prune_old_backups
+
+        lang = await i18n.resolve_lang(self.bot, interaction.guild_id, "command", interaction.user.id)
+        if not await interaction.client.is_authorized_admin(interaction):
+            await interaction.response.send_message(t("common.denied", lang), ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+        try:
+            target = _do_backup(self.bot.db_name)
+            removed = _prune_old_backups()
+            size_kb = os.path.getsize(target) / 1024
+            await interaction.followup.send(
+                t("admin.backup.done", lang, file=os.path.basename(target), size=f"{size_kb:.1f}", removed=removed),
+                ephemeral=True,
+            )
+        except Exception as e:
+            logger.error(f"[Backup] Falló /admin backup: {e}")
+            await interaction.followup.send(t("admin.backup.error", lang, err=e), ephemeral=True)
 
 
 def build_config_embed(config: aiosqlite.Row, num_miembros: int, guild_id: int) -> discord.Embed:

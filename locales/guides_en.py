@@ -245,16 +245,16 @@ Commands reserved for server administrators or the role/user marked as owner in 
   - Admin and owner roles.
   - Cluster: `battlemetrics_urls` with format `Map1|IP:PORT,Map2|IP:PORT2`.
   - Automatically creates the dashboard threads/channels.
-- **/config** — Same form as `/inicio_ark` but to **edit** the existing configuration without recreating the dashboards. With no arguments, shows the current status.
-- **/idioma** — Changes the bot's language on this server: Spanish, English (dashboards only) or English (everything).
-- **/bind_k4ultra message_id:... channel_id:...** — Associates an existing message with the K4Ultra dashboard (handy after reinstalling the bot).
+- **/admin config** — Same form as `/inicio_ark` but to **edit** the existing configuration without recreating the dashboards. With no arguments, shows the current status.
+- **/admin idioma** — Changes the bot's language on this server: Spanish, English (dashboards only) or English (everything).
+- **/admin bind message_id:... channel_id:...** — Associates an existing message with the K4Ultra dashboard (handy after reinstalling the bot).
 
 ### :recycle: Maintenance
-- **/clear_updates** — Deletes only the message/dashboard records (doesn't touch data). Useful when dashboards get out of sync.
-- **/wipe_db** — :radioactive: Deletes **ALL** server data (scouts, blacklist, to-do list, lines, etc.). Destructive action — asks for confirmation. Owner only.
+- **/admin clear** — Deletes only the message/dashboard records (doesn't touch data). Useful when dashboards get out of sync.
+- **/admin wipe** — :radioactive: Deletes **ALL** server data (scouts, blacklist, to-do list, lines, etc.). Destructive action — asks for confirmation. Owner only.
 
 ### :memo: Diagnostics
-- **/log** — Shows the last commands run in the bot's current session.
+- **/admin log** — Shows the last commands run in the bot's current session.
 - **/help** — Full text guide of the bot (summary of every module).
 - **/info modulo:...** — This same contextual help per module.""",
     "backup": """# :floppy_disk: Database Backups
@@ -267,7 +267,7 @@ The bot automatically keeps a daily copy of `tribe_data.db` to recover state aft
 - **Retention: 7 days**: backups older than a week are deleted automatically.
 
 ### :gear: Manual Backup
-- **/db_backup** — Generates a backup **instantly**. Useful before destructive changes (`/wipe_db`, version migration, etc.).
+- **/admin backup** — Generates a backup **instantly**. Useful before destructive changes (`/admin wipe`, version migration, etc.).
   - Returns the file name and size in KB.
   - Also applies the 7-day retention.
 

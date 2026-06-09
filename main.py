@@ -220,7 +220,7 @@ class ArkTribeBot(commands.Bot):
             "> 🪦 **Ranking KDA** — Anti-fuego-amigo + sarcasmos con hitos\n"
             "> 🌅 **Puntos Diarios** — Recordatorios por DM para voto del cluster\n"
             "> 📆 **Eventos LFG** — Encuestas con votación y persistencia\n"
-            "> 💾 **Backups** — Diario automático + `/db_backup` manual\n\n"
+            "> 💾 **Backups** — Diario automático + `/admin backup` manual\n\n"
             "## 👥 PARA QUE FUNCIONE TODO\n"
             "> **1.** `/tribu propia crear` — Marca tu base para descartarla del radar.\n"
             "> **2.** `/tribu miembro usuario:@x personaje:Bob steam:... apodo:...` — "

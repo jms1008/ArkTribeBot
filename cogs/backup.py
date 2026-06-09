@@ -2,7 +2,7 @@
 
 - Tarea diaria que copia `tribe_data.db` a `backups/tribe_data_YYYY-MM-DD.db`.
 - Conserva los últimos 7 backups, borra los más antiguos.
-- Comando `/db_backup` para admins (backup manual on-demand).
+- El backup manual on-demand vive en `/admin backup` (cog Admin).
 """
 
 from __future__ import annotations
@@ -12,8 +12,6 @@ import os
 import shutil
 from datetime import datetime, time, timedelta
 
-import discord
-from discord import app_commands
 from discord.ext import commands, tasks
 
 logger = logging.getLogger("ArkTribeBot")
@@ -89,29 +87,6 @@ class Backup(commands.Cog):
     @daily_backup.before_loop
     async def _before(self):
         await self.bot.wait_until_ready()
-
-    @app_commands.command(
-        name="db_backup",
-        description="[Admin] Genera un backup manual de la base de datos.",
-    )
-    async def db_backup(self, interaction: discord.Interaction):
-        if not await interaction.client.is_authorized_admin(interaction):
-            await interaction.response.send_message("❌ Acceso denegado.", ephemeral=True)
-            return
-
-        await interaction.response.defer(ephemeral=True)
-        try:
-            target = _do_backup(self.bot.db_name)
-            removed = _prune_old_backups()
-            size_kb = os.path.getsize(target) / 1024
-            await interaction.followup.send(
-                f"✅ Backup creado: `{os.path.basename(target)}` ({size_kb:.1f} KB). "
-                f"Antiguos podados: {removed}.",
-                ephemeral=True,
-            )
-        except Exception as e:
-            logger.error(f"[Backup] Falló /db_backup: {e}")
-            await interaction.followup.send(f"❌ Error: `{e}`", ephemeral=True)
 
 
 async def setup(bot):
