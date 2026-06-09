@@ -6,6 +6,8 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
+from utils.i18n import resolve_lang, t
+
 logger = logging.getLogger("ArkTribeBot")
 
 # Configuración de zonas horarias soportadas
@@ -55,6 +57,9 @@ class DailyPointsView(discord.ui.View):
 
 
 class DailyPoints(commands.Cog):
+    # Grupo unificado de puntos diarios (antes /puntos_diarios, /config_puntos).
+    puntos = app_commands.Group(name="puntos", description="Recordatorios de puntos diarios de voto.")
+
     def __init__(self, bot):
         self.bot = bot
         self.points_loop.start()
@@ -62,9 +67,9 @@ class DailyPoints(commands.Cog):
     def cog_unload(self):
         self.points_loop.cancel()
 
-    @app_commands.command(
-        name="puntos_diarios",
-        description="Activa o desactiva las notificaciones diarias para votar los mapas.",
+    @puntos.command(
+        name="mi",
+        description="Activa o desactiva tus notificaciones diarias para votar los mapas.",
     )
     @app_commands.describe(
         estado="Activar (on) o desactivar (off)",
@@ -90,9 +95,10 @@ class DailyPoints(commands.Cog):
     ):
         user_id = interaction.user.id
         zona_val = zona.value if zona else "es"
+        lang = await resolve_lang(self.bot, interaction.guild_id, "command", user_id)
 
         if hora < 0 or hora > 23:
-            await interaction.response.send_message("❌ La hora debe estar entre 0 y 23.", ephemeral=True)
+            await interaction.response.send_message(t("puntos.cmd.hour_invalid", lang), ephemeral=True)
             return
 
         db = self.bot.db
@@ -104,8 +110,7 @@ class DailyPoints(commands.Cog):
             )
             if row and row["daily_points_enabled"] == 0:
                 await interaction.response.send_message(
-                    "🔕 El sistema de puntos diarios está **desactivado** en este servidor.",
-                    ephemeral=True,
+                    t("puntos.cmd.disabled_server", lang), ephemeral=True
                 )
                 return
 
@@ -123,13 +128,14 @@ class DailyPoints(commands.Cog):
                 )
                 await db.commit()
 
-                zona_nombre = "España" if zona_val == "es" else "México"
+                zona_nombre = t(f"puntos.zone.{zona_val}", lang)
                 await interaction.response.send_message(
-                    f"✅ **Notificaciones activadas.** Te avisaré todos los días a las **{hora:02d}:00** (Hora de {zona_nombre}) para votar.",
-                    ephemeral=True,
+                    t("puntos.cmd.enabled", lang, hora=hora, zona=zona_nombre), ephemeral=True
                 )
             except Exception as e:
-                await interaction.response.send_message(f"❌ Error al activar: {e}", ephemeral=True)
+                await interaction.response.send_message(
+                    t("puntos.cmd.enable_error", lang, err=e), ephemeral=True
+                )
         else:
             try:
                 await db.execute(
@@ -137,15 +143,14 @@ class DailyPoints(commands.Cog):
                     (user_id, interaction.guild_id),
                 )
                 await db.commit()
-                await interaction.response.send_message(
-                    "🔕 **Notificaciones desactivadas.** Ya no te enviaré mensajes diarios.",
-                    ephemeral=True,
-                )
+                await interaction.response.send_message(t("puntos.cmd.disabled", lang), ephemeral=True)
             except Exception as e:
-                await interaction.response.send_message(f"❌ Error al desactivar: {e}", ephemeral=True)
+                await interaction.response.send_message(
+                    t("puntos.cmd.disable_error", lang, err=e), ephemeral=True
+                )
 
-    @app_commands.command(
-        name="config_puntos",
+    @puntos.command(
+        name="config",
         description="[Admin] Activa/desactiva puntos diarios para el servidor o edita los enlaces de voto.",
     )
     @app_commands.describe(
@@ -164,11 +169,9 @@ class DailyPoints(commands.Cog):
         estado: app_commands.Choice[str] = None,
         vote_links: str = None,
     ):
+        lang = await resolve_lang(self.bot, interaction.guild_id, "command", interaction.user.id)
         if not await interaction.client.is_authorized_admin(interaction):
-            await interaction.response.send_message(
-                "❌ **ACCESO DENEGADO.** Solo los administradores pueden usar este comando.",
-                ephemeral=True,
-            )
+            await interaction.response.send_message(t("common.denied", lang), ephemeral=True)
             return
 
         guild_id = interaction.guild_id
@@ -184,7 +187,7 @@ class DailyPoints(commands.Cog):
                 """,
                 (guild_id, enabled),
             )
-            cambios.append(f"{'✅ Sistema activado' if enabled else '🔕 Sistema desactivado'}")
+            cambios.append(t("puntos.config.sys_on" if enabled else "puntos.config.sys_off", lang))
 
         if vote_links is not None:
             await db.execute(
@@ -197,7 +200,7 @@ class DailyPoints(commands.Cog):
             # Mostrar los enlaces parseados para confirmación visual
             parsed = parse_vote_urls(vote_links)
             links_fmt = "\n".join([f"{i + 1}️⃣ {url}" for i, url in enumerate(parsed)])
-            cambios.append(f"🔗 **URLs de voto actualizadas:**\n{links_fmt}")
+            cambios.append(t("puntos.config.urls_updated", lang, links=links_fmt))
 
         await db.commit()
 
@@ -207,18 +210,20 @@ class DailyPoints(commands.Cog):
                 "SELECT daily_points_enabled, vote_urls FROM guild_config WHERE guild_id = ?",
                 (guild_id,),
             )
-            enabled_str = "✅ Activo" if (not row or row["daily_points_enabled"] != 0) else "🔕 Desactivado"
+            enabled_str = t(
+                "puntos.config.active"
+                if (not row or row["daily_points_enabled"] != 0)
+                else "puntos.config.inactive",
+                lang,
+            )
             current_urls = parse_vote_urls(row["vote_urls"] if row else None)
             urls_str = "\n".join([f"{i + 1}️⃣ {url}" for i, url in enumerate(current_urls)])
             await interaction.response.send_message(
-                f"**Estado actual del sistema de Puntos Diarios:**\n"
-                f"• Sistema: {enabled_str}\n"
-                f"• URLs de voto:\n{urls_str}",
-                ephemeral=True,
+                t("puntos.config.status", lang, enabled=enabled_str, urls=urls_str), ephemeral=True
             )
         else:
             await interaction.response.send_message(
-                "✅ **Config actualizada:**\n" + "\n".join(cambios), ephemeral=True
+                t("puntos.config.updated", lang, changes="\n".join(cambios)), ephemeral=True
             )
 
     @tasks.loop(minutes=1)
@@ -279,7 +284,7 @@ class DailyPoints(commands.Cog):
                 message_content = (
                     "🌅 ¡Buenas! Es hora de reclamar tus puntos diarios de los mapas.\n\n"
                     f"🔗 **Enlaces para votar:**\n{links_block}\n\n"
-                    "*(Para dejar de recibir estos mensajes, usa `/puntos_diarios off` en el servidor).* "
+                    "*(Para dejar de recibir estos mensajes, usa `/puntos mi estado:off` en el servidor).* "
                 )
 
                 view = DailyPointsView()

@@ -204,21 +204,21 @@ Every minute the bot reads the Status cache (no extra traffic) and compares agai
 A personal DM reminder to redeem your daily points by voting your cluster on the public rankings.
 
 ### :gear: User Commands
-- **/puntos_diarios estado:on hora:8 zona:España** — Enables the daily reminder at the given hour.
+- **/puntos mi estado:on hora:8 zona:España** — Enables the daily reminder at the given hour.
   - Supported zones: **Spain (es)** and **Mexico (mx)**.
   - Valid hour: **0-23** (default 8).
-- **/puntos_diarios estado:off** — Cancels the reminders.
+- **/puntos mi estado:off** — Cancels the reminders.
 
 ### :man_office_worker: Admin Commands
-- **/config_puntos estado:on|off vote_links:"Map1|URL1,Map2|URL2"** — Enables/disables the system for the whole server and customizes the vote URLs.
-- **/config_puntos** (no args) — Shows the current status and configured URLs.
+- **/puntos config estado:on|off vote_links:"Map1|URL1,Map2|URL2"** — Enables/disables the system for the whole server and customizes the vote URLs.
+- **/puntos config** (no args) — Shows the current status and configured URLs.
 
 ### :white_check_mark: How It Works
 1. At the chosen hour the bot DMs you the cluster vote links.
 2. The DM includes a **✅ Done** button that marks the day as done (visual only, it doesn't touch your ARK account).
 3. The next day it warns you again automatically.
 
-> :bulb: If the admin disables the system for the whole server with `/config_puntos estado:off`, it stops sending reminders even if you have an active subscription.""",
+> :bulb: If the admin disables the system for the whole server with `/puntos config estado:off`, it stops sending reminders even if you have an active subscription.""",
     "eventos": """# :calendar_spiral: LFG Event Management
 
 Plan raids, defenses, bosses or coordinated farming with group voting.

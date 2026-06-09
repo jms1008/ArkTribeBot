@@ -204,21 +204,21 @@ Cada minuto el bot lee el caché de Status (no genera tráfico extra) y compara 
 Recordatorio personal por DM para que canjees los puntos diarios votando tu cluster en los rankings públicos.
 
 ### :gear: Comandos de Usuario
-- **/puntos_diarios estado:on hora:8 zona:España** — Activa el recordatorio diario a la hora indicada.
+- **/puntos mi estado:on hora:8 zona:España** — Activa el recordatorio diario a la hora indicada.
   - Zonas soportadas: **España (es)** y **México (mx)**.
   - Hora válida: **0-23** (defecto 8).
-- **/puntos_diarios estado:off** — Cancela los recordatorios.
+- **/puntos mi estado:off** — Cancela los recordatorios.
 
 ### :man_office_worker: Comandos de Admin
-- **/config_puntos estado:on|off vote_links:"Mapa1|URL1,Mapa2|URL2"** — Activa/desactiva el sistema para todo el servidor y personaliza los URLs de voto.
-- **/config_puntos** (sin args) — Muestra el estado actual y los URLs configurados.
+- **/puntos config estado:on|off vote_links:"Mapa1|URL1,Mapa2|URL2"** — Activa/desactiva el sistema para todo el servidor y personaliza los URLs de voto.
+- **/puntos config** (sin args) — Muestra el estado actual y los URLs configurados.
 
 ### :white_check_mark: Cómo Funciona
 1. A la hora elegida el bot te manda un DM con los enlaces de voto del cluster.
 2. El DM incluye un botón **✅ Completado** que marca el día como hecho (visual, no toca tu cuenta de ARK).
 3. Al día siguiente vuelve a avisarte automáticamente.
 
-> :bulb: Si el admin desactiva el sistema para todo el servidor con `/config_puntos estado:off`, deja de mandar avisos aunque tengas la suscripción activa.""",
+> :bulb: Si el admin desactiva el sistema para todo el servidor con `/puntos config estado:off`, deja de mandar avisos aunque tengas la suscripción activa.""",
     "eventos": """# :calendar_spiral: Gestión de Eventos LFG
 
 Planifica asaltos, defensas, jefes o farmeos coordinados con votación grupal.
