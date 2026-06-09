@@ -28,17 +28,18 @@ STRINGS: dict[str, dict[str, str]] = {
         "todo.title": "📋 LISTA DE TAREAS",
         "todo.empty": (
             "✅ ¡Sin tareas pendientes! La tribu está al día. 🎉\n\n"
-            "*Pulsa **Añadir Tarea** o usa `/todo_add` para crear una nueva.*"
+            "*Pulsa **Añadir Tarea** o usa `/todo add` para crear una nueva.*"
         ),
         "todo.empty_footer": "Página 1/1 • 0 tareas",
         "todo.badges": "🔨 `{progress:02d}` En Progreso  ·  ⏳ `{pending:02d}` Pendientes  ·  📊 `{total:02d}` Total",
         "todo.section.progress": "## 🔨 EN PROGRESO",
         "todo.section.pending": "## ⏳ PENDIENTES",
         "todo.unassigned": "*Sin asignar*",
-        "todo.footer": "Página {page}/{pages} • {total} tareas totales • /todo_add para añadir",
+        "todo.footer": "Página {page}/{pages} • {total} tareas totales • /todo add para añadir",
         "todo.btn.add": "Añadir Tarea",
         "todo.btn.claim": "Reclamar Tarea",
         "todo.btn.delete": "Eliminar Tarea",
+        "todo.cmd.added": "✅ Tarea añadida: **{tarea}**",
         # --- Blacklist dashboard ---
         "blacklist.title": "☠️ BLACKLIST DE TRIBU",
         "blacklist.empty": (
@@ -293,17 +294,18 @@ STRINGS: dict[str, dict[str, str]] = {
         "todo.title": "📋 TASK LIST",
         "todo.empty": (
             "✅ No pending tasks! The tribe is all caught up. 🎉\n\n"
-            "*Press **Add Task** or use `/todo_add` to create a new one.*"
+            "*Press **Add Task** or use `/todo add` to create a new one.*"
         ),
         "todo.empty_footer": "Page 1/1 • 0 tasks",
         "todo.badges": "🔨 `{progress:02d}` In Progress  ·  ⏳ `{pending:02d}` Pending  ·  📊 `{total:02d}` Total",
         "todo.section.progress": "## 🔨 IN PROGRESS",
         "todo.section.pending": "## ⏳ PENDING",
         "todo.unassigned": "*Unassigned*",
-        "todo.footer": "Page {page}/{pages} • {total} tasks total • /todo_add to add",
+        "todo.footer": "Page {page}/{pages} • {total} tasks total • /todo add to add",
         "todo.btn.add": "Add Task",
         "todo.btn.claim": "Claim Task",
         "todo.btn.delete": "Delete Task",
+        "todo.cmd.added": "✅ Task added: **{tarea}**",
         # --- Blacklist dashboard ---
         "blacklist.title": "☠️ TRIBE BLACKLIST",
         "blacklist.empty": (

@@ -31,9 +31,9 @@ El módulo **🔔 Alarmas de Intrusos** (`/info modulo:🔔 Alarmas`) complement
 Añade tareas pendientes, reclama las que vayas a hacer tú y bórralas cuando estén completas.
 
 ### :white_check_mark: Gestión de Tareas
-- **/todo_add**: Añade una nueva tarea a la lista "Pendiente".
-  - *Uso:* `/todo_add tarea:"Farmear 50k de metal en Aberration"`
-- **/todo_list**: Genera/renueva el panel interactivo de tareas (auto-actualizable).
+- **/todo add**: Añade una nueva tarea a la lista "Pendiente".
+  - *Uso:* `/todo add tarea:"Farmear 50k de metal en Aberration"`
+- **/todo panel**: Genera/renueva el panel interactivo de tareas (auto-actualizable).
 
 ### :mouse_three_button: Botones del Panel
 1. **Añadir Tarea**: Abre un formulario para escribir una nueva tarea.

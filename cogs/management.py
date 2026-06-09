@@ -385,6 +385,9 @@ class DeleteTaskModal(discord.ui.Modal, title="Eliminar Tarea"):
 
 
 class Management(commands.Cog, name="Management"):
+    # Grupo unificado de tareas (antes /todo_add, /todo_list).
+    todo = app_commands.Group(name="todo", description="Lista de tareas de la tribu.")
+
     def __init__(self, bot):
         self.bot = bot
 
@@ -426,7 +429,7 @@ class Management(commands.Cog, name="Management"):
         )
         await db.commit()
 
-    @app_commands.command(name="todo_add", description="Añade una nueva tarea a la lista.")
+    @todo.command(name="add", description="Añade una nueva tarea a la lista.")
     @app_commands.describe(tarea="Descripción de la tarea")
     async def todo_add(self, interaction: discord.Interaction, tarea: str):
         db = self.bot.db
@@ -440,7 +443,8 @@ class Management(commands.Cog, name="Management"):
         await db.commit()
 
         # Envío de feedback
-        await interaction.response.send_message(f"✅ Tarea añadida: **{tarea}**", ephemeral=False)
+        lang = await resolve_lang(self.bot, interaction.guild_id, "command", interaction.user.id)
+        await interaction.response.send_message(t("todo.cmd.added", lang, tarea=tarea), ephemeral=False)
 
         # Actualización de listas (dashboards)
         await update_all_dashboards(self.bot, interaction.guild_id)
@@ -453,7 +457,7 @@ class Management(commands.Cog, name="Management"):
         except (discord.NotFound, discord.Forbidden) as e:
             logger.debug(f"[Management] Auto-delete falló (feedback): {e}")
 
-    @app_commands.command(name="todo_list", description="Crea un panel de tareas auto-actualizable.")
+    @todo.command(name="panel", description="Crea un panel de tareas auto-actualizable.")
     async def todo_list(self, interaction: discord.Interaction):
         # Generación del Embed inicial usando el builder unificado.
         db = self.bot.db

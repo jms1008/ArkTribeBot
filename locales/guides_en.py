@@ -31,9 +31,9 @@ The **🔔 Intruder Alarms** module (`/info modulo:🔔 Alarmas`) complements th
 Add pending tasks, claim the ones you'll do yourself, and delete them when done.
 
 ### :white_check_mark: Task Management
-- **/todo_add**: Adds a new task to the "Pending" list.
-  - *Usage:* `/todo_add tarea:"Farm 50k metal on Aberration"`
-- **/todo_list**: Generates/refreshes the interactive task panel (auto-updating).
+- **/todo add**: Adds a new task to the "Pending" list.
+  - *Usage:* `/todo add tarea:"Farm 50k metal on Aberration"`
+- **/todo panel**: Generates/refreshes the interactive task panel (auto-updating).
 
 ### :mouse_three_button: Panel Buttons
 1. **Add Task**: Opens a form to write a new task.
