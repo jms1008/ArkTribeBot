@@ -194,7 +194,9 @@ STRINGS: dict[str, dict[str, str]] = {
         "status.section.active": "## 🟢 SERVIDORES ACTIVOS",
         "status.section.empty": "## 🟡 SERVIDORES VACÍOS",
         "status.section.offline": "## 🔴 SERVIDORES OFFLINE / TIMEOUT",
-        "status.footer": "Auto-actualizado cada 2 minutos  •  /status para ver un mapa concreto",
+        "status.footer": "Auto-actualizado cada 2 minutos  •  /status mapa para ver un mapa concreto",
+        "status.cmd.not_configured": "❌ Servidor no configurado. Usa `/inicio_ark` para añadir tus servidores.",
+        "status.cmd.gen_error": "❌ Error al generar el estado inicial.",
         # --- /help (manual interactivo) ---
         "help.title": "📚 MANUAL DE USUARIO — ARKTRIBEBOT",
         "help.intro": (
@@ -460,7 +462,9 @@ STRINGS: dict[str, dict[str, str]] = {
         "status.section.active": "## 🟢 ACTIVE SERVERS",
         "status.section.empty": "## 🟡 EMPTY SERVERS",
         "status.section.offline": "## 🔴 OFFLINE / TIMEOUT SERVERS",
-        "status.footer": "Auto-updated every 2 minutes  •  /status to view a specific map",
+        "status.footer": "Auto-updated every 2 minutes  •  /status mapa to view a specific map",
+        "status.cmd.not_configured": "❌ Server not configured. Use `/inicio_ark` to add your servers.",
+        "status.cmd.gen_error": "❌ Error generating the initial status.",
         # --- /help (interactive manual) ---
         "help.title": "📚 USER MANUAL — ARKTRIBEBOT",
         "help.intro": (

@@ -115,9 +115,9 @@ Enemy base reports. Information is power.
 Monitors in real time whether servers are online, who's connected and their ping.
 
 ### :computer: Commands
-- **/status mapa:Gen2**: One-off query of a server (autocompletes with your maps).
-- **/status_online**: Summary view of the **whole cluster** in a single embed.
-- **/status_permanente mapa:Gen2**: Pins a message that auto-updates every 2 min indefinitely.
+- **/status mapa**: One-off query of a server (autocompletes with your maps).
+- **/status cluster**: Summary view of the **whole cluster** in a single embed.
+- **/status fijar mapa:Gen2**: Pins a message that auto-updates every 2 min indefinitely.
 
 ### :arrows_counterclockwise: Auto-Update & Colors
 Persistent panels refresh automatically and change their look based on status:

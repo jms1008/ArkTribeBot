@@ -115,9 +115,9 @@ Reporte de bases enemigas. La información es poder.
 Monitoriza en tiempo real si los servidores están online, quién está conectado y qué ping tienen.
 
 ### :computer: Comandos
-- **/status mapa:Gen2**: Consulta puntual de un servidor (autocompleta con tus mapas).
-- **/status_online**: Vista resumida de **todo el cluster** en un único embed.
-- **/status_permanente mapa:Gen2**: Ancla un mensaje que se auto-actualiza cada 2 min indefinidamente.
+- **/status mapa**: Consulta puntual de un servidor (autocompleta con tus mapas).
+- **/status cluster**: Vista resumida de **todo el cluster** en un único embed.
+- **/status fijar mapa:Gen2**: Ancla un mensaje que se auto-actualiza cada 2 min indefinidamente.
 
 ### :arrows_counterclockwise: Auto-Update y Colores
 Los paneles persistentes refrescan automáticamente y cambian de aspecto según el estado:

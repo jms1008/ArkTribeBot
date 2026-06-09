@@ -111,6 +111,9 @@ async def query_all_servers(bot, guild_id: int, servers: dict = None) -> dict:
 
 
 class ServerStatus(commands.Cog):
+    # Grupo unificado de estado (antes /status, /status_online, /status_permanente).
+    status_grp = app_commands.Group(name="status", description="Estado de los servidores del clúster.")
+
     def __init__(self, bot):
         self.bot = bot
 
@@ -204,40 +207,39 @@ class ServerStatus(commands.Cog):
             if current.lower() in name.lower()
         ][:25]
 
-    @app_commands.command(
-        name="status",
+    @status_grp.command(
+        name="mapa",
         description="Muestra el estado de un servidor de ARK (consulta única).",
     )
     @app_commands.describe(mapa="Selecciona el servidor/mapa a consultar")
     @app_commands.autocomplete(mapa=status_mapa_autocomplete)
     async def status(self, interaction: discord.Interaction, mapa: str):
         await interaction.response.defer(ephemeral=True)
+        lang = await resolve_lang(self.bot, interaction.guild_id, "command", interaction.user.id)
         servers = await get_guild_servers(self.bot, interaction.guild_id)
         embed = await self.get_server_embed(mapa, servers)
         if embed:
             await interaction.followup.send(embed=embed, ephemeral=True)
         else:
-            await interaction.followup.send(
-                "❌ Servidor no configurado. Usa `/inicio_ark` para añadir tus servidores.",
-                ephemeral=True,
-            )
+            await interaction.followup.send(t("status.cmd.not_configured", lang), ephemeral=True)
 
-    @app_commands.command(
-        name="status_permanente",
+    @status_grp.command(
+        name="fijar",
         description="Crea un mensaje que se actualiza cada 2 minutos con el estado.",
     )
     @app_commands.describe(mapa="Selecciona el servidor/mapa para monitorizar")
     @app_commands.autocomplete(mapa=status_mapa_autocomplete)
     async def status_permanente(self, interaction: discord.Interaction, mapa: str):
+        lang = await resolve_lang(self.bot, interaction.guild_id, "command", interaction.user.id)
         if not await interaction.client.is_authorized_admin(interaction):
-            await interaction.response.send_message("❌ **ACCESO DENEGADO.**", ephemeral=True)
+            await interaction.response.send_message(t("common.denied", lang), ephemeral=True)
             return
 
         await interaction.response.defer()
         servers = await get_guild_servers(self.bot, interaction.guild_id)
         embed = await self.get_server_embed(mapa, servers)
         if not embed:
-            await interaction.followup.send("❌ Error al generar el estado inicial.", ephemeral=True)
+            await interaction.followup.send(t("status.cmd.gen_error", lang), ephemeral=True)
             return
 
         # Envío del mensaje inicial
@@ -423,13 +425,14 @@ class ServerStatus(commands.Cog):
         embed.set_footer(text=t("status.footer", lang))
         return embed
 
-    @app_commands.command(
-        name="status_online",
+    @status_grp.command(
+        name="cluster",
         description="Muestra todos los servidores, jugadores y nombres, actualizándose cada 2 mins.",
     )
     async def status_online(self, interaction: discord.Interaction):
+        lang = await resolve_lang(self.bot, interaction.guild_id, "command", interaction.user.id)
         if not await interaction.client.is_authorized_admin(interaction):
-            await interaction.response.send_message("❌ **ACCESO DENEGADO.**", ephemeral=True)
+            await interaction.response.send_message(t("common.denied", lang), ephemeral=True)
             return
 
         await interaction.response.defer()
