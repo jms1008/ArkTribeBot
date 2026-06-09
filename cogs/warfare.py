@@ -9,6 +9,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from cogs.server_status import get_guild_servers
+from utils import bus
 from utils.i18n import resolve_lang, t
 
 logger = logging.getLogger("ArkTribeBot")
@@ -796,23 +797,19 @@ class BlacklistView(discord.ui.View):
     async def modify_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer(ephemeral=True)
         try:
-            # Buscar el comando global para obtener su ID
+            # Buscar el grupo /blacklist para construir la mención del subcomando.
             cmds = await self.bot.tree.fetch_commands()
-            cmd_id = next((c.id for c in cmds if c.name == "bl_editar"), None)
+            cmd_id = next((c.id for c in cmds if c.name == "blacklist"), None)
 
             if cmd_id:
+                mention = f"</blacklist editar:{cmd_id}>"
                 await interaction.followup.send(
-                    f"Haz clic para ver el comando y modificar: </bl_editar:{cmd_id}>", ephemeral=True
+                    t("bl.modify.link", self.lang, mention=mention), ephemeral=True
                 )
             else:
-                await interaction.followup.send(
-                    "📝 Escribe el comando **`/bl_editar`** en el chat para modificar a un jugador.",
-                    ephemeral=True,
-                )
+                await interaction.followup.send(t("bl.modify.text", self.lang), ephemeral=True)
         except Exception:
-            await interaction.followup.send(
-                "📝 Escribe el comando **`/bl_editar`** en el chat.", ephemeral=True
-            )
+            await interaction.followup.send(t("bl.modify.text", self.lang), ephemeral=True)
 
     @discord.ui.button(
         label="Eliminar",
@@ -863,6 +860,9 @@ class BlacklistView(discord.ui.View):
 
 
 class Warfare(commands.Cog):
+    # Grupo unificado de blacklist (antes /blacklist, /bl_editar).
+    blacklist_grp = app_commands.Group(name="blacklist", description="Lista negra de enemigos (KOS).")
+
     def __init__(self, bot):
         self.bot = bot
 
@@ -974,8 +974,8 @@ class Warfare(commands.Cog):
 
     # --- Definición de Comandos ---
 
-    @app_commands.command(
-        name="blacklist",
+    @blacklist_grp.command(
+        name="panel",
         description="Muestra el dashboard de la Blacklist (Auto-actualizable).",
     )
     async def blacklist(self, interaction: discord.Interaction):
@@ -997,7 +997,131 @@ class Warfare(commands.Cog):
 
         await update_blacklist_dashboards(self.bot, interaction.guild_id)
 
-    # /blacklist_add y /blacklist_mod eliminados — cubiertos por botones del dashboard
+    @blacklist_grp.command(
+        name="editar",
+        description="Edita los campos de un jugador en la Blacklist (tribu, mapa, notas, etc.).",
+    )
+    @app_commands.describe(
+        jugador="Nombre del jugador (nombre de Steam)",
+        tribu="Nombre de la tribu",
+        mapa="Mapa principal del jugador",
+        personaje="Nombre del personaje en el juego (se puede usar varias veces para añadir alts)",
+        notas="Notas o información relevante",
+        enemigo="¿Es enemigo?",
+    )
+    @app_commands.choices(
+        enemigo=[
+            app_commands.Choice(name="Sí (Enemigo)", value="1"),
+            app_commands.Choice(name="No (Neutral)", value="0"),
+        ]
+    )
+    async def bl_editar(
+        self,
+        interaction: discord.Interaction,
+        jugador: str,
+        tribu: str = None,
+        mapa: str = None,
+        personaje: str = None,
+        notas: str = None,
+        enemigo: app_commands.Choice[str] = None,
+    ):
+        lang = await resolve_lang(self.bot, interaction.guild_id, "command", interaction.user.id)
+        if not await interaction.client.is_authorized_admin(interaction):
+            await interaction.response.send_message(t("common.denied", lang), ephemeral=True)
+            return
+
+        db = self.bot.db
+
+        # Verificar si el jugador existe en la blacklist
+        cursor = await db.execute(
+            "SELECT id FROM blacklist WHERE player = ? AND guild_id = ?",
+            (jugador, interaction.guild_id),
+        )
+        bl_row = await cursor.fetchone()
+
+        # Si no está en la blacklist, lo añadimos automáticamente
+        if not bl_row:
+            await db.execute(
+                "INSERT INTO blacklist (guild_id, player, tribe, map, notes, is_enemy, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    interaction.guild_id,
+                    jugador,
+                    tribu or "Desconocido",
+                    mapa or "Desconocido",
+                    notas or "",
+                    int(enemigo.value) if enemigo else 1,
+                    datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                ),
+            )
+            await db.commit()
+            was_new = True
+        else:
+            was_new = False
+            updates = {}
+            if tribu is not None:
+                updates["tribe"] = tribu
+            if mapa is not None:
+                updates["map"] = mapa
+            if notas is not None:
+                updates["notes"] = notas
+            if enemigo is not None:
+                updates["is_enemy"] = int(enemigo.value)
+
+            if updates:
+                # Defensa en profundidad: verificar columnas contra whitelist antes de interpolar.
+                from utils.parsing import ALLOWED_BLACKLIST_FIELDS
+
+                safe_keys = [k for k in updates if k in ALLOWED_BLACKLIST_FIELDS]
+                if safe_keys:
+                    set_clause = ", ".join(f"{k} = ?" for k in safe_keys)
+                    values = [updates[k] for k in safe_keys] + [bl_row["id"], interaction.guild_id]
+                    await db.execute(
+                        f"UPDATE blacklist SET {set_clause} WHERE id = ? AND guild_id = ?",
+                        values,
+                    )
+                    await db.commit()
+
+        # Gestión del personaje (nombre in-game) en tribe_characters
+        if personaje is not None:
+            try:
+                cursor = await db.execute(
+                    "SELECT character_name FROM tribe_characters WHERE player_name = ? AND character_name = ? AND guild_id = ?",
+                    (jugador, personaje, interaction.guild_id),
+                )
+                if not await cursor.fetchone():
+                    await db.execute(
+                        "INSERT INTO tribe_characters (guild_id, player_name, character_name) VALUES (?, ?, ?)",
+                        (interaction.guild_id, jugador, personaje),
+                    )
+                    await db.commit()
+            except Exception as e:
+                logger.error(f"[bl_editar] Error al guardar personaje: {e}")
+
+        # Resumen de cambios
+        changes = []
+        if was_new:
+            changes.append(t("bl.editar.added", lang))
+        if tribu is not None:
+            changes.append(t("bl.editar.field.tribe", lang, v=tribu))
+        if mapa is not None:
+            changes.append(t("bl.editar.field.map", lang, v=mapa))
+        if personaje is not None:
+            changes.append(t("bl.editar.field.char", lang, v=personaje))
+        if notas is not None:
+            changes.append(t("bl.editar.field.notes", lang, v=notas))
+        if enemigo is not None:
+            yn = t("bl.editar.yes" if enemigo.value == "1" else "bl.editar.no", lang)
+            changes.append(t("bl.editar.field.enemy", lang, v=yn))
+
+        if not changes:
+            await interaction.response.send_message(t("bl.editar.no_changes", lang), ephemeral=True)
+            return
+
+        await interaction.response.send_message(
+            t("bl.editar.updated", lang, jugador=jugador, changes="\n".join(changes)),
+            ephemeral=True,
+        )
+        self.bot.dispatch(bus.BLACKLIST_UPDATED, interaction.guild_id)
 
     @app_commands.command(name="sos", description="¡ALERTA DE RAID! Envía una señal de ayuda.")
     @app_commands.describe(

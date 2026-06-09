@@ -70,8 +70,8 @@ HP · Estamina · Peso · Melee · Oxígeno · Comida · Velocidad · Mutaciones
 Jugadores "Kill on Sight" (KOS). Si están aquí, son enemigos confirmados; cuanta más info mejor.
 
 ### :no_entry_sign: Sistema de Blacklist
-- **/blacklist**: Genera y ancla el Dashboard interactivo de la Lista Negra (auto-actualizable).
-- **/bl_editar**: Atajo directo al modal de edición sin pasar por el panel (útil para cambios rápidos).
+- **/blacklist panel**: Genera y ancla el Dashboard interactivo de la Lista Negra (auto-actualizable).
+- **/blacklist editar**: Atajo directo al modal de edición sin pasar por el panel (útil para cambios rápidos).
 
 ### :mouse_three_button: Botones del Panel
 1. **Añadir**: Formulario rápido (Tribu, Mapa, Notas) para crear un enemigo.

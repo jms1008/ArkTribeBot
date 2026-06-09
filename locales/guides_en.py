@@ -70,8 +70,8 @@ HP · Stamina · Weight · Melee · Oxygen · Food · Speed · Mutations (pure c
 "Kill on Sight" (KOS) players. If they're here, they're confirmed enemies; the more info, the better.
 
 ### :no_entry_sign: Blacklist System
-- **/blacklist**: Generates and pins the interactive Blacklist Dashboard (auto-updating).
-- **/bl_editar**: Direct shortcut to the edit modal without going through the panel (handy for quick changes).
+- **/blacklist panel**: Generates and pins the interactive Blacklist Dashboard (auto-updating).
+- **/blacklist editar**: Direct shortcut to the edit modal without going through the panel (handy for quick changes).
 
 ### :mouse_three_button: Panel Buttons
 1. **Add**: Quick form (Tribe, Map, Notes) to create an enemy.
