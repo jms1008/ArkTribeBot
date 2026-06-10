@@ -5,6 +5,8 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from utils.i18n import resolve_lang, t
+
 logger = logging.getLogger("ArkTribeBot")
 
 
@@ -21,10 +23,10 @@ class OptionButton(discord.ui.Button):
 
 
 class RemoveVoteButton(discord.ui.Button):
-    def __init__(self, event_view, *args, **kwargs):
+    def __init__(self, event_view, *args, label: str = "No puedo asistir / Quitar voto", **kwargs):
         super().__init__(
             style=discord.ButtonStyle.danger,
-            label="No puedo asistir / Quitar voto",
+            label=label,
             **kwargs,
         )
         self.event_view = event_view
@@ -49,6 +51,10 @@ class EventPollView(discord.ui.View):
             (event_id,),
         )
 
+        # Idioma del servidor para la etiqueta del botón (la encuesta es pública).
+        ev = await bot.db.fetchone("SELECT guild_id FROM events WHERE id = ?", (event_id,))
+        lang = await resolve_lang(bot, ev["guild_id"] if ev else None, "command")
+
         for opt_row in opts:
             opt_id = opt_row["id"]
             opt_text = opt_row["option_text"]
@@ -61,22 +67,23 @@ class EventPollView(discord.ui.View):
             )
             view.add_item(btn)
 
-        btn_remove = RemoveVoteButton(event_view=view, custom_id=f"event_rm_{event_id}")
+        btn_remove = RemoveVoteButton(
+            event_view=view, label=t("evento.btn.cant", lang), custom_id=f"event_rm_{event_id}"
+        )
         view.add_item(btn_remove)
         return view
 
     async def update_embed(self, interaction: discord.Interaction):
         """Reconstruye el embed con los votos actuales y lo edita."""
         db = self.bot.db
+        lang = await resolve_lang(self.bot, interaction.guild_id, "command")
         # Obtener datos del evento
         event_row = await db.fetchone(
             "SELECT title, description, creator_id FROM events WHERE id = ?",
             (self.event_id,),
         )
         if not event_row:
-            await interaction.response.send_message(
-                "El evento ya no existe en la base de datos.", ephemeral=True
-            )
+            await interaction.response.send_message(t("evento.deleted", lang), ephemeral=True)
             return
         title = event_row["title"]
         description = event_row["description"]
@@ -89,16 +96,17 @@ class EventPollView(discord.ui.View):
         )
 
         creator = interaction.guild.get_member(creator_id)
-        creator_name = creator.display_name if creator else "Desconocido"
+        creator_name = creator.display_name if creator else t("evento.unknown_creator", lang)
 
         embed = discord.Embed(
-            title=f"📅 Evento: {title}",
+            title=t("evento.title", lang, titulo=title),
             description=description,
             color=discord.Color.blue(),
         )
-        embed.set_author(name=f"Organizado por {creator_name}")
+        embed.set_author(name=t("evento.author", lang, name=creator_name))
 
         total_votes = sum(len(json.loads(o["voter_ids"])) for o in options)
+        votes_word = t("evento.votes", lang)
 
         for opt in options:
             opt_text = opt["option_text"]
@@ -110,15 +118,27 @@ class EventPollView(discord.ui.View):
             filled = round(pct / 10)
             bar = "█" * filled + "░" * (10 - filled)
 
-            voters_str = "\n".join([f"• {name}" for name in voter_names]) if count > 0 else "*Nadie todavía*"
+            voters_str = (
+                "\n".join([f"• {name}" for name in voter_names])
+                if count > 0
+                else t("evento.nobody", lang)
+            )
 
             embed.add_field(
                 name=f"✅ {opt_text}",
-                value=f"`{bar}` **{pct:.0f}%** ({count} votos)\n{voters_str}",
+                value=t(
+                    "evento.field_value",
+                    lang,
+                    bar=bar,
+                    pct=f"{pct:.0f}",
+                    count=count,
+                    votes=votes_word,
+                    voters=voters_str,
+                ),
                 inline=False,
             )
 
-        embed.set_footer(text=f"Total de participantes: {total_votes}")
+        embed.set_footer(text=t("evento.footer", lang, total=total_votes))
 
         try:
             # Usamos edit_original_response o message.edit según el contexto de la interacción
@@ -206,11 +226,9 @@ class Events(commands.Cog):
             opt for opt in [opcion_1, opcion_2, opcion_3, opcion_4] if opt is not None and opt.strip() != ""
         ]
 
+        lang = await resolve_lang(self.bot, interaction.guild_id, "command", interaction.user.id)
         if len(opciones_validas) < 2:
-            await interaction.response.send_message(
-                "Debes proporcionar al menos 2 opciones de fecha/hora válidas para la encuesta.",
-                ephemeral=True,
-            )
+            await interaction.response.send_message(t("evento.min_options", lang), ephemeral=True)
             return
 
         # Deferir respuesta ya que interactuamos con BD
@@ -250,20 +268,21 @@ class Events(commands.Cog):
 
         # 4. Construir Embed inicial
         embed = discord.Embed(
-            title=f"📅 Evento: {titulo}",
+            title=t("evento.title", lang, titulo=titulo),
             description=descripcion,
             color=discord.Color.blue(),
         )
         creator_name = interaction.user.display_name
-        embed.set_author(name=f"Organizado por {creator_name}")
+        embed.set_author(name=t("evento.author", lang, name=creator_name))
 
+        votes_word = t("evento.votes", lang)
         for opt in inserted_opts:
             embed.add_field(
-                name=f"✅ {opt['option_text']} (0 votos)",
-                value="*Nadie todavía*",
+                name=t("evento.field_init_name", lang, opt=opt["option_text"], votes=votes_word),
+                value=t("evento.nobody", lang),
                 inline=False,
             )
-        embed.set_footer(text="Total de participantes: 0")
+        embed.set_footer(text=t("evento.footer", lang, total=0))
 
         # 5. Enviar mensaje y guardar refs
         msg = await interaction.followup.send(embed=embed, view=view)

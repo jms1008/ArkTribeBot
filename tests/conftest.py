@@ -9,6 +9,18 @@ from discord.ext import commands
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 
+@pytest.fixture(autouse=True)
+def _clear_i18n_cache():
+    """La caché de modo de idioma de utils.i18n es global al proceso. Sin esto, el
+    modo de un guild fijado por un test (ej. en_total) se filtra a otros tests que
+    reutilizan el mismo guild_id (1234567890 del mock_interaction)."""
+    from utils import i18n
+
+    i18n.invalidate_lang_cache()
+    yield
+    i18n.invalidate_lang_cache()
+
+
 @pytest.fixture
 def mock_bot(tmp_path):
     """Mock básico para representar al bot de Discord.
