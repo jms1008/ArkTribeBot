@@ -170,7 +170,7 @@ class Admin(commands.Cog):
             await target(content=t("admin.config.not_setup", lang))
             return
 
-        embed = build_config_embed(config, num_miembros, guild_id)
+        embed = build_config_embed(config, num_miembros, guild_id, lang)
         await interaction.followup.send(embed=embed)
 
     @admin.command(
@@ -352,7 +352,8 @@ class Admin(commands.Cog):
         num_miembros = count_res["n"] if count_res else 0
 
         if config_fresh:
-            embed = build_config_embed(config_fresh, num_miembros, guild_id)
+            cfg_lang = await i18n.resolve_lang(self.bot, guild_id, "command", interaction.user.id)
+            embed = build_config_embed(config_fresh, num_miembros, guild_id, cfg_lang)
             embed.title = "✅ ArkTribeBot Configurado Correctamente"
             embed.description = (
                 "El servidor ha sido vinculado con éxito. Aquí tienes el resumen de tu configuración:"
@@ -536,56 +537,62 @@ class Admin(commands.Cog):
             await interaction.followup.send(t("admin.backup.error", lang, err=e), ephemeral=True)
 
 
-def build_config_embed(config: aiosqlite.Row, num_miembros: int, guild_id: int) -> discord.Embed:
+def build_config_embed(
+    config: aiosqlite.Row, num_miembros: int, guild_id: int, lang: str = "es"
+) -> discord.Embed:
     """Construye un embed premium con la configuración del servidor."""
     embed = discord.Embed(
-        title="⚙️ Configuración de ArkTribeBot",
-        description="Estado actual de la vinculación y parámetros del bot.",
+        title=t("config.title", lang),
+        description=t("config.subtitle", lang),
         color=discord.Color.from_rgb(35, 135, 80),  # Verde oscuro premium
         timestamp=discord.utils.utcnow(),
     )
-    embed.set_footer(text=f"ID Servidor: {guild_id}")
+    embed.set_footer(text=t("config.footer", lang, guild_id=guild_id))
 
     embed.add_field(
-        name="📡 Canales del Sistema",
-        value=(
-            f"🚨 **Alertas SOS:** <#{config['sos_channel_id']}>\n"
-            f"📜 **Lector Logs:** <#{config['log_channel_id']}>\n"
-            f"📁 **Repositorio:** <#{config['upload_channel_id']}>"
+        name=t("config.f.channels", lang),
+        value=t(
+            "config.channels_value",
+            lang,
+            sos=config["sos_channel_id"],
+            log=config["log_channel_id"],
+            upload=config["upload_channel_id"],
         ),
         inline=False,
     )
 
     embed.add_field(
-        name="🛡️ Autorización",
+        name=t("config.f.auth", lang),
         value=(
-            f"👤 **Owner:** <@{config['bot_owner_id']}>\n🛡️ **Admin Role:** <@&{config['admin_role_id']}>"
+            t("config.auth_full", lang, owner=config["bot_owner_id"], role=config["admin_role_id"])
             if config["admin_role_id"]
-            else "🛡️ **Admin Role:** No configurado"
+            else t("config.auth_norole", lang)
         ),
         inline=True,
     )
 
     embed.add_field(
-        name="📊 Módulos",
-        value=(
-            f"⏱️ **Actualización:** {config['update_interval']} min\n"
-            f"🪙 **Puntos Diarios:** {'✅ ON' if config['daily_points_enabled'] else '❌ OFF'}"
+        name=t("config.f.modules", lang),
+        value=t(
+            "config.modules_value",
+            lang,
+            interval=config["update_interval"],
+            status="✅ ON" if config["daily_points_enabled"] else "❌ OFF",
         ),
         inline=True,
     )
 
     embed.add_field(
-        name="👨‍👩‍👧‍👦 Tribu",
-        value=f"👥 **Miembros:** {num_miembros}",
+        name=t("config.f.tribe", lang),
+        value=t("config.tribe_value", lang, n=num_miembros),
         inline=True,
     )
 
-    bm_urls = config["battlemetrics_urls"] or "Sin servidores vinculados"
+    bm_urls = config["battlemetrics_urls"] or t("config.no_servers_linked", lang)
     if len(bm_urls) > 1024:
         bm_urls = bm_urls[:1021] + "..."
     embed.add_field(
-        name="🎮 Cluster (BattleMetrics)",
+        name=t("config.f.cluster", lang),
         value=f"```\n{bm_urls}\n```",
         inline=False,
     )

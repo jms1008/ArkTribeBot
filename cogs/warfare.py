@@ -449,7 +449,8 @@ class DeleteBlacklistModal(discord.ui.Modal, title="Eliminar de Blacklist"):
 
 async def build_player_detail_embed(bot, player_name: str, guild_id: int) -> discord.Embed:
     """Construye un embed detallado para un jugador, cruzando datos de Blacklist, K4Ultra y KDA."""
-    embed = discord.Embed(title=f"👤 Expediente: {player_name}", color=discord.Color.dark_orange())
+    lang = await resolve_lang(bot, guild_id, "periodic")
+    embed = discord.Embed(title=t("pd.title", lang, name=player_name), color=discord.Color.dark_orange())
 
     db = bot.db
 
@@ -476,7 +477,7 @@ async def build_player_detail_embed(bot, player_name: str, guild_id: int) -> dis
     )
     alias_row = await cursor.fetchone()
     if alias_row:
-        embed.title = f"👤 Expediente: {player_name} [{alias_row['alias']}]"
+        embed.title = t("pd.title_alias", lang, name=player_name, alias=alias_row["alias"])
 
     desc = []
     c_ids = await db.execute(
@@ -486,9 +487,7 @@ async def build_player_detail_embed(bot, player_name: str, guild_id: int) -> dis
     old_ids = await c_ids.fetchall()
     if old_ids:
         old_lst = ", ".join([r["secondary_name"] for r in old_ids])
-        desc.append(
-            f"⚠️ **Antiguos nombres de Steam:** `{old_lst}`\n*(Progreso fusionado automáticamente a este perfil)*"
-        )
+        desc.append(t("pd.old_names", lang, names=old_lst))
     embed.description = "\n\n".join(desc) if desc else ""
 
     # --- 1. Datos de Blacklist ---
@@ -501,21 +500,21 @@ async def build_player_detail_embed(bot, player_name: str, guild_id: int) -> dis
     )
     bl_row = await cursor.fetchone()
 
-    status_msg = "⚪ Registro Pasivo (K4Ultra)"
+    status_msg = t("pd.status.passive", lang)
     if is_tribe_member:
-        status_msg = "🟢 Miembro de la Tribu"
+        status_msg = t("pd.status.member", lang)
         embed.color = discord.Color.green()
     elif bl_row:
         # Comprobar si es enemigo o neutral
         is_enemy_val = bl_row["is_enemy"] if "is_enemy" in bl_row.keys() else 1
         if is_enemy_val == 1:
-            status_msg = "🔴 Marcado en Blacklist (Enemigo)"
+            status_msg = t("pd.status.enemy", lang)
             embed.color = discord.Color.red()
         else:
-            status_msg = "⚪ Marcado en Blacklist (Neutral)"
+            status_msg = t("pd.status.neutral", lang)
             embed.color = discord.Color.light_grey()
 
-        notes_str = bl_row["notes"] if bl_row["notes"] else "Ninguna"
+        notes_str = bl_row["notes"] if bl_row["notes"] else t("pd.notes_none", lang)
         if "Pasaporte registrado (K4Ultra)" in notes_str and len(notes_str) > 35:
             # Limpiar texto autogenerado si hay notas escritas manualmente por el jugador
             notes_str = notes_str.replace("Pasaporte registrado (K4Ultra) | ", "")
@@ -525,14 +524,19 @@ async def build_player_detail_embed(bot, player_name: str, guild_id: int) -> dis
             if notes_str.startswith("["):
                 # El delimitador manual de notas a veces es | [De Alias]:
                 pass
-        embed.add_field(name="🏠 Tribu", value=bl_row["tribe"] or "Desconocida", inline=True)
-        embed.add_field(name="🗺️ Mapa Origen", value=bl_row["map"] or "Desconocido", inline=True)
-        embed.add_field(name="📝 Notas", value=notes_str, inline=False)
+        embed.add_field(
+            name=t("pd.field.tribe", lang), value=bl_row["tribe"] or t("pd.tribe_unknown", lang), inline=True
+        )
+        embed.add_field(
+            name=t("pd.field.origin_map", lang), value=bl_row["map"] or t("pd.map_unknown", lang), inline=True
+        )
+        embed.add_field(name=t("pd.field.notes", lang), value=notes_str, inline=False)
     else:
+        not_in = t("pd.not_in_blacklist", lang)
         if embed.description is None or embed.description == "":
-            embed.description = "Este jugador no está en la blacklist manual."
+            embed.description = not_in
         else:
-            embed.description += "\n\nEste jugador no está en la blacklist manual."
+            embed.description += f"\n\n{not_in}"
 
     # --- 2. Estadísticas de Juego (K4Ultra) ---
     cursor = await db.execute(
@@ -557,7 +561,7 @@ async def build_player_detail_embed(bot, player_name: str, guild_id: int) -> dis
 
     if active_session:
         since = active_session["start_time"][11:16] if active_session["start_time"] else "?"
-        online_str = f"🟢 **En línea** (en {active_session['map_name']} desde {since})"
+        online_str = t("pd.online", lang, map=active_session["map_name"], since=since)
     else:
         # Buscar el último mapa en el que estuvo conectado
         cursor = await db.execute(
@@ -569,12 +573,12 @@ async def build_player_detail_embed(bot, player_name: str, guild_id: int) -> dis
         )
         offline_session = await cursor.fetchone()
         if offline_session:
-            online_str = f"🔴 **Desconectado** (Visto en {offline_session['map_name']})"
+            online_str = t("pd.offline_seen", lang, map=offline_session["map_name"])
         else:
-            online_str = "🔴 **Desconectado**"
+            online_str = t("pd.offline", lang)
 
-    embed.add_field(name="🔌 Estado Actual", value=online_str, inline=True)
-    embed.add_field(name="⏱️ Tiempo Total", value=f"{total_hours:.1f} horas", inline=True)
+    embed.add_field(name=t("pd.field.status", lang), value=online_str, inline=True)
+    embed.add_field(name=t("pd.field.total_time", lang), value=t("pd.hours", lang, h=f"{total_hours:.1f}"), inline=True)
 
     # Historial de Desplazamiento (Últimos 3 mapas visitados cronológicamente)
     cursor = await db.execute(
@@ -599,7 +603,7 @@ async def build_player_detail_embed(bot, player_name: str, guild_id: int) -> dis
         # Invertimos el orden para mostrar la ruta cronológicamente (Pasado -> Reciente)
         orbit_list.reverse()
         orbit_str = " -> ".join(orbit_list)
-        embed.add_field(name="🛰️ Órbita (Últimos Mapas)", value=f"`{orbit_str}`", inline=False)
+        embed.add_field(name=t("pd.field.orbit", lang), value=f"`{orbit_str}`", inline=False)
 
     # --- 4. Análisis Horario y Predicción ---
     from datetime import datetime
@@ -618,7 +622,7 @@ async def build_player_detail_embed(bot, player_name: str, guild_id: int) -> dis
 
     total_sessions = sum(h["c"] for h in hour_data)
     prob = 0
-    vulnerability_window = "Indeterminada"
+    vulnerability_window = t("pd.vuln.undetermined", lang)
 
     if total_sessions > 0:
         # Predicción para la próxima hora
@@ -639,13 +643,15 @@ async def build_player_detail_embed(bot, player_name: str, guild_id: int) -> dis
 
         if inactive_hours:
             # Buscar el bloque más largo de horas inactivas
-            vulnerability_window = "Madrugada / Variable"
+            vulnerability_window = t("pd.vuln.dawn", lang)
             if len(inactive_hours) >= 4:
                 # Ejemplo: 03:00 - 07:00
-                vulnerability_window = f"Entre {min(inactive_hours):02d}:00 y {max(inactive_hours):02d}:00"
+                vulnerability_window = t(
+                    "pd.vuln.between", lang, a=f"{min(inactive_hours):02d}", b=f"{max(inactive_hours):02d}"
+                )
 
-    embed.add_field(name="🕒 Ventana Vulnerable", value=vulnerability_window, inline=True)
-    embed.add_field(name="📈 Prob. Conexión (1h)", value=f"{prob}%", inline=True)
+    embed.add_field(name=t("pd.field.vuln", lang), value=vulnerability_window, inline=True)
+    embed.add_field(name=t("pd.field.prob", lang), value=f"{prob}%", inline=True)
 
     # --- 5. PVP y Alts ---
     cursor = await db.execute(
@@ -660,14 +666,14 @@ async def build_player_detail_embed(bot, player_name: str, guild_id: int) -> dis
         (player_name, guild_id),
     )
     chars = await cursor.fetchall()
-    chars_str = ", ".join([f"`{c['character_name']}`" for c in chars]) if chars else "Ninguno"
+    chars_str = ", ".join([f"`{c['character_name']}`" for c in chars]) if chars else t("pd.chars_none", lang)
 
     embed.add_field(
-        name="⚔️ Ficha de Muertes",
-        value=f"**Deaths Totales (Rancómetro):** {deaths}",
+        name=t("pd.field.deaths", lang),
+        value=t("pd.deaths_value", lang, deaths=deaths),
         inline=False,
     )
-    embed.add_field(name="🧑‍🤝‍🧑 Alts / Personajes", value=chars_str, inline=False)
+    embed.add_field(name=t("pd.field.alts", lang), value=chars_str, inline=False)
 
     # --- 6. Grado de Peligro (1-5 💀) ---
     threat = 1
@@ -679,8 +685,8 @@ async def build_player_detail_embed(bot, player_name: str, guild_id: int) -> dis
         threat += 1
 
     threat_str = "💀" * threat + "▫️" * (5 - threat)
-    embed.add_field(name="🔥 Grado de Peligro", value=f"`{threat_str}`", inline=True)
-    embed.add_field(name="📑 Tipo de Registro", value=status_msg, inline=True)
+    embed.add_field(name=t("pd.field.threat", lang), value=f"`{threat_str}`", inline=True)
+    embed.add_field(name=t("pd.field.record_type", lang), value=status_msg, inline=True)
 
     # --- 7. Aliados ---
     cursor = await db.execute(
@@ -701,9 +707,9 @@ async def build_player_detail_embed(bot, player_name: str, guild_id: int) -> dis
     ally_text = (
         "\n".join([f"• **{a['ally']}** ({a['probability_score']}%)" for a in allies])
         if allies
-        else "Sin aliados conocidos."
+        else t("pd.allies_none", lang)
     )
-    embed.add_field(name="🤝 Aliados Cercanos", value=ally_text, inline=False)
+    embed.add_field(name=t("pd.field.allies", lang), value=ally_text, inline=False)
     return embed
 
 
