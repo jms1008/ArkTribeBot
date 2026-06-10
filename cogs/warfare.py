@@ -984,7 +984,8 @@ class Warfare(commands.Cog):
         )  # Aplazamiento de respuesta para prevenir Timeout de la interacción
 
         # Generación del placeholder inicial (Actualización sincrónica inminente)
-        embed = discord.Embed(title="Cargando Blacklist...", color=discord.Color.dark_grey())
+        lang = await resolve_lang(self.bot, interaction.guild_id, "command", interaction.user.id)
+        embed = discord.Embed(title=t("common.loading", lang), color=discord.Color.dark_grey())
         await interaction.followup.send(embed=embed)
         message = await interaction.original_response()
 
@@ -1211,7 +1212,8 @@ class Warfare(commands.Cog):
     async def ranking(self, interaction: discord.Interaction):
         await interaction.response.defer()
 
-        embed = discord.Embed(title="Cargando Ranking...", color=discord.Color.dark_red())
+        lang = await resolve_lang(self.bot, interaction.guild_id, "command", interaction.user.id)
+        embed = discord.Embed(title=t("common.loading", lang), color=discord.Color.dark_red())
         await interaction.followup.send(embed=embed)
         message = await interaction.original_response()
 

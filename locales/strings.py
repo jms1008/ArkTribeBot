@@ -17,6 +17,7 @@ STRINGS: dict[str, dict[str, str]] = {
         "common.denied": "❌ Acceso denegado.",
         "common.no_servers": "❌ No hay servidores configurados. Usa `/inicio_ark` primero.",
         "common.min_2_players": "❌ Debes especificar al menos 2 jugadores válidos separados por comas.",
+        "common.loading": "⏳ Cargando...",
         # --- /tribu (respuestas de comando) ---
         "tribu.fijar.done": "✅ Tribu fijada: **{nombre}** con los jugadores: {jugadores}.\nEl algoritmo no añadirá jugadores externos a este bloque.{tag}",
         "tribu.fijar.own_tag": "\n🌟 Ha sido marcada como TU TRIBU PROPIA.",
@@ -237,6 +238,7 @@ STRINGS: dict[str, dict[str, str]] = {
         "alarm.select_placeholder": "Selecciona un mapa del clúster...",
         "alarm.btn.refresh": "Refrescar",
         # --- K4Ultra dashboard (radar) ---
+        "k4.cmd.no_snapshot": "❌ No se encontró un snapshot para la semana {semana}.",
         "k4.radar.title": "🌐 TRACKER K4ULTRA — Radar en Vivo",
         "k4.radar.header": "📡 `{online:02d}` Online  ·  🏆 `{total:02d}` En ranking  ·  📄 Página `{page}/{pages}`",
         "k4.radar.online_section": "## 📡 EN LÍNEA AHORA",
@@ -369,6 +371,7 @@ STRINGS: dict[str, dict[str, str]] = {
         "common.denied": "❌ Access denied.",
         "common.no_servers": "❌ No servers configured. Use `/inicio_ark` first.",
         "common.min_2_players": "❌ You must specify at least 2 valid players separated by commas.",
+        "common.loading": "⏳ Loading...",
         # --- /tribu (command replies) ---
         "tribu.fijar.done": "✅ Tribe pinned: **{nombre}** with players: {jugadores}.\nThe algorithm won't add external players to this block.{tag}",
         "tribu.fijar.own_tag": "\n🌟 It has been marked as YOUR OWN TRIBE.",
@@ -589,6 +592,7 @@ STRINGS: dict[str, dict[str, str]] = {
         "alarm.select_placeholder": "Pick a cluster map...",
         "alarm.btn.refresh": "Refresh",
         # --- K4Ultra dashboard (radar) ---
+        "k4.cmd.no_snapshot": "❌ No snapshot found for week {semana}.",
         "k4.radar.title": "🌐 K4ULTRA TRACKER — Live Radar",
         "k4.radar.header": "📡 `{online:02d}` Online  ·  🏆 `{total:02d}` Ranked  ·  📄 Page `{page}/{pages}`",
         "k4.radar.online_section": "## 📡 ONLINE NOW",

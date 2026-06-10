@@ -111,8 +111,9 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
     ):
 
         # Validación de permisos (Admin o ID autorizado)
+        lang = await resolve_lang(self.bot, interaction.guild_id, "command", interaction.user.id)
         if not await interaction.client.is_authorized_admin(interaction):
-            await interaction.response.send_message("❌ **ACCESO DENEGADO.**", ephemeral=True)
+            await interaction.response.send_message(t("common.denied", lang), ephemeral=True)
             return
 
         if semana:
@@ -131,8 +132,7 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
                 await interaction.followup.send(embed=snap_embed, ephemeral=True)
             else:
                 await interaction.followup.send(
-                    f"❌ No se encontró un snapshot para la semana {semana}.",
-                    ephemeral=True,
+                    t("k4.cmd.no_snapshot", lang, semana=semana), ephemeral=True
                 )
         else:
             # Visualización de estadísticas en vivo y guardado como mensaje persistente
