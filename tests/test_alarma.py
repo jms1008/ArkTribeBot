@@ -270,6 +270,96 @@ class TestCounterDiff:
         assert deserialized == original
 
 
+class TestAlertDelivery:
+    """Tests del DM agrupado: _deliver_intruder_alert mantiene UN mensaje-resumen
+    por usuario+mapa, editándolo dentro de la ventana y renovándolo después."""
+
+    def _make_user(self, mocker, msg_id=111):
+        """Mock de discord.User con DM channel funcional."""
+        msg = mocker.MagicMock()
+        msg.id = msg_id
+        msg.edit = mocker.AsyncMock()
+        msg.delete = mocker.AsyncMock()
+
+        dm = mocker.MagicMock()
+        dm.send = mocker.AsyncMock(return_value=msg)
+        dm.fetch_message = mocker.AsyncMock(return_value=msg)
+
+        user = mocker.MagicMock()
+        user.dm_channel = dm
+        return user, dm, msg
+
+    @pytest.mark.asyncio
+    async def test_first_alert_sends_new_dm_and_tracks_it(self, mock_bot, mocker):
+        await mock_bot.init_mock_db()
+        user, dm, msg = self._make_user(mocker)
+        mocker.patch.object(type(mock_bot), "get_user", lambda self, uid: user)
+
+        await alarma_mod._deliver_intruder_alert(mock_bot, 1, 42, "Ragnarok", ["123", "bob"])
+
+        dm.send.assert_called_once()
+        content = dm.send.call_args.kwargs["content"]
+        assert "Ragnarok" in content
+        assert "123" in content and "bob" in content
+
+        row = await mock_bot.db.fetchone(
+            "SELECT message_id, intruders_json FROM alarm_alert_messages "
+            "WHERE guild_id = 1 AND user_id = 42 AND map_name = 'Ragnarok'"
+        )
+        assert row["message_id"] == 111
+        import json as _json
+
+        assert [e["name"] for e in _json.loads(row["intruders_json"])] == ["123", "bob"]
+
+    @pytest.mark.asyncio
+    async def test_second_alert_within_window_edits_same_message(self, mock_bot, mocker):
+        """Una segunda detección reciente NO genera mensaje nuevo: edita el existente
+        añadiendo el intruso a la lista acumulada."""
+        await mock_bot.init_mock_db()
+        user, dm, msg = self._make_user(mocker)
+        mocker.patch.object(type(mock_bot), "get_user", lambda self, uid: user)
+
+        await alarma_mod._deliver_intruder_alert(mock_bot, 1, 42, "Ragnarok", ["123"])
+        await alarma_mod._deliver_intruder_alert(mock_bot, 1, 42, "Ragnarok", ["mallory"])
+
+        # Solo UN send; la segunda vez editó.
+        dm.send.assert_called_once()
+        msg.edit.assert_called_once()
+        edited = msg.edit.call_args.kwargs["content"]
+        assert "123" in edited and "mallory" in edited
+
+        row = await mock_bot.db.fetchone(
+            "SELECT intruders_json FROM alarm_alert_messages WHERE guild_id = 1 AND user_id = 42"
+        )
+        import json as _json
+
+        assert [e["name"] for e in _json.loads(row["intruders_json"])] == ["123", "mallory"]
+
+    @pytest.mark.asyncio
+    async def test_stale_alert_is_replaced_with_fresh_message(self, mock_bot, mocker):
+        """Si la alerta previa es más vieja que la ventana, se borra y se envía una nueva
+        (lista fresca) para que el usuario reciba notificación."""
+        await mock_bot.init_mock_db()
+        user, dm, msg = self._make_user(mocker)
+        mocker.patch.object(type(mock_bot), "get_user", lambda self, uid: user)
+
+        # Fila preexistente con timestamp viejo (fuera de ventana).
+        await mock_bot.db.execute(
+            "INSERT INTO alarm_alert_messages (guild_id, user_id, map_name, message_id, intruders_json, updated_at) "
+            "VALUES (1, 42, 'Ragnarok', 999, '[{\"name\": \"viejo\", \"time\": \"01:00\"}]', '2020-01-01 00:00:00')"
+        )
+        await mock_bot.db.commit()
+
+        await alarma_mod._deliver_intruder_alert(mock_bot, 1, 42, "Ragnarok", ["nuevo"])
+
+        # Borró el mensaje viejo y envió uno nuevo con lista fresca.
+        msg.delete.assert_called_once()
+        dm.send.assert_called_once()
+        content = dm.send.call_args.kwargs["content"]
+        assert "nuevo" in content
+        assert "viejo" not in content
+
+
 class TestSnapshotInvalidation:
     """Tests del listener on_trusted_members_changed: al disparar el evento,
     map_last_players del guild se vacía → próximo tick re-evalúa a todos."""

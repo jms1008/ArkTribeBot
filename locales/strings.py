@@ -119,10 +119,13 @@ STRINGS: dict[str, dict[str, str]] = {
         "alarm.cmd.map_not_found": "❌ El mapa `{map}` no existe en la configuración actual.",
         "alarm.cmd.off": "🔕 Alarma para **{map}** desactivada.",
         "alarm.cmd.on": (
-            "🚨 **Alarma activada** para `{map}`. Te mencionaré en este canal "
-            "cuando entre un intruso. 🔔"
+            "🚨 **Alarma activada** para `{map}`. Te avisaré por **mensaje privado (DM)** "
+            "cuando entre un intruso. 🔔\n⚠️ Asegúrate de tener los DMs abiertos para este servidor."
         ),
         "alarm.cmd.error": "❌ Ocurrió un error al procesar la alarma: {err}",
+        "alarm.dm.header": "⚠️ **Alerta de intrusos** en `{map}`",
+        "alarm.dm.entry": "• **{name}**  ·  ⏱️ `{time}`",
+        "alarm.dm.footer": "-# Este mensaje se actualiza si entran más intrusos · Pulsa Silenciar para descartarlo",
         # --- To-Do dashboard ---
         "todo.title": "📋 LISTA DE TAREAS",
         "todo.empty": (
@@ -289,7 +292,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "💤 Nadie en la tribu tiene alarmas activas ahora mismo.\n\n"
             "💡 Selecciona un mapa en el menú inferior o usa `/alarma activar mapa:X estado:on` para activar la tuya."
         ),
-        "alarm.empty_footer": "El bot avisa en el canal cuando entra un jugador desconocido al mapa vigilado.",
+        "alarm.empty_footer": "El bot te avisa por DM cuando entra un jugador desconocido al mapa vigilado.",
         "alarm.badges": "🗺️ `{maps:02d}` Mapas vigilados  ·  👥 `{unique:02d}` Vigilantes únicos  ·  📊 `{subs:02d}` Suscripciones",
         "alarm.section": "## 🟢 MAPAS BAJO VIGILANCIA",
         "alarm.map_line": "`#{idx:02d}` 🟢 **{map}**  ·  👥 `{count}` {word}",
@@ -534,10 +537,13 @@ STRINGS: dict[str, dict[str, str]] = {
         "alarm.cmd.map_not_found": "❌ The map `{map}` does not exist in the current config.",
         "alarm.cmd.off": "🔕 Alarm for **{map}** disabled.",
         "alarm.cmd.on": (
-            "🚨 **Alarm enabled** for `{map}`. I'll mention you in this channel "
-            "when an intruder shows up. 🔔"
+            "🚨 **Alarm enabled** for `{map}`. I'll warn you via **direct message (DM)** "
+            "when an intruder shows up. 🔔\n⚠️ Make sure your DMs are open for this server."
         ),
         "alarm.cmd.error": "❌ An error occurred while processing the alarm: {err}",
+        "alarm.dm.header": "⚠️ **Intruder alert** on `{map}`",
+        "alarm.dm.entry": "• **{name}**  ·  ⏱️ `{time}`",
+        "alarm.dm.footer": "-# This message updates if more intruders enter · Press Silence to dismiss it",
         # --- To-Do dashboard ---
         "todo.title": "📋 TASK LIST",
         "todo.empty": (
@@ -704,7 +710,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "💤 Nobody in the tribe has active alarms right now.\n\n"
             "💡 Pick a map in the menu below or use `/alarma activar mapa:X estado:on` to enable yours."
         ),
-        "alarm.empty_footer": "The bot warns in the channel when an unknown player enters a watched map.",
+        "alarm.empty_footer": "The bot DMs you when an unknown player enters a watched map.",
         "alarm.badges": "🗺️ `{maps:02d}` Watched maps  ·  👥 `{unique:02d}` Unique watchers  ·  📊 `{subs:02d}` Subscriptions",
         "alarm.section": "## 🟢 MAPS UNDER WATCH",
         "alarm.map_line": "`#{idx:02d}` 🟢 **{map}**  ·  👥 `{count}` {word}",

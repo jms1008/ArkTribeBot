@@ -1,6 +1,7 @@
 import json
 import logging
 from collections import Counter
+from datetime import datetime
 
 import aiosqlite
 import discord
@@ -11,6 +12,12 @@ from cogs.server_status import get_guild_servers
 from utils.i18n import resolve_lang, t
 
 logger = logging.getLogger("ArkTribeBot")
+
+# Ventana (minutos) durante la que una nueva detección se AÑADE al mensaje de
+# alerta existente en vez de crear uno nuevo. Pasada la ventana, el mensaje
+# viejo se borra y se envía uno fresco (para que el usuario reciba notificación,
+# ya que las ediciones de Discord no notifican).
+ALERT_REUSE_WINDOW_MIN = 60
 
 
 class AlarmDismissView(discord.ui.View):
@@ -54,6 +61,108 @@ async def _get_trusted_members(bot, guild_id: int) -> set[str]:
         except (json.JSONDecodeError, TypeError) as e:
             logger.warning(f"[Alarma] members_json inválido en tribu fijada: {e}")
     return trusted
+
+
+def _format_alert_content(map_name: str, entries: list[dict], lang: str) -> str:
+    """Renderiza el contenido del DM de alerta: cabecera + lista de intrusos con hora."""
+    lines = [t("alarm.dm.header", lang, map=map_name), ""]
+    for e in entries:
+        lines.append(t("alarm.dm.entry", lang, name=e["name"], time=e["time"]))
+    lines.append("")
+    lines.append(t("alarm.dm.footer", lang))
+    return "\n".join(lines)
+
+
+async def _deliver_intruder_alert(bot, guild_id: int, user_id: int, map_name: str, intruders: list[str]):
+    """Entrega la alerta de intrusos por DM agrupando en un mensaje-resumen.
+
+    Comportamiento:
+    - Si existe un mensaje de alerta reciente (< ALERT_REUSE_WINDOW_MIN) para este
+      usuario+mapa, se EDITA añadiendo los nuevos intrusos a la lista (sin generar
+      un mensaje nuevo → menos ruido en la conversación).
+    - Si no existe o ya es viejo, se borra el anterior (si sigue vivo) y se envía
+      un mensaje nuevo con lista fresca (las ediciones no notifican; un mensaje
+      nuevo sí).
+    - Si el usuario tiene los DMs cerrados, se registra en el log y se desiste.
+    """
+    db = bot.db
+    lang = await resolve_lang(bot, guild_id, "command", user_id)
+    now = datetime.utcnow()
+    now_iso = now.strftime("%Y-%m-%d %H:%M:%S")
+    time_str = now.strftime("%H:%M")
+
+    new_entries = [{"name": n, "time": time_str} for n in intruders]
+
+    try:
+        user = bot.get_user(user_id) or await bot.fetch_user(user_id)
+    except discord.NotFound:
+        logger.warning(f"[Alarma] Usuario {user_id} no existe, no se envía DM.")
+        return
+    if user is None:
+        return
+
+    row = await db.fetchone(
+        "SELECT message_id, intruders_json, updated_at FROM alarm_alert_messages "
+        "WHERE guild_id = ? AND user_id = ? AND map_name = ?",
+        (guild_id, user_id, map_name),
+    )
+
+    # ¿Hay un mensaje reciente que podamos reutilizar?
+    reuse = False
+    if row and row["message_id"] and row["updated_at"]:
+        try:
+            age_min = (now - datetime.fromisoformat(row["updated_at"])).total_seconds() / 60
+            reuse = age_min < ALERT_REUSE_WINDOW_MIN
+        except ValueError:
+            reuse = False
+
+    try:
+        dm = user.dm_channel or await user.create_dm()
+
+        if reuse:
+            try:
+                msg = await dm.fetch_message(row["message_id"])
+                try:
+                    entries = json.loads(row["intruders_json"]) or []
+                except (json.JSONDecodeError, TypeError):
+                    entries = []
+                entries.extend(new_entries)
+                await msg.edit(content=_format_alert_content(map_name, entries, lang))
+                await db.execute(
+                    "UPDATE alarm_alert_messages SET intruders_json = ?, updated_at = ? "
+                    "WHERE guild_id = ? AND user_id = ? AND map_name = ?",
+                    (json.dumps(entries), now_iso, guild_id, user_id, map_name),
+                )
+                await db.commit()
+                return
+            except (discord.NotFound, discord.Forbidden):
+                # El usuario lo silenció/borró → continuamos con mensaje nuevo.
+                pass
+
+        # Mensaje nuevo: borrar el viejo si sigue vivo (mantiene 1 alerta por mapa).
+        if row and row["message_id"]:
+            try:
+                old = await dm.fetch_message(row["message_id"])
+                await old.delete()
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                pass
+
+        msg = await dm.send(
+            content=_format_alert_content(map_name, new_entries, lang),
+            view=AlarmDismissView(),
+        )
+        await db.execute(
+            "INSERT OR REPLACE INTO alarm_alert_messages "
+            "(guild_id, user_id, map_name, message_id, intruders_json, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (guild_id, user_id, map_name, msg.id, json.dumps(new_entries), now_iso),
+        )
+        await db.commit()
+
+    except discord.Forbidden:
+        logger.warning(f"[Alarma] No se puede enviar DM a {user_id} (DMs cerrados). Mapa={map_name}.")
+    except Exception as e:
+        logger.error(f"[Alarma] Error entregando alerta DM a {user_id}: {e}")
 
 
 async def _fetch_user_alarms(bot, guild_id: int, user_id: int) -> list[dict]:
@@ -266,11 +375,9 @@ class AlarmActionView(discord.ui.View):
 
         self.btn_on.disabled = True
         self.btn_off.disabled = False
+        on_lang = await resolve_lang(self.bot, guild_id, "command", user_id)
         await interaction.response.edit_message(
-            content=(
-                f"🚨 **Alarma activada** para `{self.map_name}`. "
-                f"Te mencionaré en este canal cuando entre un intruso."
-            ),
+            content=t("alarm.cmd.on", on_lang, map=self.map_name),
             view=self,
         )
         await self._refresh_parent(interaction)
@@ -288,8 +395,9 @@ class AlarmActionView(discord.ui.View):
 
         self.btn_off.disabled = True
         self.btn_on.disabled = False
+        off_lang = await resolve_lang(self.bot, guild_id, "command", user_id)
         await interaction.response.edit_message(
-            content=f"🔕 **Alarma desactivada** para `{self.map_name}`.",
+            content=t("alarm.cmd.off", off_lang, map=self.map_name),
             view=self,
         )
         await self._refresh_parent(interaction)
@@ -491,37 +599,17 @@ class Alarma(commands.Cog):
 
                         if intruders:
                             alert_targets = await db.fetchall(
-                                "SELECT user_id, channel_id FROM map_alarms WHERE guild_id = ? AND map_name = ?",
+                                "SELECT user_id FROM map_alarms WHERE guild_id = ? AND map_name = ?",
                                 (guild_id, map_name),
                             )
 
-                            intruders_fmt = ", ".join([f"**{i}**" for i in intruders])
+                            # DM por usuario con mensaje-resumen agrupado (ver
+                            # _deliver_intruder_alert): si hay una alerta reciente
+                            # se edita añadiendo a la lista en vez de spamear.
                             for target in alert_targets:
-                                u_id = target["user_id"]
-                                ch_id = target["channel_id"]
-                                # Mensaje en el canal donde se activó la alarma, con mención
-                                # al destinatario para que reciba notificación push.
-                                try:
-                                    channel = self.bot.get_channel(ch_id) or await self.bot.fetch_channel(ch_id)
-                                    if channel is None:
-                                        logger.warning(
-                                            f"[Alarma] Canal {ch_id} no encontrado, no se envía alerta."
-                                        )
-                                        continue
-                                    view = AlarmDismissView()
-                                    await channel.send(
-                                        f"⚠️ <@{u_id}>! **Intruso detectado** en `{map_name}`: {intruders_fmt}",
-                                        view=view,
-                                    )
-                                except discord.Forbidden:
-                                    logger.warning(
-                                        f"[Alarma] Sin permisos para enviar en canal {ch_id} "
-                                        f"(usuario {u_id}, mapa {map_name})."
-                                    )
-                                except Exception as e:
-                                    logger.error(
-                                        f"[Alarma] Error enviando alerta a canal {ch_id} (user {u_id}): {e}"
-                                    )
+                                await _deliver_intruder_alert(
+                                    self.bot, guild_id, target["user_id"], map_name, intruders
+                                )
 
                     # Actualizar el estado anterior. Serializamos como lista con duplicados
                     # expandidos (Counter.elements()) para que el siguiente tick pueda

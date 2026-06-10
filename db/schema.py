@@ -319,6 +319,20 @@ TABLES: list[str] = [
         PRIMARY KEY(guild_id, map_name)
     )
     """,
+    # Mensaje-resumen de alertas de intrusos por usuario+mapa (DM). En vez de un
+    # mensaje nuevo por cada deteccion, el bot edita el mismo mensaje anadiendo
+    # intrusos a la lista mientras la alerta siga "fresca".
+    """
+    CREATE TABLE IF NOT EXISTS alarm_alert_messages (
+        guild_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        map_name TEXT NOT NULL,
+        message_id INTEGER,
+        intruders_json TEXT DEFAULT '[]',
+        updated_at TIMESTAMP,
+        PRIMARY KEY (guild_id, user_id, map_name)
+    )
+    """,
     # Eventos
     """
     CREATE TABLE IF NOT EXISTS events (

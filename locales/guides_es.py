@@ -131,7 +131,7 @@ Las consultas A2S se centralizan con un caché compartido de 90 s, lo que permit
 ### :bell: Alarmas de Intrusos (resumen)
 - **/alarma activar mapa:Fjordur estado:on** activa la vigilancia de un mapa; **off** la desactiva.
 - **/alarma panel** abre el panel rápido con todas tus alarmas configurables.
-- El bot te menciona cuando entra al mapa un jugador que NO es de tu tribu propia ni de los personajes registrados. Cada alerta lleva un botón **✅ Completado** para silenciarla.
+- El bot te avisa por **DM** cuando entra al mapa un jugador que NO es de tu tribu propia ni de los personajes registrados. Cada alerta lleva un botón **✅ Silenciar** para descartarla.
 
 > :bulb: Más detalle en `/info modulo:🔔 Alarmas de Intrusos`.""",
     "k4ultra": """# :eye: Tracker de Inteligencia (K4Ultra)
@@ -179,7 +179,7 @@ Para que el sistema pueda atribuir muertes:
 El módulo de **Puntos Diarios** (`/info modulo:🌅 Puntos Diarios`) es opcional y complementario — te avisa por DM cada día para que canjees los votos del cluster.""",
     "alarmas": """# :bell: Alarmas de Intrusos por Mapa
 
-Sistema de defensa pasiva: el bot vigila los mapas que elijas y te **menciona en el canal** donde activaste la alarma cuando entra un jugador que NO esté en tu tribu propia, en una tribu aliada, ni registrado como personaje conocido.
+Sistema de defensa pasiva: el bot vigila los mapas que elijas y te avisa por **mensaje privado (DM)** cuando entra un jugador que NO esté en tu tribu propia, en una tribu aliada, ni registrado como personaje conocido.
 
 ### :gear: Comandos
 - **/alarma activar mapa:Fjordur estado:on** — Activa la vigilancia de un mapa.
@@ -192,13 +192,14 @@ Cada minuto el bot lee el caché de Status (no genera tráfico extra) y compara 
 1. Si está en tu tribu propia (`/tribu propia`) → ignora.
 2. Si está en una tribu aliada (`/tribu aliada`) → ignora.
 3. Si está registrado como personaje conocido (`/tribu miembro`) → ignora.
-4. Si no → :rotating_light: **alarma**: el bot te menciona en el canal donde activaste la alarma con la lista de intrusos.
+4. Si no → :rotating_light: **alarma**: el bot te envía un **DM** con la lista de intrusos y la hora de entrada de cada uno.
 
 ### :pushpin: Detalle
 - Las alarmas son **por usuario** y por mapa: cada miembro puede tener su propia lista.
 - Multi-mapa: puedes vigilar varios mapas a la vez sin coste extra.
+- **Anti-spam:** si entran más intrusos mientras tu alerta sigue reciente (1h), el bot **edita el mismo mensaje** añadiéndolos a la lista en vez de enviarte uno nuevo. Pasada la ventana, borra el viejo y envía uno fresco (para que te llegue la notificación).
 - El mensaje de alarma incluye un botón **✅ Silenciar** para descartarlo.
-- El canal donde se enviará la alerta es el mismo en el que activaste la alarma (`/alarma activar` o panel `/alarma panel`).""",
+- Si tienes los DMs cerrados para este servidor, el bot no podrá avisarte (queda anotado en el log).""",
     "puntos_diarios": """# :sunrise: Puntos Diarios de Voto
 
 Recordatorio personal por DM para que canjees los puntos diarios votando tu cluster en los rankings públicos.

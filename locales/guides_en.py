@@ -131,7 +131,7 @@ A2S queries are centralized with a shared 90s cache, letting **Status**, **K4Ult
 ### :bell: Intruder Alarms (summary)
 - **/alarma activar mapa:Fjordur estado:on** enables watching a map; **off** disables it.
 - **/alarma panel** opens the quick panel with all your configurable alarms.
-- The bot pings you when a player who is NOT in your own tribe nor a registered character enters the map. Each alert carries a **✅ Done** button to silence it.
+- The bot **DMs you** when a player who is NOT in your own tribe nor a registered character enters the map. Each alert carries a **✅ Silence** button to dismiss it.
 
 > :bulb: More detail in `/info modulo:🔔 Alarmas de Intrusos`.""",
     "k4ultra": """# :eye: Intelligence Tracker (K4Ultra)
@@ -179,7 +179,7 @@ For the system to attribute deaths:
 The **Daily Points** module (`/info modulo:🌅 Puntos Diarios`) is optional and complementary — it DMs you every day to redeem the cluster votes.""",
     "alarmas": """# :bell: Per-Map Intruder Alarms
 
-Passive defense system: the bot watches the maps you choose and **mentions you in the channel** where you enabled the alarm when a player enters who is NOT in your own tribe, an allied tribe, nor registered as a known character.
+Passive defense system: the bot watches the maps you choose and warns you via **direct message (DM)** when a player enters who is NOT in your own tribe, an allied tribe, nor registered as a known character.
 
 ### :gear: Commands
 - **/alarma activar mapa:Fjordur estado:on** — Enables watching a map.
@@ -192,13 +192,14 @@ Every minute the bot reads the Status cache (no extra traffic) and compares agai
 1. If they're in your own tribe (`/tribu propia`) → ignore.
 2. If they're in an allied tribe (`/tribu aliada`) → ignore.
 3. If they're registered as a known character (`/tribu miembro`) → ignore.
-4. Otherwise → :rotating_light: **alarm**: the bot mentions you in the channel where you enabled the alarm with the list of intruders.
+4. Otherwise → :rotating_light: **alarm**: the bot sends you a **DM** with the list of intruders and the time each one entered.
 
 ### :pushpin: Detail
 - Alarms are **per user** and per map: each member can have their own list.
 - Multi-map: you can watch several maps at once at no extra cost.
+- **Anti-spam:** if more intruders enter while your alert is still fresh (1h), the bot **edits the same message** adding them to the list instead of sending a new one. Past the window, it deletes the old one and sends a fresh message (so you get the notification).
 - The alarm message includes a **✅ Silence** button to dismiss it.
-- The channel where the alert is sent is the same one where you enabled the alarm (`/alarma activar` or the `/alarma panel`).""",
+- If your DMs are closed for this server, the bot can't warn you (it's noted in the log).""",
     "puntos_diarios": """# :sunrise: Daily Vote Points
 
 A personal DM reminder to redeem your daily points by voting your cluster on the public rankings.
