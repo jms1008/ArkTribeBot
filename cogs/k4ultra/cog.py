@@ -9,6 +9,7 @@ from discord.ext import commands, tasks
 
 from cogs.k4ultra.ui import K4UltraView
 from utils import bus
+from utils.i18n import resolve_lang, t
 
 logger = logging.getLogger("ArkTribeBot")
 
@@ -168,8 +169,9 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
         description="[Admin] Limpia y fusiona perfiles duplicados (_1, _2) con su nombre base.",
     )
     async def k4ultra_cleanup(self, interaction: discord.Interaction):
+        lang = await resolve_lang(self.bot, interaction.guild_id, "command", interaction.user.id)
         if not await interaction.client.is_authorized_admin(interaction):
-            await interaction.response.send_message("❌ Acceso denegado.", ephemeral=True)
+            await interaction.response.send_message(t("common.denied", lang), ephemeral=True)
             return
 
         await interaction.response.defer(ephemeral=True)
@@ -197,10 +199,7 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
                     duplicates_to_merge.append((p, base_name))
 
         if not duplicates_to_merge:
-            await interaction.followup.send(
-                "✅ No se encontraron perfiles duplicados para fusionar.",
-                ephemeral=True,
-            )
+            await interaction.followup.send(t("tribu.limpiar.none", lang), ephemeral=True)
             return
 
         merged_count = 0
@@ -286,10 +285,7 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
 
         await db.commit()
 
-        await interaction.followup.send(
-            f"✅ Limpieza completada. Se han fusionado **{merged_count}** perfiles duplicados con sus nombres base.",
-            ephemeral=True,
-        )
+        await interaction.followup.send(t("tribu.limpiar.done", lang, n=merged_count), ephemeral=True)
 
     @tribu.command(
         name="fijar",
@@ -303,8 +299,9 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
     async def fijar_tribu(
         self, interaction: discord.Interaction, nombre: str, jugadores: str, propia: bool = False
     ):
+        lang = await resolve_lang(self.bot, interaction.guild_id, "command", interaction.user.id)
         if not await interaction.client.is_authorized_admin(interaction):
-            await interaction.response.send_message("❌ Acceso denegado.", ephemeral=True)
+            await interaction.response.send_message(t("common.denied", lang), ephemeral=True)
             return
 
         # Saneamiento de comillas accidentales y espacios
@@ -312,10 +309,7 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
         miembros = [m.strip().strip("'\"") for m in jugadores.split(",") if m.strip().strip("'\"")]
 
         if len(miembros) < 2:
-            await interaction.response.send_message(
-                "❌ Debes especificar al menos 2 jugadores válidos separados por comas.",
-                ephemeral=True,
-            )
+            await interaction.response.send_message(t("common.min_2_players", lang), ephemeral=True)
             return
 
         db = self.bot.db
@@ -338,9 +332,9 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
         if is_own == 1:
             self.bot.dispatch(bus.TRUSTED_MEMBERS_CHANGED, interaction.guild_id)
 
-        tag_propia = "\n🌟 Ha sido marcada como TU TRIBU PROPIA." if propia else ""
+        tag_propia = t("tribu.fijar.own_tag", lang) if propia else ""
         await interaction.response.send_message(
-            f"✅ Tribu fijada: **{nombre}** con los jugadores: {', '.join(miembros)}.\nEl algoritmo no añadirá jugadores externos a este bloque.{tag_propia}",
+            t("tribu.fijar.done", lang, nombre=nombre, jugadores=", ".join(miembros), tag=tag_propia),
             ephemeral=True,
         )
 
@@ -353,17 +347,16 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
         jugadores="Jugadores de tu tribu (separados por comas)",
     )
     async def tribu_propia_crear(self, interaction: discord.Interaction, nombre: str, jugadores: str):
+        lang = await resolve_lang(self.bot, interaction.guild_id, "command", interaction.user.id)
         if not await interaction.client.is_authorized_admin(interaction):
-            await interaction.response.send_message("❌ Acceso denegado.", ephemeral=True)
+            await interaction.response.send_message(t("common.denied", lang), ephemeral=True)
             return
 
         nombre = nombre.strip().strip("'\"")
         miembros = [m.strip().strip("'\"") for m in jugadores.split(",") if m.strip().strip("'\"")]
 
         if len(miembros) < 2:
-            await interaction.response.send_message(
-                "❌ Debes especificar al menos 2 jugadores válidos separados por comas.", ephemeral=True
-            )
+            await interaction.response.send_message(t("common.min_2_players", lang), ephemeral=True)
             return
 
         db = self.bot.db
@@ -387,7 +380,7 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
         self.bot.dispatch(bus.TRUSTED_MEMBERS_CHANGED, interaction.guild_id)
 
         await interaction.response.send_message(
-            f"✅ Se ha configurado **{nombre}** como tribu propia con los jugadores: {', '.join(miembros)}.",
+            t("tribu.propia.crear_done", lang, nombre=nombre, jugadores=", ".join(miembros)),
             ephemeral=True,
         )
 
@@ -406,8 +399,9 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
     async def tribu_propia_modificar(
         self, interaction: discord.Interaction, opcion: app_commands.Choice[str], valor: str
     ):
+        lang = await resolve_lang(self.bot, interaction.guild_id, "command", interaction.user.id)
         if not await interaction.client.is_authorized_admin(interaction):
-            await interaction.response.send_message("❌ Acceso denegado.", ephemeral=True)
+            await interaction.response.send_message(t("common.denied", lang), ephemeral=True)
             return
 
         valor = valor.strip().strip("'\"")
@@ -423,16 +417,14 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
         row = await cursor.fetchone()
 
         if not row:
-            await interaction.response.send_message(
-                "❌ No hay tribu propia configurada. Usa `/tribu propia crear` primero.", ephemeral=True
-            )
+            await interaction.response.send_message(t("tribu.propia.none", lang), ephemeral=True)
             return
 
         if opcion.value == "nombre":
             await db.execute("UPDATE k4ultra_fixed_tribes SET name = ? WHERE id = ?", (valor, row["id"]))
             await db.commit()
             await interaction.response.send_message(
-                f"✅ Se cambió el nombre de la tribu propia a **{valor}**.", ephemeral=True
+                t("tribu.propia.renamed", lang, valor=valor), ephemeral=True
             )
             return
 
@@ -441,7 +433,7 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
         if opcion.value == "add":
             if [m.lower() for m in miembros].count(valor.lower()) > 0:
                 await interaction.response.send_message(
-                    f"⚠️ **{valor}** ya está en la tribu propia (**{row['name']}**).", ephemeral=True
+                    t("tribu.propia.already", lang, valor=valor, name=row["name"]), ephemeral=True
                 )
                 return
             miembros.append(valor)
@@ -452,7 +444,7 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
             await db.commit()
             self.bot.dispatch(bus.TRUSTED_MEMBERS_CHANGED, interaction.guild_id)
             await interaction.response.send_message(
-                f"✅ Se añadió a **{valor}** a la tribu propia (**{row['name']}**).", ephemeral=True
+                t("tribu.propia.added", lang, valor=valor, name=row["name"]), ephemeral=True
             )
 
         elif opcion.value == "remove":
@@ -460,8 +452,7 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
             miembros = [m for m in miembros if m.lower() != valor.lower()]
             if len(miembros) == original_len:
                 await interaction.response.send_message(
-                    f"❌ **{valor}** no fue encontrado en la tribu propia (**{row['name']}**).",
-                    ephemeral=True,
+                    t("tribu.propia.not_found", lang, valor=valor, name=row["name"]), ephemeral=True
                 )
                 return
             await db.execute(
@@ -471,21 +462,19 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
             await db.commit()
             self.bot.dispatch(bus.TRUSTED_MEMBERS_CHANGED, interaction.guild_id)
             await interaction.response.send_message(
-                f"✅ Se eliminó a **{valor}** de la tribu propia (**{row['name']}**).", ephemeral=True
+                t("tribu.propia.removed", lang, valor=valor, name=row["name"]), ephemeral=True
             )
 
     @propia.command(name="borrar", description="[Admin] Elimina la tribu propia del registro.")
     @app_commands.describe(seguro="True si estás seguro de que deseas borrarla por completo.")
     async def tribu_propia_borrar(self, interaction: discord.Interaction, seguro: bool):
+        lang = await resolve_lang(self.bot, interaction.guild_id, "command", interaction.user.id)
         if not await interaction.client.is_authorized_admin(interaction):
-            await interaction.response.send_message("❌ Acceso denegado.", ephemeral=True)
+            await interaction.response.send_message(t("common.denied", lang), ephemeral=True)
             return
 
         if not seguro:
-            await interaction.response.send_message(
-                "❌ Debes seleccionar `seguro: True` para borrar la tribu propia definitivamente.",
-                ephemeral=True,
-            )
+            await interaction.response.send_message(t("tribu.propia.need_sure", lang), ephemeral=True)
             return
 
         db = self.bot.db
@@ -494,15 +483,13 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
         )
         if cursor.rowcount == 0:
             await interaction.response.send_message(
-                "❌ No hay tribu propia registrada actualmente.", ephemeral=True
+                t("tribu.propia.none_registered", lang), ephemeral=True
             )
             return
         await db.commit()
         self.bot.dispatch(bus.TRUSTED_MEMBERS_CHANGED, interaction.guild_id)
 
-        await interaction.response.send_message(
-            "✅ Has borrado permanentemente la tribu propia del servidor.", ephemeral=True
-        )
+        await interaction.response.send_message(t("tribu.propia.deleted", lang), ephemeral=True)
 
     @tribu.command(
         name="desfijar",
@@ -510,8 +497,9 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
     )
     @app_commands.describe(nombre="Nombre exacto de la tribu a eliminar")
     async def unfijar_tribu(self, interaction: discord.Interaction, nombre: str):
+        lang = await resolve_lang(self.bot, interaction.guild_id, "command", interaction.user.id)
         if not await interaction.client.is_authorized_admin(interaction):
-            await interaction.response.send_message("❌ Acceso denegado.", ephemeral=True)
+            await interaction.response.send_message(t("common.denied", lang), ephemeral=True)
             return
 
         nombre = nombre.strip()
@@ -535,13 +523,11 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
             if was_trusted:
                 self.bot.dispatch(bus.TRUSTED_MEMBERS_CHANGED, interaction.guild_id)
             await interaction.response.send_message(
-                f"✅ Tribu **{nombre}** ha sido eliminada de las fijadas. Sus miembros volverán a agruparse automáticamente.",
-                ephemeral=True,
+                t("tribu.desfijar.done", lang, nombre=nombre), ephemeral=True
             )
         else:
             await interaction.response.send_message(
-                f"❌ No se encontró ninguna tribu fijada con el nombre **{nombre}**.",
-                ephemeral=True,
+                t("tribu.desfijar.not_found", lang, nombre=nombre), ephemeral=True
             )
 
     @tribu.command(
@@ -558,16 +544,15 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
         playtimes, reasigna relaciones del radar, preserva notas de blacklist y
         limpia alias/log. Tras esto, las futuras conexiones del nombre antiguo se
         reasignan al definitivo."""
+        lang = await resolve_lang(self.bot, interaction.guild_id, "command", interaction.user.id)
         if not await interaction.client.is_authorized_admin(interaction):
-            await interaction.response.send_message("❌ Acceso denegado.", ephemeral=True)
+            await interaction.response.send_message(t("common.denied", lang), ephemeral=True)
             return
 
         origen = origen.strip()
         destino = destino.strip()
         if origen.lower() == destino.lower():
-            await interaction.response.send_message(
-                "❌ El origen y el destino no pueden ser el mismo.", ephemeral=True
-            )
+            await interaction.response.send_message(t("tribu.merge.same", lang), ephemeral=True)
             return
 
         await interaction.response.defer(ephemeral=False)
@@ -677,14 +662,17 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
         h_total, m_total = divmod(transferred_minutes, 60)
         horas_str = f"{h_total}h {m_total}m" if h_total else f"{m_total}m"
         mapas_str = ", ".join(transferred_maps) if transferred_maps else "—"
-        embed = discord.Embed(title="✅ IDENTIDADES FUSIONADAS", color=discord.Color.brand_green())
-        embed.description = (
-            f"`{origen}`  ➡️  `{destino}`\n\n"
-            f"> 📊 **Horas transferidas:** `{horas_str}`\n"
-            f"> 🗺️ **Mapas afectados:** `{len(transferred_maps)}` ({mapas_str})\n"
-            f"> 📅 **Registros movidos:** sesiones, relaciones, blacklist y alias del K4Ultra"
+        embed = discord.Embed(title=t("tribu.fusionar.title", lang), color=discord.Color.brand_green())
+        embed.description = t(
+            "tribu.fusionar.desc",
+            lang,
+            origen=origen,
+            destino=destino,
+            horas=horas_str,
+            nmaps=len(transferred_maps),
+            mapas=mapas_str,
         )
-        embed.set_footer(text="El bot convertirá automáticamente las próximas conexiones del nombre antiguo.")
+        embed.set_footer(text=t("tribu.fusionar.footer", lang))
         await interaction.followup.send(embed=embed)
         self.bot.dispatch(bus.BLACKLIST_UPDATED, guild_id)
 
@@ -697,17 +685,16 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
         destino="Nuevo perfil donde moverlo (ej: 123_2)",
     )
     async def k4ultra_split(self, interaction: discord.Interaction, origen: str, destino: str):
+        lang = await resolve_lang(self.bot, interaction.guild_id, "command", interaction.user.id)
         if not await interaction.client.is_authorized_admin(interaction):
-            await interaction.response.send_message("❌ Acceso denegado.", ephemeral=True)
+            await interaction.response.send_message(t("common.denied", lang), ephemeral=True)
             return
 
         origen = origen.strip()
         destino = destino.strip()
 
         if origen == destino:
-            await interaction.response.send_message(
-                "❌ El origen y el destino no pueden ser el mismo.", ephemeral=True
-            )
+            await interaction.response.send_message(t("tribu.merge.same", lang), ephemeral=True)
             return
 
         await interaction.response.defer(ephemeral=True)
@@ -722,17 +709,11 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
         active_sessions = await cursor.fetchall()
 
         if not active_sessions:
-            await interaction.followup.send(
-                f"❌ El jugador **{origen}** NO tiene ninguna sesión activa en este momento. Este comando solo sirve para separar a un impostor mientras está conectado.",
-                ephemeral=True,
-            )
+            await interaction.followup.send(t("tribu.separar.no_session", lang, origen=origen), ephemeral=True)
             return
 
         if len(active_sessions) > 1:
-            await interaction.followup.send(
-                f"⚠️ **{origen}** tiene múltiples sesiones activas extrañas. Contacta al soporte técnico.",
-                ephemeral=True,
-            )
+            await interaction.followup.send(t("tribu.separar.multi", lang, origen=origen), ephemeral=True)
             return
 
         session_id = active_sessions[0]["id"]
@@ -761,8 +742,7 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
         await db.commit()
 
         await interaction.followup.send(
-            f"✅ ¡Sesión separada!\nEl impostor que estaba usando **{origen}** ahora es rastreado como **{destino}**.\nLa sesión actual ya ha sido purgada del historial de **{origen}**.",
-            ephemeral=True,
+            t("tribu.separar.done", lang, origen=origen, destino=destino), ephemeral=True
         )
 
     # ------------------------------------------------------------------
@@ -794,8 +774,9 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
         apodo: str = None,
         idioma: app_commands.Choice[str] = None,
     ):
+        lang = await resolve_lang(self.bot, interaction.guild_id, "command", interaction.user.id)
         if not await interaction.client.is_authorized_admin(interaction):
-            await interaction.response.send_message("❌ Acceso denegado.", ephemeral=True)
+            await interaction.response.send_message(t("common.denied", lang), ephemeral=True)
             return
 
         jugador_nombre = usuario.display_name
@@ -855,7 +836,7 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
 
         await db.commit()
 
-        embed = discord.Embed(title="✅ PERFIL DE TRIBU CONFIGURADO", color=discord.Color.green())
+        embed = discord.Embed(title=t("tribu.miembro.title", lang), color=discord.Color.green())
         embed.description = (
             f"> 👤 **Usuario:** {usuario.mention}\n"
             f"> 📛 **In-Game:** `{personaje}`\n"
@@ -863,7 +844,7 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
             f"> 🎮 **Steam:** `{steam_safe}`"
             f"{idioma_txt}"
         )
-        embed.set_footer(text="Vinculado al Rancómetro y al Radar K4Ultra  •  /ranking para ver tu posición")
+        embed.set_footer(text=t("tribu.miembro.footer", lang))
         await interaction.response.send_message(embed=embed, ephemeral=False)
         self.bot.dispatch(bus.KDA_UPDATED, interaction.guild_id)
 
@@ -876,13 +857,14 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
         jugadores="Jugadores aliados (separados por comas)",
     )
     async def aliada_crear(self, interaction: discord.Interaction, nombre: str, jugadores: str):
+        lang = await resolve_lang(self.bot, interaction.guild_id, "command", interaction.user.id)
         if not await interaction.client.is_authorized_admin(interaction):
-            await interaction.response.send_message("❌ Acceso denegado.", ephemeral=True)
+            await interaction.response.send_message(t("common.denied", lang), ephemeral=True)
             return
 
         miembros = [j.strip() for j in jugadores.split(",") if j.strip()]
         if not miembros:
-            await interaction.response.send_message("❌ Debes indicar al menos un jugador.", ephemeral=True)
+            await interaction.response.send_message(t("tribu.aliada.no_players", lang), ephemeral=True)
             return
 
         db = self.bot.db
@@ -897,10 +879,16 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
         )
         await db.commit()
         self.bot.dispatch(bus.TRUSTED_MEMBERS_CHANGED, interaction.guild_id)
+        plural = "" if len(miembros) == 1 else ("s" if lang == "en" else "es")
         await interaction.response.send_message(
-            f"🤝 Tribu aliada **{nombre}** registrada con {len(miembros)} jugador"
-            f"{'es' if len(miembros) != 1 else ''}: {', '.join(miembros)}.\n"
-            f"Estos jugadores ya no dispararán alarmas de intrusos.",
+            t(
+                "tribu.aliada.created",
+                lang,
+                nombre=nombre,
+                n=len(miembros),
+                s=plural,
+                jugadores=", ".join(miembros),
+            ),
             ephemeral=True,
         )
 
@@ -924,8 +912,9 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
         opcion: app_commands.Choice[str],
         valor: str,
     ):
+        lang = await resolve_lang(self.bot, interaction.guild_id, "command", interaction.user.id)
         if not await interaction.client.is_authorized_admin(interaction):
-            await interaction.response.send_message("❌ Acceso denegado.", ephemeral=True)
+            await interaction.response.send_message(t("common.denied", lang), ephemeral=True)
             return
 
         valor = valor.strip().strip("'\"")
@@ -937,8 +926,7 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
         )
         if not row:
             await interaction.response.send_message(
-                f"❌ No existe la tribu aliada **{nombre}**. Usa `/tribu aliada lista` para ver las registradas.",
-                ephemeral=True,
+                t("tribu.aliada.not_exist", lang, nombre=nombre), ephemeral=True
             )
             return
 
@@ -946,7 +934,7 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
             await db.execute("UPDATE k4ultra_fixed_tribes SET name = ? WHERE id = ?", (valor, row["id"]))
             await db.commit()
             await interaction.response.send_message(
-                f"✅ Tribu aliada renombrada de **{nombre}** a **{valor}**.", ephemeral=True
+                t("tribu.aliada.renamed", lang, nombre=nombre, valor=valor), ephemeral=True
             )
             return
 
@@ -954,7 +942,7 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
         if opcion.value == "add":
             if any(m.lower() == valor.lower() for m in miembros):
                 await interaction.response.send_message(
-                    f"⚠️ **{valor}** ya está en la tribu aliada **{row['name']}**.", ephemeral=True
+                    t("tribu.aliada.already", lang, valor=valor, name=row["name"]), ephemeral=True
                 )
                 return
             miembros.append(valor)
@@ -965,7 +953,7 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
             await db.commit()
             self.bot.dispatch(bus.TRUSTED_MEMBERS_CHANGED, interaction.guild_id)
             await interaction.response.send_message(
-                f"✅ Se añadió a **{valor}** a la tribu aliada **{row['name']}**.", ephemeral=True
+                t("tribu.aliada.added", lang, valor=valor, name=row["name"]), ephemeral=True
             )
             return
 
@@ -973,7 +961,7 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
         miembros = [m for m in miembros if m.lower() != valor.lower()]
         if len(miembros) == original:
             await interaction.response.send_message(
-                f"❌ **{valor}** no está en la tribu aliada **{row['name']}**.", ephemeral=True
+                t("tribu.aliada.not_member", lang, valor=valor, name=row["name"]), ephemeral=True
             )
             return
         await db.execute(
@@ -983,7 +971,7 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
         await db.commit()
         self.bot.dispatch(bus.TRUSTED_MEMBERS_CHANGED, interaction.guild_id)
         await interaction.response.send_message(
-            f"✅ Se eliminó a **{valor}** de la tribu aliada **{row['name']}**.", ephemeral=True
+            t("tribu.aliada.removed", lang, valor=valor, name=row["name"]), ephemeral=True
         )
 
     @aliada.command(
@@ -991,8 +979,9 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
     )
     @app_commands.describe(nombre="Nombre exacto de la tribu aliada a borrar")
     async def aliada_borrar(self, interaction: discord.Interaction, nombre: str):
+        lang = await resolve_lang(self.bot, interaction.guild_id, "command", interaction.user.id)
         if not await interaction.client.is_authorized_admin(interaction):
-            await interaction.response.send_message("❌ Acceso denegado.", ephemeral=True)
+            await interaction.response.send_message(t("common.denied", lang), ephemeral=True)
             return
 
         db = self.bot.db
@@ -1003,17 +992,17 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
         await db.commit()
         if cursor.rowcount == 0:
             await interaction.response.send_message(
-                f"❌ No existe la tribu aliada **{nombre}**.", ephemeral=True
+                t("tribu.aliada.not_exist_short", lang, nombre=nombre), ephemeral=True
             )
             return
         self.bot.dispatch(bus.TRUSTED_MEMBERS_CHANGED, interaction.guild_id)
         await interaction.response.send_message(
-            f"🗑️ Tribu aliada **{nombre}** eliminada. Sus jugadores volverán a disparar alarmas.",
-            ephemeral=True,
+            t("tribu.aliada.deleted", lang, nombre=nombre), ephemeral=True
         )
 
     @aliada.command(name="lista", description="Muestra las tribus aliadas registradas en el servidor.")
     async def aliada_lista(self, interaction: discord.Interaction):
+        lang = await resolve_lang(self.bot, interaction.guild_id, "command", interaction.user.id)
         db = self.bot.db
         rows = await db.fetchall(
             "SELECT name, members_json FROM k4ultra_fixed_tribes "
@@ -1021,13 +1010,10 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
             (interaction.guild_id,),
         )
 
-        embed = discord.Embed(title="🤝 TRIBUS ALIADAS", color=discord.Color.from_rgb(80, 200, 120))
+        embed = discord.Embed(title=t("tribu.aliada.list_title", lang), color=discord.Color.from_rgb(80, 200, 120))
         if not rows:
-            embed.description = (
-                "💤 No hay tribus aliadas registradas.\n\n"
-                "💡 Un admin puede añadir una con `/tribu aliada crear nombre:X jugadores:a,b,c`."
-            )
-            embed.set_footer(text="Los jugadores de tribus aliadas no disparan alarmas de intrusos.")
+            embed.description = t("tribu.aliada.list_empty", lang)
+            embed.set_footer(text=t("tribu.aliada.list_empty_footer", lang))
             await interaction.response.send_message(embed=embed, ephemeral=True)
             return
 
@@ -1039,16 +1025,18 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
             except (json.JSONDecodeError, TypeError):
                 members = []
             total_players += len(members)
-            members_fmt = ", ".join(f"`{m}`" for m in members) if members else "*(vacía)*"
-            lines.append(
-                f"`#{idx:02d}` 🤝 **{tribe['name']}**  ·  👥 `{len(members)}` jugador"
-                f"{'es' if len(members) != 1 else ''}"
+            members_fmt = (
+                ", ".join(f"`{m}`" for m in members)
+                if members
+                else t("tribu.aliada.list_empty_members", lang)
             )
+            plural = "" if len(members) == 1 else ("s" if lang == "en" else "es")
+            lines.append(t("tribu.aliada.list_item", lang, idx=idx, name=tribe["name"], n=len(members), s=plural))
             lines.append(f"  └ {members_fmt}")
 
-        header = f"🤝 `{len(rows):02d}` Tribus aliadas  ·  👥 `{total_players:02d}` Jugadores cubiertos"
-        embed.description = header + "\n\n## 🤝 ALIADOS REGISTRADOS\n" + "\n".join(lines)
-        embed.set_footer(text="Los jugadores aquí listados NO dispararán alarmas al entrar en mapas vigilados.")
+        header = t("tribu.aliada.list_header", lang, n=len(rows), players=total_players)
+        embed.description = header + "\n\n" + t("tribu.aliada.list_section", lang) + "\n" + "\n".join(lines)
+        embed.set_footer(text=t("tribu.aliada.list_footer", lang))
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
