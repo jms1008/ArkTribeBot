@@ -19,8 +19,12 @@ This channel is for **REAL EMERGENCIES**. Use it responsibly.
   - **Available types:** :red_circle: Raid · :orange_circle: Enemy FOB · :yellow_circle: Soaking · and more.
 - Every posted SOS carries a **✅ Solved** button that anyone can press to delete the message once the emergency is over.
 
-### :man_police_officer: Silent Tip-off (@policia)
-Passive alarm system. If someone in-game kills a dino whose name contains `@policia`, the **Log Processor** detects it in the logs channel and automatically posts a warning here. Useful to detect silent infiltrators without the attacker knowing you caught them.
+### :man_police_officer: Silent Tip-off (@policia / @log)
+Passive alarm system. If someone in-game kills a dino whose name contains `@policia` or `@log`, the **Log Processor** detects it in the logs channel and automatically posts a warning here. Useful to detect silent infiltrators without the attacker knowing you caught them.
+
+### :hammer: Destroyed Structure Detection
+Any log line like `Your 'GLOWTAIL WALL (...)' was destroyed!` fires an **intruder at GLOWTAIL WALL** alert, with the map resolved from the log tag (`(Abr)` → Aberration). Place named trap structures at key spots and you'll instantly know where they're hitting.
+- **Anti-spam:** at most one alert every 10 min for the same structure (a raid spits dozens of lines in a row).
 
 ### :bell: Relation to Intruder Alarms
 The **🔔 Intruder Alarms** module (`/info modulo:🔔 Alarmas`) complements this by warning you when a non-tribe player enters a map you are watching.

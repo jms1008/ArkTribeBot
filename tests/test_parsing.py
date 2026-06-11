@@ -6,7 +6,37 @@ from utils.parsing import (
     ALLOWED_BLACKLIST_FIELDS,
     ALLOWED_DINO_STATS,
     parse_battlemetrics,
+    parse_destruction_line,
 )
+
+
+class TestParseDestructionLine:
+    def test_real_example_with_map_tag(self):
+        """El ejemplo real del usuario: tag de mapa + sufijos de tipo/estado."""
+        line = "(Abr) Day 1, 09:47: Your 'GLOWTAIL WALL (SS Storage Box) (Unlocked) ' was destroyed!"
+        assert parse_destruction_line(line) == ("Abr", "GLOWTAIL WALL")
+
+    def test_without_map_tag(self):
+        line = "Day 312, 22:03: Your 'Puerta Norte (Stone Dinosaur Gateway)' was destroyed!"
+        assert parse_destruction_line(line) == (None, "Puerta Norte")
+
+    def test_name_without_parenthesized_suffix(self):
+        line = "(Rag) Day 5, 11:11: Your 'Torre Vigia' was destroyed!"
+        assert parse_destruction_line(line) == ("Rag", "Torre Vigia")
+
+    def test_spanish_variant(self):
+        line = "(Isla) Day 2, 03:30: Your 'Muro Este (Metal Wall)' fue destruido!"
+        assert parse_destruction_line(line) == ("Isla", "Muro Este")
+
+    def test_non_destruction_lines_return_none(self):
+        assert parse_destruction_line("(Abr) Day 1, 09:47: Tribemember Bob - Lvl 100 was killed!") is None
+        assert parse_destruction_line("hola mundo") is None
+        assert parse_destruction_line("") is None
+        assert parse_destruction_line(None) is None
+
+    def test_case_insensitive(self):
+        line = "(abr) day 9, 01:00: your 'wall sur (Wooden Wall)' WAS DESTROYED!"
+        assert parse_destruction_line(line) == ("abr", "wall sur")
 
 
 class TestParseBattlemetrics:

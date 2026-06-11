@@ -19,8 +19,12 @@ Este canal es para **EMERGENCIAS REALES**. Úsalo con responsabilidad.
   - **Tipos disponibles:** :red_circle: Raideo · :orange_circle: FOB enemiga · :yellow_circle: Soaking · y más.
 - Cada SOS publicado lleva un botón **✅ Solucionado** que cualquiera puede pulsar para borrar el mensaje cuando termine la emergencia.
 
-### :man_police_officer: Chivatazo Silencioso (@policia)
-Sistema pasivo de alarma. Si alguien en el juego mata a un dino cuyo nombre contiene `@policia`, el **Log Processor** lo detecta en el canal de logs y publica automáticamente un aviso aquí. Útil para detectar infiltrados silenciosos sin que el atacante sepa que le has cazado.
+### :man_police_officer: Chivatazo Silencioso (@policia / @log)
+Sistema pasivo de alarma. Si alguien en el juego mata a un dino cuyo nombre contiene `@policia` o `@log`, el **Log Processor** lo detecta en el canal de logs y publica automáticamente un aviso aquí. Útil para detectar infiltrados silenciosos sin que el atacante sepa que le has cazado.
+
+### :hammer: Detección de Estructuras Destruidas
+Cualquier línea del log tipo `Your 'GLOWTAIL WALL (...)' was destroyed!` dispara una alerta de **intruso en GLOWTAIL WALL** con el mapa resuelto a partir del tag del log (`(Abr)` → Aberration). Coloca estructuras-trampa con nombre en zonas clave y sabrás al instante dónde están tocando.
+- **Anti-spam:** máximo una alerta cada 10 min por la misma estructura (una raid tira decenas de líneas seguidas).
 
 ### :bell: Relación con Alarmas de Intrusos
 El módulo **🔔 Alarmas de Intrusos** (`/info modulo:🔔 Alarmas`) complementa esto avisándote cuando un jugador no-tribal entra a un mapa que estés vigilando.

@@ -397,6 +397,10 @@ STRINGS: dict[str, dict[str, str]] = {
         "help.opt.backup": "Backups DB",
         # --- Ranking de muertes: hitos y sarcasmos (log_processor) ---
         "death.friendly_fire": "fuego amigo",
+        "log.sos.alert": "@here 🚨 **SOS en {map}** 🚨\n📝 Log original:\n> {raw}",
+        "log.destroyed.alert": (
+            "@here 🚨 **Intruso detectado en {structure}**  ·  🗺️ `{map}`\n📝 Log original:\n> {raw}"
+        ),
         # --- /sos ---
         "sos.title": "🚨 ALERTA SOS · {tipo}",
         "sos.generic_label": "AYUDA INMEDIATA",
@@ -837,6 +841,10 @@ STRINGS: dict[str, dict[str, str]] = {
         "help.opt.backup": "DB Backups",
         # --- Death ranking: milestones and sarcasm (log_processor) ---
         "death.friendly_fire": "friendly fire",
+        "log.sos.alert": "@here 🚨 **SOS on {map}** 🚨\n📝 Original log:\n> {raw}",
+        "log.destroyed.alert": (
+            "@here 🚨 **Intruder detected at {structure}**  ·  🗺️ `{map}`\n📝 Original log:\n> {raw}"
+        ),
         # --- /sos ---
         "sos.title": "🚨 SOS ALERT · {tipo}",
         "sos.generic_label": "IMMEDIATE HELP",

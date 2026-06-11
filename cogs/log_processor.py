@@ -2,27 +2,56 @@ import json
 import logging
 import random
 import re
+import time
 
 import discord
 from discord.ext import commands
 
+from cogs.server_status import get_guild_servers
 from main import PoliciaSosView, get_guild_logger
 from utils import bus
 from utils.i18n import resolve_lang, t
+from utils.parsing import parse_destruction_line
 
 logger = logging.getLogger("ArkTribeBot")
+
+# Cooldown (segundos) entre alertas por la MISMA estructura destruida. Una raid
+# tira decenas de líneas "was destroyed!" seguidas — sin esto, el canal SOS se
+# llenaría de @here.
+DESTRUCTION_ALERT_COOLDOWN_S = 600
 
 
 class LogProcessor(commands.Cog, name="LogProcessor"):
     """
     Cog encargado de procesar los mensajes en los canales de log.
     Saca la lógica fuera de main.py para mantener el código modular.
-    Incluye el KDA Tracker, SOS Policía y sarcasmos de muerte.
+    Incluye el KDA Tracker, SOS Policía/Log, alertas de destrucción y sarcasmos.
     """
 
     def __init__(self, bot):
         self.bot = bot
         self.logger = logging.getLogger("ArkTribeBot.LogProcessor")
+        # (guild_id, mapa, estructura) → epoch de la última alerta enviada.
+        self._destruction_alerted: dict[tuple, float] = {}
+
+    async def _resolve_map_name(self, guild_id: int, abbrev: str | None) -> str:
+        """Convierte el tag de mapa del log ("Abr") en el nombre completo del
+        servidor configurado ("Aberration"), comparando por prefijo contra los
+        mapas del cluster. Si no hay match, devuelve el tag tal cual."""
+        if not abbrev:
+            return "?"
+        try:
+            servers = await get_guild_servers(self.bot, guild_id)
+        except Exception:
+            servers = {}
+        ab = abbrev.lower()
+        for name in servers:
+            if name.lower().startswith(ab):
+                return name
+            # Tags tipo "Cen" para "The Center": probar prefijo por palabra.
+            if any(word.startswith(ab) for word in name.lower().split()):
+                return name
+        return abbrev
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
@@ -63,9 +92,16 @@ class LogProcessor(commands.Cog, name="LogProcessor"):
                     if embed.title:
                         content_lower += " " + embed.title.lower()
 
+            # Extraer contenido original formateado (común a todas las detecciones)
+            texto_original = message.content
+            if not texto_original and message.embeds and message.embeds[0].description:
+                texto_original = message.embeds[0].description
+
             # Lectura case-insensitive
-            # Detección de mención al rol @policia y emoji 🔪
-            contains_policia = "@policia" in content_lower or "<@&" in content_lower
+            # Detección de tripwires (@policia / @log) y emoji 🔪
+            contains_tripwire = (
+                "@policia" in content_lower or "@log" in content_lower or "<@&" in content_lower
+            )
             contains_knife = (
                 "was :knife:" in content_lower
                 or "fue :knife:" in content_lower
@@ -73,24 +109,56 @@ class LogProcessor(commands.Cog, name="LogProcessor"):
                 or "fue 🔪" in content_lower
             )
 
-            if contains_knife:
-                # Extraer contenido original formateado
-                texto_original = message.content
-                if not texto_original and message.embeds and message.embeds[0].description:
-                    texto_original = message.embeds[0].description
+            # --- Detección de ESTRUCTURAS DESTRUIDAS ---
+            # Ej.: "(Abr) Day 1, 09:47: Your 'GLOWTAIL WALL (SS Storage Box) (Unlocked) ' was destroyed!"
+            # → alerta de intruso en GLOWTAIL WALL de Aberration.
+            destruction = parse_destruction_line(texto_original)
+            if destruction and sos_channel_id:
+                map_abbrev, structure = destruction
+                map_name = await self._resolve_map_name(guild_id, map_abbrev)
 
-                # Procesamiento de SOS de Policía
-                if contains_policia and sos_channel_id:
+                # Cooldown por estructura: una raid genera decenas de líneas seguidas.
+                key = (guild_id, map_name, structure.lower())
+                now_s = time.time()
+                if now_s - self._destruction_alerted.get(key, 0) >= DESTRUCTION_ALERT_COOLDOWN_S:
+                    self._destruction_alerted[key] = now_s
+                    try:
+                        sos_channel = self.bot.get_channel(
+                            sos_channel_id
+                        ) or await self.bot.fetch_channel(sos_channel_id)
+                        if sos_channel:
+                            lang = await resolve_lang(self.bot, guild_id, "command")
+                            await sos_channel.send(
+                                t(
+                                    "log.destroyed.alert",
+                                    lang,
+                                    structure=structure,
+                                    map=map_name,
+                                    raw=texto_original.strip(),
+                                ),
+                                view=PoliciaSosView(),
+                            )
+                            guild_log.info(
+                                f"[Destrucción] Alerta: {structure} ({map_name}) destruida."
+                            )
+                    except Exception as e:
+                        guild_log.error(f"[Destrucción] Error enviando alerta: {e}")
+
+            if contains_knife:
+                # Procesamiento de SOS por tripwire (@policia / @log en el nombre del dino)
+                if contains_tripwire and sos_channel_id:
                     map_match = re.search(r"\((.*?)\)", texto_original)
                     map_name = map_match.group(1) if map_match else "Desconocido"
+                    map_name = await self._resolve_map_name(guild_id, map_name)
                     try:
                         sos_channel = self.bot.get_channel(sos_channel_id) or await self.bot.fetch_channel(
                             sos_channel_id
                         )
                         if sos_channel:
                             view = PoliciaSosView()
+                            lang = await resolve_lang(self.bot, guild_id, "command")
                             await sos_channel.send(
-                                f"@here 🚨 **SOS en {map_name}** 🚨\n📝 Log original:\n> {texto_original}",
+                                t("log.sos.alert", lang, map=map_name, raw=texto_original),
                                 view=view,
                             )
                     except Exception as e:
