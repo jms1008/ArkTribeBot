@@ -151,7 +151,9 @@ K4Ultra passively monitors the cluster to compute behavior, sessions and enemy a
 
 ### :busts_in_silhouette: Identity Management
 Essential so the ranking and blacklist don't fill up with duplicates:
-- **/tribu miembro usuario:@x personaje:Bob steam:"BobSteam" apodo:"Bobby"** — registers a full member in a single call.
+- **/tribu miembro crear usuario:@x personaje:Bob steam:"BobSteam" apodo:"Bobby"** — registers a full member in a single call.
+- **/tribu miembro borrar usuario:@x** — deletes the full profile of someone who left the tribe (profile, character, alias, language; removes them from your own tribe).
+- **/tribu lista** — view of ALL registered tribes: ⭐ own, 🤝 allied and 📌 pinned with their players.
 - **/tribu fusionar origen:OldName destino:NewName** — everything the bot recorded under the old name (hours, maps, sessions, relationships, blacklist) is reassigned to the new one permanently.
 - **/tribu separar origen:... destino:...** — splits the current session of a profile the bot grouped by mistake.
 - **/tribu limpiar** — [Admin] mass cleanup: merges every `name_1`/`_2` with its base.
@@ -166,13 +168,13 @@ The bot uses a **Log Processor** that listens 24/7 to the server Logs channel an
 
 ### :chart_with_downwards_trend: How it works
 - **Automatic detection:** each `fue 🔪` or `was :knife:` in the logs increments the character's death counter. Kills are ignored on purpose (we only count deaths).
-- **Anti-friendly-fire:** if the killer is also a registered member of your tribe (via `/tribu miembro`), the death does NOT count — it only stays in the log with a "friendly fire" notice.
+- **Anti-friendly-fire:** if the killer is also a registered member of your tribe (via `/tribu miembro crear`), the death does NOT count — it only stays in the log with a "friendly fire" notice.
 - **Sarcasm:** the bot replies to each death with a random phrase + random emoji (💀🤡🪦🥚🍗🧻🗑️).
 - **Special milestones:** deaths numbered **1, 10, 50, 69, 100, 300, 420, 666, 777, 1000** and every multiple of 100 trigger messages with a dedicated GIF. Keep racking them up.
 
 ### :busts_in_silhouette: Required Setup
 For the system to attribute deaths:
-- **/tribu miembro usuario:@x personaje:Bob steam:"BobSteam" apodo:"Bobby"** — registers a member.
+- **/tribu miembro crear usuario:@x personaje:Bob steam:"BobSteam" apodo:"Bobby"** — registers a member.
 - **/ranking** — Death Counter Dashboard sorted by casualties.
 
 ### :sunrise: Vote Reminders
@@ -191,7 +193,7 @@ Passive defense system: the bot watches the maps you choose and warns you via **
 Every minute the bot reads the Status cache (no extra traffic) and compares against the map's last snapshot. For each NEW player:
 1. If they're in your own tribe (`/tribu propia`) → ignore.
 2. If they're in an allied tribe (`/tribu aliada`) → ignore.
-3. If they're registered as a known character (`/tribu miembro`) → ignore.
+3. If they're registered as a known character (`/tribu miembro crear`) → ignore.
 4. Otherwise → :rotating_light: **alarm**: the bot sends you a **DM** with the list of intruders and the time each one entered.
 
 ### :pushpin: Detail

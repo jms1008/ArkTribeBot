@@ -108,7 +108,9 @@ async def test_tribu_group_consolidates_tribe_commands(_bot_env):
             "tribu fusionar",
             "tribu separar",
             "tribu limpiar",
-            "tribu miembro",
+            "tribu lista",
+            "tribu miembro crear",
+            "tribu miembro borrar",
         }
         assert expected_subs <= set(names), f"Faltan subcomandos de /tribu: {expected_subs - set(names)}"
 

@@ -223,7 +223,7 @@ class ArkTribeBot(commands.Bot):
             "> 💾 **Backups** — Diario automático + `/admin backup` manual\n\n"
             "## 👥 PARA QUE FUNCIONE TODO\n"
             "> **1.** `/tribu propia crear` — Marca tu base para descartarla del radar.\n"
-            "> **2.** `/tribu miembro usuario:@x personaje:Bob steam:... apodo:...` — "
+            "> **2.** `/tribu miembro crear usuario:@x personaje:Bob steam:... apodo:...` — "
             "Registra cada miembro (vincula in-game + Discord).\n"
             "> **3.** `/tribu fijar nombre:...` — (Opcional) Tribus conocidas (aliados/enemigos).\n\n"
             "💡 **Ayuda en cualquier momento:** `/info modulo:...` o `/help` para el manual."

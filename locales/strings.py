@@ -56,6 +56,24 @@ STRINGS: dict[str, dict[str, str]] = {
         "tribu.separar.done": "✅ ¡Sesión separada!\nEl impostor que estaba usando **{origen}** ahora es rastreado como **{destino}**.\nLa sesión actual ya ha sido purgada del historial de **{origen}**.",
         "tribu.miembro.title": "✅ PERFIL DE TRIBU CONFIGURADO",
         "tribu.miembro.footer": "Vinculado al Rancómetro y al Radar K4Ultra  •  /ranking para ver tu posición",
+        "tribu.miembro.no_profile": "❌ {user} no tiene ficha registrada en este servidor.",
+        "tribu.miembro.borrar_done": "🗑️ Ficha de {user} eliminada:\n{items}",
+        "tribu.miembro.removed.profile": "• Perfil de tribu (Discord ↔ personaje)",
+        "tribu.miembro.removed.character": "• Personaje `{char}` desvinculado del ranking",
+        "tribu.miembro.removed.alias": "• Alias del Radar K4Ultra",
+        "tribu.miembro.removed.lang": "• Preferencia de idioma personal",
+        "tribu.miembro.removed.own_tribe": "• `{steam}` retirado de la tribu propia (volverá a disparar alarmas)",
+        "tribu.lista.title": "🏰 TRIBUS REGISTRADAS",
+        "tribu.lista.empty": (
+            "📭 No hay tribus registradas aún.\n\n"
+            "💡 `/tribu propia crear` para la tuya · `/tribu aliada crear` para aliados · "
+            "`/tribu fijar` para tribus conocidas."
+        ),
+        "tribu.lista.header": "⭐ `{own}` Propia  ·  🤝 `{allies}` Aliadas  ·  📌 `{pinned}` Fijadas  ·  👥 `{players}` Jugadores",
+        "tribu.lista.section.own": "## ⭐ TRIBU PROPIA",
+        "tribu.lista.section.allies": "## 🤝 ALIADAS",
+        "tribu.lista.section.pinned": "## 📌 FIJADAS",
+        "tribu.lista.footer": "⭐ no dispara alarmas · 🤝 no dispara alarmas · 📌 solo etiqueta en el radar",
         "tribu.aliada.no_players": "❌ Debes indicar al menos un jugador.",
         "tribu.aliada.created": "🤝 Tribu aliada **{nombre}** registrada con {n} jugador{s}: {jugadores}.\nEstos jugadores ya no dispararán alarmas de intrusos.",
         "tribu.aliada.not_exist": "❌ No existe la tribu aliada **{nombre}**. Usa `/tribu aliada lista` para ver las registradas.",
@@ -206,7 +224,7 @@ STRINGS: dict[str, dict[str, str]] = {
         "kda.title": "☠️ EL SALÓN DE LA INFAMIA",
         "kda.empty_title": "☠️ El Salón de la Infamia",
         "kda.empty_desc": "Todavía no hay registros de mortalidad en la tribu. ¡Seguid así! 🛡️",
-        "kda.empty_footer": "💡 Los perfiles se vinculan con /tribu miembro",
+        "kda.empty_footer": "💡 Los perfiles se vinculan con /tribu miembro crear",
         "kda.rank.1": "Novato Inocente",
         "kda.rank.2": "Pienso de Dodo",
         "kda.rank.3": "Ceviche de Raptor",
@@ -353,7 +371,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "Selecciona una sección del menú inferior para conocer los comandos y "
             "funcionamiento de cada módulo.\n\n"
             "## 🚀 Empezar\n"
-            "> 💡 **Nuevo miembro:** usa `/tribu miembro` para registrarte (necesario para "
+            "> 💡 **Nuevo miembro:** usa `/tribu miembro crear` para registrarte (necesario para "
             "el ranking de muertes y el radar K4Ultra).\n"
             "> ⚙️ **Admin del servidor:** comienza por la sección *Setup & Admin* para "
             "configurar el bot con `/inicio_ark`."
@@ -474,6 +492,24 @@ STRINGS: dict[str, dict[str, str]] = {
         "tribu.separar.done": "✅ Session split!\nThe impostor who was using **{origen}** is now tracked as **{destino}**.\nThe current session has been purged from **{origen}**'s history.",
         "tribu.miembro.title": "✅ TRIBE PROFILE CONFIGURED",
         "tribu.miembro.footer": "Linked to the Noob-o-meter and the K4Ultra Radar  •  /ranking to see your position",
+        "tribu.miembro.no_profile": "❌ {user} has no profile registered on this server.",
+        "tribu.miembro.borrar_done": "🗑️ Profile of {user} deleted:\n{items}",
+        "tribu.miembro.removed.profile": "• Tribe profile (Discord ↔ character)",
+        "tribu.miembro.removed.character": "• Character `{char}` unlinked from the ranking",
+        "tribu.miembro.removed.alias": "• K4Ultra Radar alias",
+        "tribu.miembro.removed.lang": "• Personal language preference",
+        "tribu.miembro.removed.own_tribe": "• `{steam}` removed from your own tribe (will trigger alarms again)",
+        "tribu.lista.title": "🏰 REGISTERED TRIBES",
+        "tribu.lista.empty": (
+            "📭 No tribes registered yet.\n\n"
+            "💡 `/tribu propia crear` for yours · `/tribu aliada crear` for allies · "
+            "`/tribu fijar` for known tribes."
+        ),
+        "tribu.lista.header": "⭐ `{own}` Own  ·  🤝 `{allies}` Allied  ·  📌 `{pinned}` Pinned  ·  👥 `{players}` Players",
+        "tribu.lista.section.own": "## ⭐ OWN TRIBE",
+        "tribu.lista.section.allies": "## 🤝 ALLIED",
+        "tribu.lista.section.pinned": "## 📌 PINNED",
+        "tribu.lista.footer": "⭐ no alarms · 🤝 no alarms · 📌 radar label only",
         "tribu.aliada.no_players": "❌ You must specify at least one player.",
         "tribu.aliada.created": "🤝 Allied tribe **{nombre}** registered with {n} player{s}: {jugadores}.\nThese players will no longer trigger intruder alarms.",
         "tribu.aliada.not_exist": "❌ Allied tribe **{nombre}** doesn't exist. Use `/tribu aliada lista` to see the registered ones.",
@@ -624,7 +660,7 @@ STRINGS: dict[str, dict[str, str]] = {
         "kda.title": "☠️ THE HALL OF INFAMY",
         "kda.empty_title": "☠️ The Hall of Infamy",
         "kda.empty_desc": "No mortality records in the tribe yet. Keep it up! 🛡️",
-        "kda.empty_footer": "💡 Profiles are linked with /tribu miembro",
+        "kda.empty_footer": "💡 Profiles are linked with /tribu miembro crear",
         "kda.rank.1": "Innocent Rookie",
         "kda.rank.2": "Dodo Feed",
         "kda.rank.3": "Raptor Ceviche",
@@ -771,7 +807,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "Pick a section from the menu below to learn the commands and how each "
             "module works.\n\n"
             "## 🚀 Getting started\n"
-            "> 💡 **New member:** use `/tribu miembro` to register (required for the "
+            "> 💡 **New member:** use `/tribu miembro crear` to register (required for the "
             "death ranking and the K4Ultra radar).\n"
             "> ⚙️ **Server admin:** start with the *Setup & Admin* section to "
             "configure the bot with `/inicio_ark`."

@@ -275,6 +275,17 @@ TABLES: list[str] = [
         PRIMARY KEY (guild_id, character_name)
     )
     """,
+    # Ficha unificada de miembros (gestionada por /tribu miembro crear|borrar).
+    """
+    CREATE TABLE IF NOT EXISTS tribe_profiles (
+        guild_id INTEGER,
+        discord_id INTEGER,
+        ark_character TEXT,
+        steam_id TEXT,
+        alias TEXT,
+        UNIQUE(guild_id, discord_id)
+    )
+    """,
     """
     CREATE TABLE IF NOT EXISTS kda_messages (
         id INTEGER PRIMARY KEY AUTOINCREMENT,

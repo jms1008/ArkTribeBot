@@ -151,7 +151,9 @@ K4Ultra monitoriza de forma pasiva el cluster para calcular el comportamiento, s
 
 ### :busts_in_silhouette: Gestión de Identidades
 Imprescindible para que el ranking y la blacklist no se llenen de duplicados:
-- **/tribu miembro usuario:@x personaje:Bob steam:"BobSteam" apodo:"Bobby"** — registra un miembro completo en una sola llamada.
+- **/tribu miembro crear usuario:@x personaje:Bob steam:"BobSteam" apodo:"Bobby"** — registra un miembro completo en una sola llamada.
+- **/tribu miembro borrar usuario:@x** — elimina la ficha completa de alguien que dejó la tribu (perfil, personaje, alias, idioma; lo saca de la tribu propia).
+- **/tribu lista** — vista de TODAS las tribus registradas: ⭐ propia, 🤝 aliadas y 📌 fijadas con sus jugadores.
 - **/tribu fusionar origen:NombreViejo destino:NombreNuevo** — todo lo que el bot registró bajo el nombre antiguo (horas, mapas, sesiones, relaciones, blacklist) se reasigna al nuevo de forma perpetua.
 - **/tribu separar origen:... destino:...** — separa la sesión actual de un perfil que el bot agrupó por error.
 - **/tribu limpiar** — [Admin] limpieza masiva: une todos los `nombre_1`/`_2` con su base.
@@ -166,13 +168,13 @@ El bot usa un **Log Processor** que escucha 24/7 el canal de Logs del servidor y
 
 ### :chart_with_downwards_trend: Funcionamiento
 - **Detección automática:** cada `fue 🔪` o `was :knife:` en los logs incrementa el contador de muertes del personaje. Las kills se ignoran a propósito (solo contamos muertes).
-- **Anti-fuego-amigo:** si el asesino también es miembro registrado de tu tribu (vía `/tribu miembro`), la muerte NO suma — solo se queda en el log con un aviso de "fuego amigo".
+- **Anti-fuego-amigo:** si el asesino también es miembro registrado de tu tribu (vía `/tribu miembro crear`), la muerte NO suma — solo se queda en el log con un aviso de "fuego amigo".
 - **Sarcasmos:** el bot responde a cada muerte con una frase aleatoria + emoji aleatorio (💀🤡🪦🥚🍗🧻🗑️).
 - **Hitos especiales:** las muertes números **1, 10, 50, 69, 100, 300, 420, 666, 777, 1000** y todos los múltiplos de 100 disparan mensajes con GIF dedicado. Vete acumulando.
 
 ### :busts_in_silhouette: Configuración Obligatoria
 Para que el sistema pueda atribuir muertes:
-- **/tribu miembro usuario:@x personaje:Bob steam:"BobSteam" apodo:"Bobby"** — registra a un miembro.
+- **/tribu miembro crear usuario:@x personaje:Bob steam:"BobSteam" apodo:"Bobby"** — registra a un miembro.
 - **/ranking** — Dashboard del Death Counter ordenado por bajas.
 
 ### :sunrise: Recordatorios de Votos
@@ -191,7 +193,7 @@ Sistema de defensa pasiva: el bot vigila los mapas que elijas y te avisa por **m
 Cada minuto el bot lee el caché de Status (no genera tráfico extra) y compara contra el último snapshot del mapa. Para cada jugador NUEVO:
 1. Si está en tu tribu propia (`/tribu propia`) → ignora.
 2. Si está en una tribu aliada (`/tribu aliada`) → ignora.
-3. Si está registrado como personaje conocido (`/tribu miembro`) → ignora.
+3. Si está registrado como personaje conocido (`/tribu miembro crear`) → ignora.
 4. Si no → :rotating_light: **alarma**: el bot te envía un **DM** con la lista de intrusos y la hora de entrada de cada uno.
 
 ### :pushpin: Detalle

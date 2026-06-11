@@ -21,6 +21,9 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
     tribu = app_commands.Group(name="tribu", description="Gestión de tribus, miembros e identidades.")
     propia = app_commands.Group(name="propia", description="Tu tribu principal del servidor.", parent=tribu)
     aliada = app_commands.Group(name="aliada", description="Tribus aliadas (no disparan alarmas).", parent=tribu)
+    miembro_grp = app_commands.Group(
+        name="miembro", description="Fichas de los miembros de la tribu.", parent=tribu
+    )
 
     def __init__(self, bot):
         self.bot = bot
@@ -748,8 +751,8 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
     # ------------------------------------------------------------------
     # /tribu miembro — registra la ficha de un miembro (antes /perfil_tribu)
     # ------------------------------------------------------------------
-    @tribu.command(
-        name="miembro",
+    @miembro_grp.command(
+        name="crear",
         description="Registra la ficha completa de un miembro (Discord, Personaje, Steam, Apodo).",
     )
     @app_commands.describe(
@@ -847,6 +850,163 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
         embed.set_footer(text=t("tribu.miembro.footer", lang))
         await interaction.response.send_message(embed=embed, ephemeral=False)
         self.bot.dispatch(bus.KDA_UPDATED, interaction.guild_id)
+
+    @miembro_grp.command(
+        name="borrar",
+        description="[Admin] Elimina la ficha de un miembro que ya no está en la tribu.",
+    )
+    @app_commands.describe(usuario="Usuario de Discord cuya ficha quieres eliminar")
+    async def tribu_miembro_borrar(self, interaction: discord.Interaction, usuario: discord.Member):
+        """Borra todo lo que /tribu miembro crear registró para ese usuario:
+        perfil, vínculo personaje→jugador, alias del radar y preferencia de
+        idioma. Si su Steam estaba en la tribu propia, también se le saca de
+        ella (e invalida el snapshot de alarmas para que vuelva a contar como
+        intruso si sigue conectado)."""
+        lang = await resolve_lang(self.bot, interaction.guild_id, "command", interaction.user.id)
+        if not await interaction.client.is_authorized_admin(interaction):
+            await interaction.response.send_message(t("common.denied", lang), ephemeral=True)
+            return
+
+        guild_id = interaction.guild_id
+        db = self.bot.db
+
+        profile = await db.fetchone(
+            "SELECT ark_character, steam_id, alias FROM tribe_profiles "
+            "WHERE guild_id = ? AND discord_id = ?",
+            (guild_id, usuario.id),
+        )
+        if not profile:
+            await interaction.response.send_message(
+                t("tribu.miembro.no_profile", lang, user=usuario.mention), ephemeral=True
+            )
+            return
+
+        ark_char = profile["ark_character"]
+        steam = profile["steam_id"]
+        removed: list[str] = []
+
+        await db.execute(
+            "DELETE FROM tribe_profiles WHERE guild_id = ? AND discord_id = ?", (guild_id, usuario.id)
+        )
+        removed.append(t("tribu.miembro.removed.profile", lang))
+
+        if ark_char:
+            c = await db.execute(
+                "DELETE FROM tribe_characters WHERE guild_id = ? AND character_name = ?",
+                (guild_id, ark_char),
+            )
+            if c.rowcount:
+                removed.append(t("tribu.miembro.removed.character", lang, char=ark_char))
+            c = await db.execute(
+                "DELETE FROM k4ultra_aliases WHERE guild_id = ? AND player_name = ?",
+                (guild_id, ark_char),
+            )
+            if c.rowcount:
+                removed.append(t("tribu.miembro.removed.alias", lang))
+
+        c = await db.execute(
+            "DELETE FROM user_language WHERE guild_id = ? AND user_id = ?", (guild_id, usuario.id)
+        )
+        if c.rowcount:
+            removed.append(t("tribu.miembro.removed.lang", lang))
+
+        # Sacarlo de la tribu propia si su Steam name figura en ella.
+        trusted_changed = False
+        if steam and steam != "No Registrado":
+            own_row = await db.fetchone(
+                "SELECT id, members_json FROM k4ultra_fixed_tribes WHERE guild_id = ? AND is_own = 1",
+                (guild_id,),
+            )
+            if own_row:
+                try:
+                    members = json.loads(own_row["members_json"])
+                except (json.JSONDecodeError, TypeError):
+                    members = []
+                new_members = [m for m in members if m.lower() != steam.lower()]
+                if len(new_members) != len(members):
+                    await db.execute(
+                        "UPDATE k4ultra_fixed_tribes SET members_json = ? WHERE id = ?",
+                        (json.dumps(new_members), own_row["id"]),
+                    )
+                    removed.append(t("tribu.miembro.removed.own_tribe", lang, steam=steam))
+                    trusted_changed = True
+
+        await db.commit()
+        if trusted_changed:
+            self.bot.dispatch(bus.TRUSTED_MEMBERS_CHANGED, guild_id)
+        self.bot.dispatch(bus.KDA_UPDATED, guild_id)
+
+        await interaction.response.send_message(
+            t("tribu.miembro.borrar_done", lang, user=usuario.mention, items="\n".join(removed)),
+            ephemeral=True,
+        )
+
+    @tribu.command(
+        name="lista",
+        description="Muestra todas las tribus registradas: propia, aliadas y fijadas.",
+    )
+    async def tribu_lista(self, interaction: discord.Interaction):
+        lang = await resolve_lang(self.bot, interaction.guild_id, "command", interaction.user.id)
+        db = self.bot.db
+        rows = await db.fetchall(
+            "SELECT name, members_json, is_own, is_ally FROM k4ultra_fixed_tribes "
+            "WHERE guild_id = ? ORDER BY is_own DESC, is_ally DESC, name",
+            (interaction.guild_id,),
+        )
+
+        embed = discord.Embed(
+            title=t("tribu.lista.title", lang), color=discord.Color.from_rgb(90, 0, 180)
+        )
+        if not rows:
+            embed.description = t("tribu.lista.empty", lang)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+
+        own = [r for r in rows if r["is_own"]]
+        allies = [r for r in rows if not r["is_own"] and r["is_ally"]]
+        pinned = [r for r in rows if not r["is_own"] and not r["is_ally"]]
+        total_players = 0
+
+        def render(tribes: list, icon: str) -> list[str]:
+            nonlocal total_players
+            lines = []
+            for idx, tr in enumerate(tribes, start=1):
+                try:
+                    members = json.loads(tr["members_json"])
+                except (json.JSONDecodeError, TypeError):
+                    members = []
+                total_players += len(members)
+                members_fmt = ", ".join(f"`{m}`" for m in members) if members else "*(—)*"
+                lines.append(f"`#{idx:02d}` {icon} **{tr['name']}**  ·  👥 `{len(members)}`")
+                lines.append(f"  └ {members_fmt}")
+            return lines
+
+        sections: list[str] = []
+        if own:
+            sections.append(t("tribu.lista.section.own", lang))
+            sections.extend(render(own, "⭐"))
+        if allies:
+            if sections:
+                sections.append("")
+            sections.append(t("tribu.lista.section.allies", lang))
+            sections.extend(render(allies, "🤝"))
+        if pinned:
+            if sections:
+                sections.append("")
+            sections.append(t("tribu.lista.section.pinned", lang))
+            sections.extend(render(pinned, "📌"))
+
+        header = t(
+            "tribu.lista.header",
+            lang,
+            own=len(own),
+            allies=len(allies),
+            pinned=len(pinned),
+            players=total_players,
+        )
+        embed.description = header + "\n\n" + "\n".join(sections)
+        embed.set_footer(text=t("tribu.lista.footer", lang))
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
     # ------------------------------------------------------------------
     # /tribu aliada — tribus aliadas (antes /aliados)
