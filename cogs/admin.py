@@ -410,25 +410,64 @@ class Admin(commands.Cog):
         await interaction.response.defer(thinking=True, ephemeral=True)
 
         try:
-            # Borrado de datos (usando DELETE al no existir TRUNCATE en SQLite)
+            # Borrado de datos (usando DELETE al no existir TRUNCATE en SQLite).
+            # Lista COMPLETA de tablas con datos del guild — debe cumplir el
+            # contrato del comando ("borra TODOS los datos"). Se excluye a
+            # propósito `guild_config` (canales/roles/idioma) para que el bot
+            # siga configurado tras el wipe, y `sqlite_sequence`.
             tables = [
+                # Módulos de datos
                 "scouts",
-                "scout_messages",
                 "todos",
-                "todo_messages",
                 "dinos",
-                "breeding_messages",
                 "blacklist",
+                "breeding_alarms",
+                # K4Ultra / inteligencia
+                "k4ultra_playtime",
+                "k4ultra_sessions",
+                "k4ultra_relationships",
+                "k4ultra_fixed_tribes",
+                "k4ultra_aliases",
+                "k4ultra_tribe_names",
+                "k4ultra_players_log",
+                "k4ultra_snapshots",
+                "k4ultra_config",
+                "player_identities_link",
+                # Perfiles de miembros y KDA
+                "tribe_profiles",
+                "tribe_characters",
+                "tribe_kda",
+                "tribe_death_log",
+                # Eventos y alarmas
+                "events",
+                "event_options",
+                "map_alarms",
+                "map_last_players",
+                "alarm_alert_messages",
+                # Preferencias de usuario
+                "daily_points_users",
+                "user_language",
+                # Cachés y registros de dashboards
+                "server_status_cache",
+                "guild_loop_state",
+                "scout_messages",
+                "todo_messages",
+                "breeding_messages",
                 "blacklist_messages",
                 "status_online_messages",
                 "status_messages",
+                "kda_messages",
+                "k4ultra_messages",
             ]
 
             guild_id = interaction.guild_id
             db = self.bot.db
             for table in tables:
-                await db.execute(f"DELETE FROM {table} WHERE guild_id = ?", (guild_id,))
-                # Exclusión explícita de `sqlite_sequence` para proteger el autoincremental de datos unificados.
+                try:
+                    await db.execute(f"DELETE FROM {table} WHERE guild_id = ?", (guild_id,))
+                except aiosqlite.OperationalError as e:
+                    # Tabla inexistente en instalaciones antiguas — tolerable.
+                    logger.debug(f"[Wipe] Tabla {table} omitida: {e}")
             await db.commit()
 
             await interaction.followup.send(t("admin.wipe.done", lang), ephemeral=True)
@@ -452,7 +491,9 @@ class Admin(commands.Cog):
         await interaction.response.defer(thinking=True, ephemeral=True)
 
         try:
-            # Borrado de tablas de mensajes (Dashboards)
+            # Borrado de TODAS las tablas de registros de dashboards. Si falta
+            # alguna aquí, ese panel seguiría editándose sobre mensajes viejos
+            # tras el clear (bug que afectaba a ranking y k4ultra).
             tables = [
                 "scout_messages",
                 "todo_messages",
@@ -460,13 +501,17 @@ class Admin(commands.Cog):
                 "blacklist_messages",
                 "status_online_messages",
                 "status_messages",
+                "kda_messages",
+                "k4ultra_messages",
             ]
 
             guild_id = interaction.guild_id
             db = self.bot.db
             for table in tables:
-                await db.execute(f"DELETE FROM {table} WHERE guild_id = ?", (guild_id,))
-                # Vaciado estructural simple preservando el conteo incremental.
+                try:
+                    await db.execute(f"DELETE FROM {table} WHERE guild_id = ?", (guild_id,))
+                except aiosqlite.OperationalError as e:
+                    logger.debug(f"[Clear] Tabla {table} omitida: {e}")
             await db.commit()
 
             await interaction.followup.send(t("admin.clear.done", lang), ephemeral=True)
