@@ -98,9 +98,8 @@ Enemy base reports. Information is power.
   - *Fields:* `tribu`, `mapa`, `coords`, `amenaza` (1-5 :star:, validated), `imagen`, `notas`.
 - **/scout imagen**: Attaches an image from your PC to an existing scout.
   - *Usage:* `/scout imagen id:12 imagen:[attach file]`.
-- **/scout lista**: Opens the Dashboard panel.
-  - *No arguments:* paginated **GLOBAL** list of every map.
-  - *With `mapa:` argument:* private filter showing only that map's bases.
+- **/scout lista**: **PRIVATE** paginated lookup (all bases, or one map's with `mapa:`).
+- **/scout panel**: Creates/renews the **PUBLIC** auto-updating Dashboard.
 - **/scout borrar**: Removes an obsolete report by ID.
 
 ### :mouse_three_button: Panel Buttons & Menu

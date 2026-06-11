@@ -183,8 +183,6 @@ STRINGS: dict[str, dict[str, str]] = {
         "bl.editar.no": "No",
         "bl.editar.no_changes": "⚠️ No has proporcionado ningún campo para actualizar.",
         "bl.editar.updated": "✅ **{jugador}** actualizado:\n{changes}",
-        "bl.modify.link": "Haz clic para ver el comando y modificar: {mention}",
-        "bl.modify.text": "📝 Escribe el comando **`/blacklist editar`** en el chat para modificar a un jugador.",
         # --- Ficha de jugador (build_player_detail_embed) ---
         "pd.title": "👤 Expediente: {name}",
         "pd.title_alias": "👤 Expediente: {name} [{alias}]",
@@ -619,8 +617,6 @@ STRINGS: dict[str, dict[str, str]] = {
         "bl.editar.no": "No",
         "bl.editar.no_changes": "⚠️ You didn't provide any field to update.",
         "bl.editar.updated": "✅ **{jugador}** updated:\n{changes}",
-        "bl.modify.link": "Click to view the command and edit: {mention}",
-        "bl.modify.text": "📝 Type **`/blacklist editar`** in the chat to edit a player.",
         # --- Player dossier (build_player_detail_embed) ---
         "pd.title": "👤 Dossier: {name}",
         "pd.title_alias": "👤 Dossier: {name} [{alias}]",

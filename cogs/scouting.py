@@ -13,6 +13,21 @@ logger = logging.getLogger("ArkTribeBot")
 SCOUT_PAGE_SIZE = 10  # Entradas por página en vista privada
 
 
+async def _fetch_scout_rows(db, guild_id: int, target_map: str) -> list:
+    """Filas de scouts del guild, filtradas por mapa o todas si es 'Global'."""
+    if target_map == "Global":
+        cursor = await db.execute(
+            "SELECT * FROM scouts WHERE guild_id = ? ORDER BY mapa, nivel_amenaza DESC",
+            (guild_id,),
+        )
+    else:
+        cursor = await db.execute(
+            "SELECT * FROM scouts WHERE guild_id = ? AND mapa = ? ORDER BY nivel_amenaza DESC",
+            (guild_id, target_map),
+        )
+    return await cursor.fetchall()
+
+
 class AddScoutModal(discord.ui.Modal, title="Añadir Scout"):
     """Modal para añadir un scout desde el botón del dashboard (sin imagen)."""
 
@@ -790,46 +805,34 @@ class Scouting(commands.Cog):
 
     @scout.command(
         name="lista",
-        description="Menú de Scouting: Sin argumentos = Dashboard PÚBLICO. Con mapa = Vista PRIVADA.",
+        description="Consulta PRIVADA de bases enemigas (todas o filtradas por mapa).",
     )
     @app_commands.autocomplete(mapa=scouting_mapa_autocomplete)
-    @app_commands.describe(mapa="Filtrar por mapa (Opcional)")
+    @app_commands.describe(mapa="Filtrar por mapa (Opcional; sin mapa = todos)")
     async def scout_list(self, interaction: discord.Interaction, mapa: str = None):
+        """Vista privada paginada. Antes este comando también creaba el dashboard
+        público cuando se invocaba sin mapa — esa función vive ahora en /scout panel."""
         target_map = mapa if mapa else "Global"
-        ephemeral_mode = bool(mapa)
+        rows = await _fetch_scout_rows(self.bot.db, interaction.guild_id, target_map)
+        await self._send_private_scout_page(interaction, rows, target_map, page=0)
 
+    @scout.command(
+        name="panel",
+        description="Crea el dashboard PÚBLICO de scouting (auto-actualizable).",
+    )
+    async def scout_panel(self, interaction: discord.Interaction):
+        rows = await _fetch_scout_rows(self.bot.db, interaction.guild_id, "Global")
+        lang = await resolve_lang(self.bot, interaction.guild_id, "periodic")
+        embed, page, view = await build_scout_embed_view(self.bot, rows, "Global", 0, lang=lang)
+
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=False)
+        message = await interaction.original_response()
         db = self.bot.db
-        if target_map == "Global":
-            cursor = await db.execute(
-                "SELECT * FROM scouts WHERE guild_id = ? ORDER BY mapa, nivel_amenaza DESC",
-                (interaction.guild_id,),
-            )
-        else:
-            cursor = await db.execute(
-                "SELECT * FROM scouts WHERE guild_id = ? AND mapa = ? ORDER BY nivel_amenaza DESC",
-                (
-                    interaction.guild_id,
-                    target_map,
-                ),
-            )
-        rows = await cursor.fetchall()
-
-        if ephemeral_mode:
-            # Vista privada paginada — página 0
-            await self._send_private_scout_page(interaction, rows, target_map, page=0)
-        else:
-            # Modo Global público (Dashboard persistente)
-            lang = await resolve_lang(self.bot, interaction.guild_id, "periodic")
-            embed, page, view = await build_scout_embed_view(self.bot, rows, target_map, 0, lang=lang)
-
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=False)
-            message = await interaction.original_response()
-            db = self.bot.db
-            await db.execute(
-                "INSERT INTO scout_messages (guild_id, channel_id, message_id, map_filter) VALUES (?, ?, ?, ?)",
-                (interaction.guild_id, interaction.channel_id, message.id, "Global"),
-            )
-            await db.commit()
+        await db.execute(
+            "INSERT INTO scout_messages (guild_id, channel_id, message_id, map_filter) VALUES (?, ?, ?, ?)",
+            (interaction.guild_id, interaction.channel_id, message.id, "Global"),
+        )
+        await db.commit()
 
     async def _send_private_scout_page(
         self,
@@ -868,7 +871,8 @@ class Scouting(commands.Cog):
                 threat_bar = "🔴" * row["nivel_amenaza"] + "⚫" * (5 - row["nivel_amenaza"])
                 notas = (row["notas"] or "").strip()
                 nota_corta = (notas[:50] + "...") if len(notas) > 50 else notas
-                lines.append(f"`#{row['id']:03d}` 🏴 **{row['tribu_enemiga']}**")
+                map_prefix = f"**[{row['mapa']}]** " if target_map == "Global" else ""
+                lines.append(f"`#{row['id']:03d}` 🏴 {map_prefix}**{row['tribu_enemiga']}**")
                 lines.append(f"  📍 `{row['coordenadas']}`  ·  {threat_bar}")
                 if nota_corta:
                     lines.append(f"  ╰ 📝 *{nota_corta}*")
@@ -903,15 +907,7 @@ class ScoutPrivateListView(discord.ui.View):
     async def prev_page_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         cog = self.bot.cogs.get("Scouting")
         if cog:
-            db = self.bot.db
-            cursor = await db.execute(
-                "SELECT * FROM scouts WHERE guild_id = ? AND mapa = ? ORDER BY nivel_amenaza DESC",
-                (
-                    interaction.guild_id,
-                    self.target_map,
-                ),
-            )
-            rows = await cursor.fetchall()
+            rows = await _fetch_scout_rows(self.bot.db, interaction.guild_id, self.target_map)
             await cog._send_private_scout_page(
                 interaction,
                 rows,
@@ -924,15 +920,7 @@ class ScoutPrivateListView(discord.ui.View):
     async def next_page_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         cog = self.bot.cogs.get("Scouting")
         if cog:
-            db = self.bot.db
-            cursor = await db.execute(
-                "SELECT * FROM scouts WHERE guild_id = ? AND mapa = ? ORDER BY nivel_amenaza DESC",
-                (
-                    interaction.guild_id,
-                    self.target_map,
-                ),
-            )
-            rows = await cursor.fetchall()
+            rows = await _fetch_scout_rows(self.bot.db, interaction.guild_id, self.target_map)
             total_pages = max(1, (len(rows) + SCOUT_PAGE_SIZE - 1) // SCOUT_PAGE_SIZE)
             await cog._send_private_scout_page(
                 interaction,

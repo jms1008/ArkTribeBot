@@ -98,9 +98,8 @@ Reporte de bases enemigas. La información es poder.
   - *Campos:* `tribu`, `mapa`, `coords`, `amenaza` (1-5 :star:, validado), `imagen`, `notas`.
 - **/scout imagen**: Adjunta una imagen desde tu PC a un scout ya existente.
   - *Uso:* `/scout imagen id:12 imagen:[adjuntar archivo]`.
-- **/scout lista**: Abre el panel Dashboard.
-  - *Sin argumentos:* lista **GLOBAL** paginada de todos los mapas.
-  - *Con argumento `mapa:`*: filtro privado que te enseña solo las bases de ese mapa.
+- **/scout lista**: Consulta **PRIVADA** paginada (todas las bases, o solo las de un mapa con `mapa:`).
+- **/scout panel**: Crea/renueva el Dashboard **PÚBLICO** auto-actualizable.
 - **/scout borrar**: Elimina un reporte obsoleto por ID.
 
 ### :mouse_three_button: Botones y Menú del Panel

@@ -801,21 +801,9 @@ class BlacklistView(discord.ui.View):
         row=0,
     )
     async def modify_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer(ephemeral=True)
-        try:
-            # Buscar el grupo /blacklist para construir la mención del subcomando.
-            cmds = await self.bot.tree.fetch_commands()
-            cmd_id = next((c.id for c in cmds if c.name == "blacklist"), None)
-
-            if cmd_id:
-                mention = f"</blacklist editar:{cmd_id}>"
-                await interaction.followup.send(
-                    t("bl.modify.link", self.lang, mention=mention), ephemeral=True
-                )
-            else:
-                await interaction.followup.send(t("bl.modify.text", self.lang), ephemeral=True)
-        except Exception:
-            await interaction.followup.send(t("bl.modify.text", self.lang), ephemeral=True)
+        # Modal real de edición rápida (ID + campo + valor). Para ediciones con
+        # varios campos a la vez sigue existiendo /blacklist editar.
+        await interaction.response.send_modal(ModifyBlacklistModal(self.bot))
 
     @discord.ui.button(
         label="Eliminar",
