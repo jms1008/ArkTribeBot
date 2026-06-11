@@ -301,6 +301,8 @@ class TestAlertDelivery:
         content = dm.send.call_args.kwargs["content"]
         assert "Ragnarok" in content
         assert "123" in content and "bob" in content
+        # La hora va como timestamp de Discord (<t:epoch:t>) → hora local de cada usuario.
+        assert "<t:" in content and ":t>" in content
 
         row = await mock_bot.db.fetchone(
             "SELECT message_id, intruders_json FROM alarm_alert_messages "

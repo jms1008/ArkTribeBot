@@ -148,7 +148,7 @@ STRINGS: dict[str, dict[str, str]] = {
         ),
         "alarm.cmd.error": "❌ Ocurrió un error al procesar la alarma: {err}",
         "alarm.dm.header": "⚠️ **Alerta de intrusos** en `{map}`",
-        "alarm.dm.entry": "• **{name}**  ·  ⏱️ `{time}`",
+        "alarm.dm.entry": "• **{name}**  ·  ⏱️ {time}",
         "alarm.dm.footer": "-# Este mensaje se actualiza si entran más intrusos · Pulsa Silenciar para descartarlo",
         # --- To-Do dashboard ---
         "todo.title": "📋 LISTA DE TAREAS",
@@ -588,7 +588,7 @@ STRINGS: dict[str, dict[str, str]] = {
         ),
         "alarm.cmd.error": "❌ An error occurred while processing the alarm: {err}",
         "alarm.dm.header": "⚠️ **Intruder alert** on `{map}`",
-        "alarm.dm.entry": "• **{name}**  ·  ⏱️ `{time}`",
+        "alarm.dm.entry": "• **{name}**  ·  ⏱️ {time}",
         "alarm.dm.footer": "-# This message updates if more intruders enter · Press Silence to dismiss it",
         # --- To-Do dashboard ---
         "todo.title": "📋 TASK LIST",

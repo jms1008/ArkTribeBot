@@ -1,5 +1,6 @@
 import json
 import logging
+import time
 from collections import Counter
 from datetime import datetime
 
@@ -64,10 +65,17 @@ async def _get_trusted_members(bot, guild_id: int) -> set[str]:
 
 
 def _format_alert_content(map_name: str, entries: list[dict], lang: str) -> str:
-    """Renderiza el contenido del DM de alerta: cabecera + lista de intrusos con hora."""
+    """Renderiza el contenido del DM de alerta: cabecera + lista de intrusos con hora.
+
+    La hora se emite como timestamp de Discord (``<t:epoch:t>``) para que cada
+    usuario la vea en SU zona horaria local (el reloj del servidor no es el del
+    jugador). Entradas antiguas pueden traer "time" (HH:MM literal) en vez de
+    "ts" — se renderizan tal cual como fallback.
+    """
     lines = [t("alarm.dm.header", lang, map=map_name), ""]
     for e in entries:
-        lines.append(t("alarm.dm.entry", lang, name=e["name"], time=e["time"]))
+        time_display = f"<t:{e['ts']}:t>" if "ts" in e else f"`{e.get('time', '?')}`"
+        lines.append(t("alarm.dm.entry", lang, name=e["name"], time=time_display))
     lines.append("")
     lines.append(t("alarm.dm.footer", lang))
     return "\n".join(lines)
@@ -89,9 +97,11 @@ async def _deliver_intruder_alert(bot, guild_id: int, user_id: int, map_name: st
     lang = await resolve_lang(bot, guild_id, "command", user_id)
     now = datetime.utcnow()
     now_iso = now.strftime("%Y-%m-%d %H:%M:%S")
-    time_str = now.strftime("%H:%M")
+    # Epoch para timestamps de Discord (<t:..:t>): cada cliente lo muestra en
+    # su hora local, independientemente de la zona horaria del servidor.
+    epoch = int(time.time())
 
-    new_entries = [{"name": n, "time": time_str} for n in intruders]
+    new_entries = [{"name": n, "ts": epoch} for n in intruders]
 
     try:
         user = bot.get_user(user_id) or await bot.fetch_user(user_id)

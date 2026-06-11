@@ -1160,10 +1160,11 @@ class Warfare(commands.Cog):
             color=discord.Color.brand_red(),
         )
 
-        # Badges en la primera línea: mapa, fuerzas, hora.
-        from datetime import datetime
+        # Badges en la primera línea: mapa, fuerzas, hora. La hora se emite como
+        # timestamp de Discord para que cada miembro la vea en SU zona horaria.
+        import time as _time
 
-        hora = datetime.now().strftime("%H:%M")
+        epoch = int(_time.time())
         badges = []
         if mapa:
             badges.append(f"🗺️ `{mapa}`")
@@ -1171,7 +1172,7 @@ class Warfare(commands.Cog):
             badges.append(f"⚔️ `{atacantes}` {t('sos.enemies', lang)}")
         if defensores is not None:
             badges.append(f"🛡️ `{defensores}` {t('sos.allies', lang)}")
-        badges.append(f"🕒 `{hora}`")
+        badges.append(f"🕒 <t:{epoch}:t>")
 
         desc_lines = [
             "  ·  ".join(badges),
