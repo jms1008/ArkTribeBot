@@ -225,9 +225,11 @@ Recordatorio personal por DM para que canjees los puntos diarios votando tu clus
 
 Planifica asaltos, defensas, jefes o farmeos coordinados con votación grupal.
 
-### :calendar: Comando Único
-- **/evento titulo:"Dragon Alpha" descripcion:"Traer 10 rexes" opcion_1:"Vie 22:00" opcion_2:"Sáb 18:00" opcion_3:... opcion_4:...**
+### :calendar: Comandos
+- **/evento crear titulo:"Dragon Alpha" descripcion:"Traer 10 rexes" opcion_1:"Vie 22:00" opcion_2:"Sáb 18:00" opcion_3:... opcion_4:...**
   - Mínimo **2 opciones** válidas; opcion_3 y opcion_4 son opcionales.
+  - Al crearla, el bot te confirma el **ID** de la encuesta en privado.
+- **/evento cerrar id:N** — Cierra la votación: desactiva los botones y archiva la encuesta. Solo el creador o un admin.
 
 ### :ballot_box: Votación
 El bot crea un embed con un botón por opción y un botón extra **❌ No puedo asistir**.

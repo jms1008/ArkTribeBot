@@ -69,7 +69,8 @@ async def test_create_event_success(events_cog, mock_interaction):
     )
 
     mock_interaction.response.defer.assert_called_once()
-    mock_interaction.followup.send.assert_called_once()
+    # Dos envíos: la encuesta pública + la confirmación efímera con el ID.
+    assert mock_interaction.followup.send.call_count == 2
 
     # Verificar persistencia en base de datos
     async with aiosqlite.connect(events_cog.bot.db_name) as db:

@@ -225,9 +225,11 @@ A personal DM reminder to redeem your daily points by voting your cluster on the
 
 Plan raids, defenses, bosses or coordinated farming with group voting.
 
-### :calendar: Single Command
-- **/evento titulo:"Alpha Dragon" descripcion:"Bring 10 rexes" opcion_1:"Fri 22:00" opcion_2:"Sat 18:00" opcion_3:... opcion_4:...**
+### :calendar: Commands
+- **/evento crear titulo:"Alpha Dragon" descripcion:"Bring 10 rexes" opcion_1:"Fri 22:00" opcion_2:"Sat 18:00" opcion_3:... opcion_4:...**
   - Minimum **2 valid options**; opcion_3 and opcion_4 are optional.
+  - When created, the bot privately confirms the poll's **ID**.
+- **/evento cerrar id:N** — Closes the vote: disables the buttons and archives the poll. Creator or admin only.
 
 ### :ballot_box: Voting
 The bot creates an embed with one button per option plus an extra **❌ Can't attend** button.

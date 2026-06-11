@@ -195,11 +195,14 @@ class EventPollView(discord.ui.View):
 
 
 class Events(commands.Cog):
+    # Grupo de eventos LFG (antes /evento suelto; ahora crear + cerrar).
+    evento = app_commands.Group(name="evento", description="Encuestas para organizar bosses y eventos.")
+
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(
-        name="evento",
+    @evento.command(
+        name="crear",
         description="Crea una encuesta para organizar un Boss o Evento",
     )
     @app_commands.describe(
@@ -292,6 +295,63 @@ class Events(commands.Cog):
             (msg.channel.id, msg.id, event_id),
         )
         await db.commit()
+
+        # Confirmar al creador el ID (necesario para /evento cerrar).
+        await interaction.followup.send(
+            t("evento.created_id", lang, id=event_id), ephemeral=True
+        )
+
+    @evento.command(name="cerrar", description="Cierra una encuesta: desactiva los botones y la archiva.")
+    @app_commands.describe(id="ID del evento a cerrar (se muestra al crearlo)")
+    async def close_event(self, interaction: discord.Interaction, id: int):
+        lang = await resolve_lang(self.bot, interaction.guild_id, "command", interaction.user.id)
+        db = self.bot.db
+
+        row = await db.fetchone(
+            "SELECT title, creator_id, channel_id, message_id, status FROM events "
+            "WHERE id = ? AND guild_id = ?",
+            (id, interaction.guild_id),
+        )
+        if not row:
+            await interaction.response.send_message(t("evento.cerrar.not_found", lang, id=id), ephemeral=True)
+            return
+        if row["status"] != "active":
+            await interaction.response.send_message(
+                t("evento.cerrar.already", lang, id=id), ephemeral=True
+            )
+            return
+
+        # Solo el creador del evento o un admin pueden cerrarlo.
+        is_admin = await interaction.client.is_authorized_admin(interaction)
+        if interaction.user.id != row["creator_id"] and not is_admin:
+            await interaction.response.send_message(t("evento.cerrar.no_perms", lang), ephemeral=True)
+            return
+
+        await db.execute(
+            "UPDATE events SET status = 'closed' WHERE id = ? AND guild_id = ?",
+            (id, interaction.guild_id),
+        )
+        await db.commit()
+
+        # Desactivar los botones del mensaje original y marcarlo como cerrado.
+        try:
+            channel = self.bot.get_channel(row["channel_id"]) or await self.bot.fetch_channel(
+                row["channel_id"]
+            )
+            msg = await channel.fetch_message(row["message_id"])
+            if msg.embeds:
+                emb = msg.embeds[0]
+                emb.set_footer(text=t("evento.cerrar.footer", lang))
+                emb.color = discord.Color.dark_grey()
+                await msg.edit(embed=emb, view=None)
+            else:
+                await msg.edit(view=None)
+        except (discord.NotFound, discord.Forbidden) as e:
+            logger.warning(f"[Events] No se pudo editar el mensaje del evento {id}: {e}")
+
+        await interaction.response.send_message(
+            t("evento.cerrar.done", lang, titulo=row["title"], id=id), ephemeral=True
+        )
 
 
 async def setup(bot):
