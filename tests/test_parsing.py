@@ -42,27 +42,64 @@ class TestParseDestructionLine:
 
 
 class TestResolveMapFromTag:
-    CLUSTER = ["Aberration", "Crystal Isles", "The Island", "The Center", "Ragnarok", "Lost Island"]
+    # Cluster realista (los nombres configurados en battlemetrics_urls).
+    CLUSTER = [
+        "Aberration",
+        "Crystal Isles",
+        "Extinction",
+        "Fjordur",
+        "Gen1",
+        "Gen2",
+        "Hub",
+        "Lost Island",
+        "Ragnarok",
+        "Scorched Earth",
+        "The Center",
+        "The Island",
+        "Valguero",
+    ]
 
-    def test_full_name_prefix(self):
-        assert resolve_map_from_tag("Abr", self.CLUSTER) == "Aberration"
-        assert resolve_map_from_tag("Rag", self.CLUSTER) == "Ragnarok"
+    @pytest.mark.parametrize(
+        ("tag", "expected"),
+        [
+            # Tabla REAL de tags del cluster (confirmada por el usuario).
+            ("Gn2", "Gen2"),
+            ("Hub", "Hub"),
+            ("Ext", "Extinction"),
+            ("Gen", "Gen1"),
+            ("Cen", "The Center"),
+            ("Abr", "Aberration"),
+            ("Fjo", "Fjordur"),
+            ("Isl", "The Island"),
+            ("Rag", "Ragnarok"),
+            # Tags probables de los 3 mapas pendientes de confirmar.
+            ("Sco", "Scorched Earth"),
+            ("SE", "Scorched Earth"),
+            ("Cry", "Crystal Isles"),
+            ("CI", "Crystal Isles"),
+            ("Los", "Lost Island"),
+            ("LI", "Lost Island"),
+            ("Val", "Valguero"),
+        ],
+    )
+    def test_known_cluster_tags(self, tag, expected):
+        assert resolve_map_from_tag(tag, self.CLUSTER) == expected
 
-    def test_isl_resolves_to_the_island_not_crystal_isles(self):
-        """Regresión: '(Isl)' casaba con Crystal ISLes por prefijo de palabra.
-        La primera palabra significativa de The Island es 'island' → gana."""
-        assert resolve_map_from_tag("Isl", self.CLUSTER) == "The Island"
+    def test_gen_does_not_match_gen2(self):
+        """'Gen' es Genesis 1: la tabla evita que la heurística lo confunda con Gen2."""
+        assert resolve_map_from_tag("Gen", self.CLUSTER) == "Gen1"
 
-    def test_article_skipping_for_the_center(self):
-        assert resolve_map_from_tag("Cen", self.CLUSTER) == "The Center"
+    def test_known_tag_without_configured_server_returns_canonical(self):
+        """Tag conocido pero mapa no configurado → nombre canónico legible."""
+        assert resolve_map_from_tag("Fjo", ["Ragnarok"]) == "Fjordur"
 
-    def test_crystal_isles_via_first_word(self):
+    def test_configured_name_extending_candidate_matches(self):
+        """'Aberration PVP' configurado cuenta como 'Aberration'."""
+        assert resolve_map_from_tag("Abr", ["Aberration PVP"]) == "Aberration PVP"
+
+    def test_unknown_tag_uses_heuristic(self):
+        """Tags fuera de la tabla caen a la heurística por prefijo/subsecuencia."""
         assert resolve_map_from_tag("Crys", self.CLUSTER) == "Crystal Isles"
-
-    def test_second_word_only_match_falls_to_pass3(self):
-        """'Isles' no es primera palabra significativa de nada que empiece así
-        salvo... The Island ('island' NO empieza por 'isles'), Crystal Isles sí
-        la contiene como segunda palabra → pase 3."""
         assert resolve_map_from_tag("Isles", self.CLUSTER) == "Crystal Isles"
 
     def test_unknown_tag_returned_verbatim(self):

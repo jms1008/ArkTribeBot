@@ -46,6 +46,29 @@ def parse_destruction_line(text: str | None) -> tuple[str | None, str, str | Non
 # Artículos a ignorar al casar tags de mapa contra nombres de servidor.
 _MAP_ARTICLES = frozenset({"the", "la", "el", "los", "las"})
 
+# Tags de mapa CONOCIDOS del log del cluster → candidatos de nombre canónico.
+# Se consulta ANTES que la heurística: los tags del juego son arbitrarios
+# ("Gn2" para Genesis 2, "Gen" para Genesis 1) y la heurística no puede
+# desambiguarlos. Cada tag lista varias formas posibles del nombre configurado.
+KNOWN_MAP_TAGS: dict[str, tuple[str, ...]] = {
+    "abr": ("Aberration",),
+    "cen": ("The Center", "Center"),
+    "ci": ("Crystal Isles",),
+    "cry": ("Crystal Isles",),
+    "ext": ("Extinction",),
+    "fjo": ("Fjordur",),
+    "gen": ("Gen1", "Genesis 1", "Genesis"),
+    "gn2": ("Gen2", "Genesis 2"),
+    "hub": ("Hub",),
+    "isl": ("The Island", "Island"),
+    "li": ("Lost Island",),
+    "los": ("Lost Island",),
+    "rag": ("Ragnarok",),
+    "sco": ("Scorched Earth",),
+    "se": ("Scorched Earth",),
+    "val": ("Valguero",),
+}
+
 
 def _is_subsequence(needle: str, haystack: str) -> bool:
     """True si los caracteres de ``needle`` aparecen en ``haystack`` en orden
@@ -55,16 +78,18 @@ def _is_subsequence(needle: str, haystack: str) -> bool:
 
 
 def resolve_map_from_tag(tag: str | None, server_names: list[str]) -> str:
-    """Resuelve el tag de mapa de un log ("Isl", "Abr") al nombre completo del
-    servidor configurado, con prioridad para evitar ambigüedades:
+    """Resuelve el tag de mapa de un log ("Isl", "Abr", "Gn2") al nombre del
+    servidor configurado.
 
+    Primero consulta la tabla de tags conocidos del cluster (KNOWN_MAP_TAGS):
+    "Gn2" → Gen2, "Gen" → Gen1, "Isl" → The Island, etc. Si el tag es conocido
+    pero ese mapa no figura en la config, devuelve el nombre canónico igualmente.
+
+    Para tags desconocidos cae a una heurística con prioridad:
     1. Prefijo del nombre completo.
-    2. Prefijo de la primera palabra significativa, saltando artículos
-       ("Isl" → "The Island" vía "island"; NO "Crystal Isles", cuya primera
-       palabra es "crystal" — ese era el bug del tag (Isl)).
-    3. Prefijo de cualquier palabra ("Isles" llegaría aquí).
-    4. Subsecuencia de la primera palabra significativa ("Abr" → "Aberration":
-       A-B-e-R, las abreviaturas del juego saltan letras).
+    2. Prefijo de la primera palabra significativa, saltando artículos.
+    3. Prefijo de cualquier palabra.
+    4. Subsecuencia de la primera palabra significativa.
     5. Subsecuencia de cualquier palabra.
 
     Si nada casa, devuelve el tag tal cual.
@@ -74,6 +99,20 @@ def resolve_map_from_tag(tag: str | None, server_names: list[str]) -> str:
     ab = tag.strip().lower()
     if not ab:
         return "?"
+
+    # Pase 0: tabla de tags conocidos.
+    if ab in KNOWN_MAP_TAGS:
+        def _norm(s: str) -> str:
+            return s.lower().replace(" ", "")
+
+        for cand in KNOWN_MAP_TAGS[ab]:
+            for name in server_names:
+                # Igualdad normalizada o el nombre configurado extiende al
+                # candidato ("Aberration PVP" cuenta como "Aberration").
+                if _norm(name) == _norm(cand) or _norm(name).startswith(_norm(cand)):
+                    return name
+        # Tag conocido sin servidor configurado: nombre canónico legible.
+        return KNOWN_MAP_TAGS[ab][0]
 
     # Pase 1: prefijo del nombre completo.
     for name in server_names:
