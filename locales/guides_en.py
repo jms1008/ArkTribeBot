@@ -22,9 +22,10 @@ This channel is for **REAL EMERGENCIES**. Use it responsibly.
 ### :man_police_officer: Silent Tip-off (@policia / @log)
 Passive alarm system. If someone in-game kills a dino whose name contains `@policia` or `@log`, the **Log Processor** detects it in the logs channel and automatically posts a warning here. Useful to detect silent infiltrators without the attacker knowing you caught them.
 
-### :hammer: Destroyed Structure Detection
-Any log line like `Your 'GLOWTAIL WALL (...)' was destroyed!` fires an **intruder at GLOWTAIL WALL** alert, with the map resolved from the log tag (`(Abr)` → Aberration). Place named trap structures at key spots and you'll instantly know where they're hitting.
-- **Anti-spam:** at most one alert every 10 min for the same structure (a raid spits dozens of lines in a row).
+### :hammer: Trap Boxes (SS Storage Box)
+If a named **SS Storage Box** gets destroyed, an **intruder at [box name]** alert fires, with the map resolved from the log tag (`(Abr)` → Aberration, `(Isl)` → The Island). Place named boxes at key spots and you'll instantly know where they're hitting.
+- **Only** `SS Storage Box` triggers the alert — other destroyed structures (walls, gates...) are ignored to avoid noise during raids.
+- **Anti-spam:** at most one alert every 10 min for the same box.
 
 ### :bell: Relation to Intruder Alarms
 The **🔔 Intruder Alarms** module (`/info modulo:🔔 Alarmas`) complements this by warning you when a non-tribe player enters a map you are watching.

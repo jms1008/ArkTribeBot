@@ -11,7 +11,7 @@ from cogs.server_status import get_guild_servers
 from main import PoliciaSosView, get_guild_logger
 from utils import bus
 from utils.i18n import resolve_lang, t
-from utils.parsing import parse_destruction_line
+from utils.parsing import parse_destruction_line, resolve_map_from_tag
 
 logger = logging.getLogger("ArkTribeBot")
 
@@ -19,6 +19,12 @@ logger = logging.getLogger("ArkTribeBot")
 # tira decenas de líneas "was destroyed!" seguidas — sin esto, el canal SOS se
 # llenaría de @here.
 DESTRUCTION_ALERT_COOLDOWN_S = 600
+
+# Solo este tipo de estructura dispara la alerta de destrucción: las cajas
+# SS Storage Box con nombre actúan como trampas señalizadoras colocadas a
+# propósito. El resto de estructuras destruidas (muros, puertas...) se ignoran
+# para no generar ruido en cada raid.
+DESTRUCTION_ALERT_TYPE = "ss storage box"
 
 
 class LogProcessor(commands.Cog, name="LogProcessor"):
@@ -35,23 +41,15 @@ class LogProcessor(commands.Cog, name="LogProcessor"):
         self._destruction_alerted: dict[tuple, float] = {}
 
     async def _resolve_map_name(self, guild_id: int, abbrev: str | None) -> str:
-        """Convierte el tag de mapa del log ("Abr") en el nombre completo del
-        servidor configurado ("Aberration"), comparando por prefijo contra los
-        mapas del cluster. Si no hay match, devuelve el tag tal cual."""
-        if not abbrev:
-            return "?"
+        """Convierte el tag de mapa del log ("Abr", "Isl") en el nombre completo
+        del servidor configurado, delegando en utils.parsing.resolve_map_from_tag
+        (con prioridad por primera palabra significativa para evitar que "Isl"
+        casara con Crystal Isles en vez de The Island)."""
         try:
             servers = await get_guild_servers(self.bot, guild_id)
         except Exception:
             servers = {}
-        ab = abbrev.lower()
-        for name in servers:
-            if name.lower().startswith(ab):
-                return name
-            # Tags tipo "Cen" para "The Center": probar prefijo por palabra.
-            if any(word.startswith(ab) for word in name.lower().split()):
-                return name
-        return abbrev
+        return resolve_map_from_tag(abbrev, list(servers.keys()))
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
@@ -109,12 +107,18 @@ class LogProcessor(commands.Cog, name="LogProcessor"):
                 or "fue 🔪" in content_lower
             )
 
-            # --- Detección de ESTRUCTURAS DESTRUIDAS ---
+            # --- Detección de ESTRUCTURAS DESTRUIDAS (solo SS Storage Box) ---
             # Ej.: "(Abr) Day 1, 09:47: Your 'GLOWTAIL WALL (SS Storage Box) (Unlocked) ' was destroyed!"
-            # → alerta de intruso en GLOWTAIL WALL de Aberration.
+            # → alerta de intruso en GLOWTAIL WALL de Aberration. Otros tipos de
+            # estructura (muros, puertas...) se ignoran a propósito.
             destruction = parse_destruction_line(texto_original)
-            if destruction and sos_channel_id:
-                map_abbrev, structure = destruction
+            if (
+                destruction
+                and sos_channel_id
+                and destruction[2]
+                and destruction[2].strip().lower() == DESTRUCTION_ALERT_TYPE
+            ):
+                map_abbrev, structure, _stype = destruction
                 map_name = await self._resolve_map_name(guild_id, map_abbrev)
 
                 # Cooldown por estructura: una raid genera decenas de líneas seguidas.
