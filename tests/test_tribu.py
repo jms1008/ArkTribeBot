@@ -74,6 +74,74 @@ async def test_miembro_borrar_removes_everything(k4_cog, mock_interaction, mock_
 
 
 @pytest.mark.asyncio
+async def test_miembro_crear_syncs_steam_into_own_tribe(k4_cog, mock_interaction, mock_bot, mocker):
+    """Registrar un miembro con steam debe añadir ese nombre a la tribu propia
+    (k4ultra_fixed_tribes is_own) → aparece en OUR TRIBE y queda blindado de
+    alarmas. Antes solo poblaba el ranking."""
+    await mock_bot.init_mock_db()
+    guild_id = mock_interaction.guild_id
+    db = mock_bot.db
+
+    await db.execute(
+        "INSERT INTO k4ultra_fixed_tribes (guild_id, name, members_json, is_own) "
+        "VALUES (?, 'MiTribu', ?, 1)",
+        (guild_id, json.dumps(["Alice"])),
+    )
+    await db.commit()
+
+    mock_interaction.client.is_authorized_admin = mocker.AsyncMock(return_value=True)
+    usuario = mocker.MagicMock()
+    usuario.id = 777
+    usuario.display_name = "BobDiscord"
+    usuario.mention = "<@777>"
+
+    dispatched = []
+    mocker.patch.object(type(mock_bot), "dispatch", lambda self, ev, *a: dispatched.append(ev))
+
+    choice = mocker.MagicMock()  # idioma Choice (no usado aquí)
+    await k4_cog.tribu_miembro.callback(
+        k4_cog, mock_interaction, usuario, personaje="Bob", steam="NewSteam", apodo="Bobby", idioma=None
+    )
+
+    own = await db.fetchone(
+        "SELECT members_json FROM k4ultra_fixed_tribes WHERE guild_id = ? AND is_own = 1", (guild_id,)
+    )
+    members = json.loads(own["members_json"])
+    assert "NewSteam" in members and "Alice" in members
+    assert "trusted_members_changed" in dispatched  # se re-evalúan las alarmas
+    del choice
+
+
+@pytest.mark.asyncio
+async def test_miembro_crear_without_steam_does_not_touch_own_tribe(k4_cog, mock_interaction, mock_bot, mocker):
+    """Sin steam (No Registrado), no se toca la lista de la tribu propia."""
+    await mock_bot.init_mock_db()
+    guild_id = mock_interaction.guild_id
+    db = mock_bot.db
+    await db.execute(
+        "INSERT INTO k4ultra_fixed_tribes (guild_id, name, members_json, is_own) "
+        "VALUES (?, 'MiTribu', ?, 1)",
+        (guild_id, json.dumps(["Alice"])),
+    )
+    await db.commit()
+
+    mock_interaction.client.is_authorized_admin = mocker.AsyncMock(return_value=True)
+    usuario = mocker.MagicMock()
+    usuario.id = 888
+    usuario.display_name = "NoSteamGuy"
+    usuario.mention = "<@888>"
+
+    await k4_cog.tribu_miembro.callback(
+        k4_cog, mock_interaction, usuario, personaje="Char", steam=None, apodo=None, idioma=None
+    )
+
+    own = await db.fetchone(
+        "SELECT members_json FROM k4ultra_fixed_tribes WHERE guild_id = ? AND is_own = 1", (guild_id,)
+    )
+    assert json.loads(own["members_json"]) == ["Alice"]
+
+
+@pytest.mark.asyncio
 async def test_miembro_borrar_without_profile_is_noop(k4_cog, mock_interaction, mock_bot, mocker):
     """Si el usuario no tiene ficha, el comando avisa y no toca nada."""
     await mock_bot.init_mock_db()

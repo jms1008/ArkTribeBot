@@ -837,19 +837,46 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
             flag = "🇪🇸" if idioma.value == "es" else "🇬🇧"
             idioma_txt = f"\n> 🌐 **Idioma:** {flag} `{idioma.value}`"
 
+        # Sincronizar con la tribu propia: añadir el nombre de Steam a la lista
+        # de miembros (k4ultra_fixed_tribes is_own). Sin esto, el miembro saldría
+        # en el ranking pero NO en la vista OUR TRIBE del radar ni quedaría
+        # blindado de las alarmas de intrusos (que comparan por nombre de Steam).
+        own_synced = False
+        if steam_safe and steam_safe != "No Registrado":
+            own_row = await db.fetchone(
+                "SELECT id, members_json FROM k4ultra_fixed_tribes WHERE guild_id = ? AND is_own = 1",
+                (interaction.guild_id,),
+            )
+            if own_row:
+                try:
+                    members = json.loads(own_row["members_json"])
+                except (json.JSONDecodeError, TypeError):
+                    members = []
+                if not any(m.lower() == steam_safe.lower() for m in members):
+                    members.append(steam_safe)
+                    await db.execute(
+                        "UPDATE k4ultra_fixed_tribes SET members_json = ? WHERE id = ?",
+                        (json.dumps(members), own_row["id"]),
+                    )
+                    own_synced = True
+
         await db.commit()
 
+        own_txt = f"\n{t('tribu.miembro.own_synced', lang)}" if own_synced else ""
         embed = discord.Embed(title=t("tribu.miembro.title", lang), color=discord.Color.green())
         embed.description = (
             f"> 👤 **Usuario:** {usuario.mention}\n"
             f"> 📛 **In-Game:** `{personaje}`\n"
             f"> 🎭 **Apodo:** `{apodo_final}`\n"
             f"> 🎮 **Steam:** `{steam_safe}`"
-            f"{idioma_txt}"
+            f"{idioma_txt}{own_txt}"
         )
         embed.set_footer(text=t("tribu.miembro.footer", lang))
         await interaction.response.send_message(embed=embed, ephemeral=False)
         self.bot.dispatch(bus.KDA_UPDATED, interaction.guild_id)
+        if own_synced:
+            # Re-evaluar alarmas: el miembro ya es de confianza.
+            self.bot.dispatch(bus.TRUSTED_MEMBERS_CHANGED, interaction.guild_id)
 
     @miembro_grp.command(
         name="borrar",
