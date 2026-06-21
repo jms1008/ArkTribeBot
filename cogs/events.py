@@ -119,9 +119,7 @@ class EventPollView(discord.ui.View):
             bar = "█" * filled + "░" * (10 - filled)
 
             voters_str = (
-                "\n".join([f"• {name}" for name in voter_names])
-                if count > 0
-                else t("evento.nobody", lang)
+                "\n".join([f"• {name}" for name in voter_names]) if count > 0 else t("evento.nobody", lang)
             )
 
             embed.add_field(
@@ -297,9 +295,7 @@ class Events(commands.Cog):
         await db.commit()
 
         # Confirmar al creador el ID (necesario para /evento cerrar).
-        await interaction.followup.send(
-            t("evento.created_id", lang, id=event_id), ephemeral=True
-        )
+        await interaction.followup.send(t("evento.created_id", lang, id=event_id), ephemeral=True)
 
     @evento.command(name="cerrar", description="Cierra una encuesta: desactiva los botones y la archiva.")
     @app_commands.describe(id="ID del evento a cerrar (se muestra al crearlo)")
@@ -316,9 +312,7 @@ class Events(commands.Cog):
             await interaction.response.send_message(t("evento.cerrar.not_found", lang, id=id), ephemeral=True)
             return
         if row["status"] != "active":
-            await interaction.response.send_message(
-                t("evento.cerrar.already", lang, id=id), ephemeral=True
-            )
+            await interaction.response.send_message(t("evento.cerrar.already", lang, id=id), ephemeral=True)
             return
 
         # Solo el creador del evento o un admin pueden cerrarlo.

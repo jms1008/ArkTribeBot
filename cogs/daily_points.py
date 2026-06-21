@@ -109,9 +109,7 @@ class DailyPoints(commands.Cog):
                 (interaction.guild_id,),
             )
             if row and row["daily_points_enabled"] == 0:
-                await interaction.response.send_message(
-                    t("puntos.cmd.disabled_server", lang), ephemeral=True
-                )
+                await interaction.response.send_message(t("puntos.cmd.disabled_server", lang), ephemeral=True)
                 return
 
         if estado.value == "on":

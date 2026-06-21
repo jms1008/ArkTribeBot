@@ -27,7 +27,8 @@ TABLES: list[str] = [
         bot_owner_id INTEGER,
         battlemetrics_urls TEXT,
         daily_points_enabled INTEGER DEFAULT 1,
-        vote_urls TEXT
+        vote_urls TEXT,
+        game_mode TEXT DEFAULT 'ase'
     )
     """,
     # Scouting
@@ -396,6 +397,7 @@ MIGRATIONS: list[tuple[str, str]] = [
     ("guild_config", "ALTER TABLE guild_config ADD COLUMN daily_points_enabled INTEGER DEFAULT 1"),
     ("guild_config", "ALTER TABLE guild_config ADD COLUMN vote_urls TEXT"),
     ("guild_config", "ALTER TABLE guild_config ADD COLUMN language TEXT DEFAULT 'es'"),
+    ("guild_config", "ALTER TABLE guild_config ADD COLUMN game_mode TEXT DEFAULT 'ase'"),
     ("blacklist", "ALTER TABLE blacklist ADD COLUMN last_seen TEXT"),
     ("blacklist", "ALTER TABLE blacklist ADD COLUMN total_hours REAL DEFAULT 0"),
     ("blacklist", "ALTER TABLE blacklist ADD COLUMN is_enemy INTEGER DEFAULT 1"),

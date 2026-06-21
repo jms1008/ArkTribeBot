@@ -127,9 +127,9 @@ class LogProcessor(commands.Cog, name="LogProcessor"):
                 if now_s - self._destruction_alerted.get(key, 0) >= DESTRUCTION_ALERT_COOLDOWN_S:
                     self._destruction_alerted[key] = now_s
                     try:
-                        sos_channel = self.bot.get_channel(
+                        sos_channel = self.bot.get_channel(sos_channel_id) or await self.bot.fetch_channel(
                             sos_channel_id
-                        ) or await self.bot.fetch_channel(sos_channel_id)
+                        )
                         if sos_channel:
                             lang = await resolve_lang(self.bot, guild_id, "command")
                             await sos_channel.send(
@@ -142,9 +142,7 @@ class LogProcessor(commands.Cog, name="LogProcessor"):
                                 ),
                                 view=PoliciaSosView(),
                             )
-                            guild_log.info(
-                                f"[Destrucción] Alerta: {structure} ({map_name}) destruida."
-                            )
+                            guild_log.info(f"[Destrucción] Alerta: {structure} ({map_name}) destruida.")
                     except Exception as e:
                         guild_log.error(f"[Destrucción] Error enviando alerta: {e}")
 

@@ -20,7 +20,9 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
     # /perfil_tribu, /aliados y los k4ultra_merge/split/cleanup.
     tribu = app_commands.Group(name="tribu", description="Gestión de tribus, miembros e identidades.")
     propia = app_commands.Group(name="propia", description="Tu tribu principal del servidor.", parent=tribu)
-    aliada = app_commands.Group(name="aliada", description="Tribus aliadas (no disparan alarmas).", parent=tribu)
+    aliada = app_commands.Group(
+        name="aliada", description="Tribus aliadas (no disparan alarmas).", parent=tribu
+    )
     miembro_grp = app_commands.Group(
         name="miembro", description="Fichas de los miembros de la tribu.", parent=tribu
     )
@@ -134,9 +136,7 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
                 snap_embed = discord.Embed.from_dict(embed_dict)
                 await interaction.followup.send(embed=snap_embed, ephemeral=True)
             else:
-                await interaction.followup.send(
-                    t("k4.cmd.no_snapshot", lang, semana=semana), ephemeral=True
-                )
+                await interaction.followup.send(t("k4.cmd.no_snapshot", lang, semana=semana), ephemeral=True)
         else:
             # Visualización de estadísticas en vivo y guardado como mensaje persistente
             await interaction.response.defer(ephemeral=False)
@@ -485,9 +485,7 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
             "DELETE FROM k4ultra_fixed_tribes WHERE is_own = 1 AND guild_id = ?", (interaction.guild_id,)
         )
         if cursor.rowcount == 0:
-            await interaction.response.send_message(
-                t("tribu.propia.none_registered", lang), ephemeral=True
-            )
+            await interaction.response.send_message(t("tribu.propia.none_registered", lang), ephemeral=True)
             return
         await db.commit()
         self.bot.dispatch(bus.TRUSTED_MEMBERS_CHANGED, interaction.guild_id)
@@ -594,7 +592,13 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
                 await db.execute(
                     "UPDATE k4ultra_playtime SET total_minutes = ?, last_seen = max(last_seen, ?) "
                     "WHERE player_name = ? AND map_name = ? AND guild_id = ?",
-                    (prim_row["total_minutes"] + p["total_minutes"], p["last_seen"], destino, p["map_name"], guild_id),
+                    (
+                        prim_row["total_minutes"] + p["total_minutes"],
+                        p["last_seen"],
+                        destino,
+                        p["map_name"],
+                        guild_id,
+                    ),
                 )
             else:
                 await db.execute(
@@ -712,7 +716,9 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
         active_sessions = await cursor.fetchall()
 
         if not active_sessions:
-            await interaction.followup.send(t("tribu.separar.no_session", lang, origen=origen), ephemeral=True)
+            await interaction.followup.send(
+                t("tribu.separar.no_session", lang, origen=origen), ephemeral=True
+            )
             return
 
         if len(active_sessions) > 1:
@@ -898,8 +904,7 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
         db = self.bot.db
 
         profile = await db.fetchone(
-            "SELECT ark_character, steam_id, alias FROM tribe_profiles "
-            "WHERE guild_id = ? AND discord_id = ?",
+            "SELECT ark_character, steam_id, alias FROM tribe_profiles WHERE guild_id = ? AND discord_id = ?",
             (guild_id, usuario.id),
         )
         if not profile:
@@ -981,9 +986,7 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
             (interaction.guild_id,),
         )
 
-        embed = discord.Embed(
-            title=t("tribu.lista.title", lang), color=discord.Color.from_rgb(90, 0, 180)
-        )
+        embed = discord.Embed(title=t("tribu.lista.title", lang), color=discord.Color.from_rgb(90, 0, 180))
         if not rows:
             embed.description = t("tribu.lista.empty", lang)
             await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -1197,7 +1200,9 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
             (interaction.guild_id,),
         )
 
-        embed = discord.Embed(title=t("tribu.aliada.list_title", lang), color=discord.Color.from_rgb(80, 200, 120))
+        embed = discord.Embed(
+            title=t("tribu.aliada.list_title", lang), color=discord.Color.from_rgb(80, 200, 120)
+        )
         if not rows:
             embed.description = t("tribu.aliada.list_empty", lang)
             embed.set_footer(text=t("tribu.aliada.list_empty_footer", lang))
@@ -1218,7 +1223,9 @@ class K4Ultra(commands.Cog, name="K4Ultra"):
                 else t("tribu.aliada.list_empty_members", lang)
             )
             plural = "" if len(members) == 1 else ("s" if lang == "en" else "es")
-            lines.append(t("tribu.aliada.list_item", lang, idx=idx, name=tribe["name"], n=len(members), s=plural))
+            lines.append(
+                t("tribu.aliada.list_item", lang, idx=idx, name=tribe["name"], n=len(members), s=plural)
+            )
             lines.append(f"  └ {members_fmt}")
 
         header = t("tribu.aliada.list_header", lang, n=len(rows), players=total_players)

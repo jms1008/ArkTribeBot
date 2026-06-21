@@ -84,9 +84,7 @@ def build_blacklist_embed(rows: list, page: int = 0, lang: str = "es") -> discor
                     lines.append(f">  ╰ 📝 *{nota_corta}*")
 
         embed.description = "\n".join(lines).strip()
-        embed.set_footer(
-            text=t("blacklist.footer", lang, page=page + 1, pages=total_pages, total=total)
-        )
+        embed.set_footer(text=t("blacklist.footer", lang, page=page + 1, pages=total_pages, total=total))
     return embed, page, total_pages
 
 
@@ -578,7 +576,9 @@ async def build_player_detail_embed(bot, player_name: str, guild_id: int) -> dis
             online_str = t("pd.offline", lang)
 
     embed.add_field(name=t("pd.field.status", lang), value=online_str, inline=True)
-    embed.add_field(name=t("pd.field.total_time", lang), value=t("pd.hours", lang, h=f"{total_hours:.1f}"), inline=True)
+    embed.add_field(
+        name=t("pd.field.total_time", lang), value=t("pd.hours", lang, h=f"{total_hours:.1f}"), inline=True
+    )
 
     # Historial de Desplazamiento (Últimos 3 mapas visitados cronológicamente)
     cursor = await db.execute(

@@ -16,7 +16,7 @@ from collections import defaultdict
 import aiosqlite
 import discord
 
-from utils.i18n import resolve_lang, t
+from utils.i18n import GAME_ASA, get_game_mode, resolve_lang, t
 
 logger = logging.getLogger("ArkTribeBot")
 
@@ -53,6 +53,14 @@ async def generate_k4ultra_embed(
     """
     top_player_names: list[str] = []
     db = bot.db
+    lang = await resolve_lang(bot, guild_id, "periodic")
+
+    game_mode = await get_game_mode(bot, guild_id)
+    if game_mode == GAME_ASA:
+        embed = discord.Embed(
+            title="👁️ K4Ultra Radar", description=t("k4ultra.disabled_asa", lang), color=discord.Color.orange()
+        )
+        return [embed], [], {}
 
     cursor = await db.execute(
         """
@@ -82,7 +90,6 @@ async def generate_k4ultra_embed(
         logger.debug(f"[K4Ultra] Tabla k4ultra_aliases no disponible: {e}")
 
     pages: list[discord.Embed] = []
-    lang = await resolve_lang(bot, guild_id, "periodic")
 
     if mode == "radar":
         pages = await _build_radar_pages(db, guild_id, p_totals, p_maps, aliases, top_player_names, lang)
@@ -289,7 +296,12 @@ async def _build_tribes_page(
         members_lines = [line for line in (_format_member(m) for m in members) if line]
         members_text = "  ".join(members_lines)
         header = t(
-            "k4.tribes.tribe_header", lang, name=fr["name"], count=len(members), online=n_online, map_info=map_info
+            "k4.tribes.tribe_header",
+            lang,
+            name=fr["name"],
+            count=len(members),
+            online=n_online,
+            map_info=map_info,
         )
         block = f"{header}\n  └ {members_text}"
 

@@ -150,9 +150,7 @@ class Admin(commands.Cog):
             params.append(guild_id)
             await db.execute(sql, tuple(params))
             await db.commit()
-            await interaction.response.send_message(
-                t("admin.config.updated", lang), ephemeral=True
-            )
+            await interaction.response.send_message(t("admin.config.updated", lang), ephemeral=True)
         else:
             await interaction.response.defer(ephemeral=False)
 
@@ -258,6 +256,40 @@ class Admin(commands.Cog):
             except Exception as e:
                 await ctx.send(f"❌ Error al sincronizar: {e}")
                 logger.error(f"Error sync: {e}")
+
+    @admin.command(
+        name="juego",
+        description="[Admin] Cambia el modo de juego del servidor (ASE o ASA).",
+    )
+    @app_commands.describe(
+        modo="El modo de juego al que pertenece el clúster.",
+    )
+    @app_commands.choices(
+        modo=[
+            app_commands.Choice(name="🦖 ARK: Survival Evolved (ASE)", value="ase"),
+            app_commands.Choice(name="🦕 ARK: Survival Ascended (ASA)", value="asa"),
+        ]
+    )
+    async def set_game_mode(self, interaction: discord.Interaction, modo: app_commands.Choice[str]):
+        lang = await i18n.resolve_lang(self.bot, interaction.guild_id, "command", interaction.user.id)
+        if not await interaction.client.is_authorized_admin(interaction):
+            await interaction.response.send_message(t("common.denied", lang), ephemeral=True)
+            return
+
+        game_mode = modo.value
+        await self.bot.db.execute(
+            "UPDATE guild_config SET game_mode = ? WHERE guild_id = ?", (game_mode, interaction.guild_id)
+        )
+        await self.bot.db.commit()
+        i18n.invalidate_game_mode_cache(interaction.guild_id)
+
+        note_key = "admin.juego.note_asa" if game_mode == "asa" else "admin.juego.note_ase"
+
+        embed = discord.Embed(
+            description=f"{t('admin.juego.set', lang, mode=modo.name)}\n\n{t(note_key, lang)}",
+            color=discord.Color.blue(),
+        )
+        await interaction.response.send_message(embed=embed)
 
     @app_commands.command(
         name="inicio_ark",
@@ -574,7 +606,13 @@ class Admin(commands.Cog):
             removed = _prune_old_backups()
             size_kb = os.path.getsize(target) / 1024
             await interaction.followup.send(
-                t("admin.backup.done", lang, file=os.path.basename(target), size=f"{size_kb:.1f}", removed=removed),
+                t(
+                    "admin.backup.done",
+                    lang,
+                    file=os.path.basename(target),
+                    size=f"{size_kb:.1f}",
+                    removed=removed,
+                ),
                 ephemeral=True,
             )
         except Exception as e:
@@ -613,6 +651,17 @@ def build_config_embed(
             if config["admin_role_id"]
             else t("config.auth_norole", lang)
         ),
+        inline=True,
+    )
+
+    # Intentar obtener game_mode si existe en la row
+    game_mode_val = "ase"
+    if "game_mode" in config.keys():
+        game_mode_val = config["game_mode"]
+
+    embed.add_field(
+        name=t("config.f.game", lang),
+        value=t("config.game_value", lang, mode=game_mode_val.upper()),
         inline=True,
     )
 

@@ -222,13 +222,13 @@ class BreedingDinoSelectMenu(discord.ui.Select):
             return
 
         STATS_ORDER = [
-            ("hp",     "❤️", "HP      "),
-            ("melee",  "⚔️", "Melee   "),
-            ("stam",   "⚡", "Stam    "),
+            ("hp", "❤️", "HP      "),
+            ("melee", "⚔️", "Melee   "),
+            ("stam", "⚡", "Stam    "),
             ("weight", "⚖️", "Peso    "),
-            ("oxy",    "🫧", "Oxígeno "),
-            ("food",   "🍖", "Comida  "),
-            ("speed",  "💨", "Speed   "),
+            ("oxy", "🫧", "Oxígeno "),
+            ("food", "🍖", "Comida  "),
+            ("speed", "💨", "Speed   "),
         ]
         registered = sum(1 for col, _, _ in STATS_ORDER if row[col])
 
@@ -852,9 +852,7 @@ class Breeding(commands.Cog):
         row = await cursor.fetchone()
 
         if not row:
-            await interaction.response.send_message(
-                t("linea.cmd.not_found", lang, dino=dino), ephemeral=True
-            )
+            await interaction.response.send_message(t("linea.cmd.not_found", lang, dino=dino), ephemeral=True)
             return
 
         # Orden canónico de las 7 stats con su emoji; el nombre viene del catálogo
@@ -928,7 +926,14 @@ class Breeding(commands.Cog):
                                     mutations.append(
                                         (
                                             timestamp,
-                                            t("linea.log.entry", lang, ts=timestamp, kind=kind, dino=dino, stat=stat),
+                                            t(
+                                                "linea.log.entry",
+                                                lang,
+                                                ts=timestamp,
+                                                kind=kind,
+                                                dino=dino,
+                                                stat=stat,
+                                            ),
                                         )
                                     )
                                 except Exception as e:

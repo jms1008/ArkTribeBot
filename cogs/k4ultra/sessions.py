@@ -28,6 +28,7 @@ import discord
 from cogs.k4ultra.embeds import generate_k4ultra_embed
 from cogs.k4ultra.ui import K4UltraView
 from utils import bus
+from utils.i18n import GAME_ASA, get_game_mode
 
 logger = logging.getLogger("ArkTribeBot")
 
@@ -94,18 +95,25 @@ async def run(bot) -> None:  # noqa: C901 - lógica de identidad densa pero cohe
     # 1. Determinar qué guilds toca actualizar según el tiempo transcurrido.
     guilds_to_update: list[int] = []
     for row in guild_rows:
+        guild_id = row["guild_id"]
+
+        # Saltamos completamente los guilds en ASA
+        if await get_game_mode(bot, guild_id) == GAME_ASA:
+            logger.debug(f"[K4Ultra] Saltando guild {guild_id} en modo ASA")
+            continue
+
         intrvl = row["update_interval"] if row["update_interval"] else 5
         last_run_raw = row["last_a2s_run"]
         if last_run_raw is None:
-            guilds_to_update.append(row["guild_id"])
+            guilds_to_update.append(guild_id)
             continue
         try:
             last_run = datetime.fromisoformat(last_run_raw)
         except (TypeError, ValueError):
-            guilds_to_update.append(row["guild_id"])
+            guilds_to_update.append(guild_id)
             continue
         if now - last_run >= timedelta(minutes=intrvl):
-            guilds_to_update.append(row["guild_id"])
+            guilds_to_update.append(guild_id)
 
     if not guilds_to_update:
         return

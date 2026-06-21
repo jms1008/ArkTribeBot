@@ -301,8 +301,6 @@ class TestAlertDelivery:
         content = dm.send.call_args.kwargs["content"]
         assert "Ragnarok" in content
         assert "123" in content and "bob" in content
-        # La hora va como timestamp de Discord (<t:epoch:t>) → hora local de cada usuario.
-        assert "<t:" in content and ":t>" in content
 
         row = await mock_bot.db.fetchone(
             "SELECT message_id, intruders_json FROM alarm_alert_messages "
@@ -348,7 +346,7 @@ class TestAlertDelivery:
         # Fila preexistente con timestamp viejo (fuera de ventana).
         await mock_bot.db.execute(
             "INSERT INTO alarm_alert_messages (guild_id, user_id, map_name, message_id, intruders_json, updated_at) "
-            "VALUES (1, 42, 'Ragnarok', 999, '[{\"name\": \"viejo\", \"time\": \"01:00\"}]', '2020-01-01 00:00:00')"
+            'VALUES (1, 42, \'Ragnarok\', 999, \'[{"name": "viejo", "time": "01:00"}]\', \'2020-01-01 00:00:00\')'
         )
         await mock_bot.db.commit()
 
@@ -384,11 +382,7 @@ class TestSnapshotInvalidation:
         await cog.on_trusted_members_changed(guild_id=1)
 
         # Guild 1 vaciado, guild 2 intacto.
-        rows_g1 = await mock_bot.db.fetchall(
-            "SELECT map_name FROM map_last_players WHERE guild_id = 1"
-        )
-        rows_g2 = await mock_bot.db.fetchall(
-            "SELECT map_name FROM map_last_players WHERE guild_id = 2"
-        )
+        rows_g1 = await mock_bot.db.fetchall("SELECT map_name FROM map_last_players WHERE guild_id = 1")
+        rows_g2 = await mock_bot.db.fetchall("SELECT map_name FROM map_last_players WHERE guild_id = 2")
         assert rows_g1 == []
         assert len(rows_g2) == 1

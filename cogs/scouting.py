@@ -136,9 +136,7 @@ class ScoutSelect(discord.ui.Select):
             f"## 📝 Notas\n"
             f"> {notas}"
         )
-        embed.set_footer(
-            text=f"Scout #{row['id']:03d}  •  /scout borrar id:{row['id']} para eliminar"
-        )
+        embed.set_footer(text=f"Scout #{row['id']:03d}  •  /scout borrar id:{row['id']} para eliminar")
 
         img_url = None
         if row["url_imagen"] and row["url_imagen"] != "N/A":

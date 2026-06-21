@@ -37,12 +37,9 @@ async def test_miembro_borrar_removes_everything(k4_cog, mock_interaction, mock_
         "INSERT INTO k4ultra_aliases (guild_id, player_name, alias) VALUES (?, 'Bob', 'Bobby')",
         (guild_id,),
     )
+    await db.execute("INSERT INTO user_language (guild_id, user_id, lang) VALUES (?, 555, 'en')", (guild_id,))
     await db.execute(
-        "INSERT INTO user_language (guild_id, user_id, lang) VALUES (?, 555, 'en')", (guild_id,)
-    )
-    await db.execute(
-        "INSERT INTO k4ultra_fixed_tribes (guild_id, name, members_json, is_own) "
-        "VALUES (?, 'MiTribu', ?, 1)",
+        "INSERT INTO k4ultra_fixed_tribes (guild_id, name, members_json, is_own) VALUES (?, 'MiTribu', ?, 1)",
         (guild_id, json.dumps(["BobSteam", "Alice"])),
     )
     await db.commit()
@@ -58,10 +55,26 @@ async def test_miembro_borrar_removes_everything(k4_cog, mock_interaction, mock_
     await k4_cog.tribu_miembro_borrar.callback(k4_cog, mock_interaction, usuario)
 
     # Todo el rastro del miembro debe haber desaparecido.
-    assert await db.fetchone("SELECT 1 FROM tribe_profiles WHERE guild_id = ? AND discord_id = 555", (guild_id,)) is None
-    assert await db.fetchone("SELECT 1 FROM tribe_characters WHERE guild_id = ? AND character_name = 'Bob'", (guild_id,)) is None
-    assert await db.fetchone("SELECT 1 FROM k4ultra_aliases WHERE guild_id = ? AND player_name = 'Bob'", (guild_id,)) is None
-    assert await db.fetchone("SELECT 1 FROM user_language WHERE guild_id = ? AND user_id = 555", (guild_id,)) is None
+    assert (
+        await db.fetchone("SELECT 1 FROM tribe_profiles WHERE guild_id = ? AND discord_id = 555", (guild_id,))
+        is None
+    )
+    assert (
+        await db.fetchone(
+            "SELECT 1 FROM tribe_characters WHERE guild_id = ? AND character_name = 'Bob'", (guild_id,)
+        )
+        is None
+    )
+    assert (
+        await db.fetchone(
+            "SELECT 1 FROM k4ultra_aliases WHERE guild_id = ? AND player_name = 'Bob'", (guild_id,)
+        )
+        is None
+    )
+    assert (
+        await db.fetchone("SELECT 1 FROM user_language WHERE guild_id = ? AND user_id = 555", (guild_id,))
+        is None
+    )
 
     # La tribu propia ya no contiene su Steam name (pero conserva al resto).
     own = await db.fetchone(
@@ -83,8 +96,7 @@ async def test_miembro_crear_syncs_steam_into_own_tribe(k4_cog, mock_interaction
     db = mock_bot.db
 
     await db.execute(
-        "INSERT INTO k4ultra_fixed_tribes (guild_id, name, members_json, is_own) "
-        "VALUES (?, 'MiTribu', ?, 1)",
+        "INSERT INTO k4ultra_fixed_tribes (guild_id, name, members_json, is_own) VALUES (?, 'MiTribu', ?, 1)",
         (guild_id, json.dumps(["Alice"])),
     )
     await db.commit()
@@ -113,14 +125,15 @@ async def test_miembro_crear_syncs_steam_into_own_tribe(k4_cog, mock_interaction
 
 
 @pytest.mark.asyncio
-async def test_miembro_crear_without_steam_does_not_touch_own_tribe(k4_cog, mock_interaction, mock_bot, mocker):
+async def test_miembro_crear_without_steam_does_not_touch_own_tribe(
+    k4_cog, mock_interaction, mock_bot, mocker
+):
     """Sin steam (No Registrado), no se toca la lista de la tribu propia."""
     await mock_bot.init_mock_db()
     guild_id = mock_interaction.guild_id
     db = mock_bot.db
     await db.execute(
-        "INSERT INTO k4ultra_fixed_tribes (guild_id, name, members_json, is_own) "
-        "VALUES (?, 'MiTribu', ?, 1)",
+        "INSERT INTO k4ultra_fixed_tribes (guild_id, name, members_json, is_own) VALUES (?, 'MiTribu', ?, 1)",
         (guild_id, json.dumps(["Alice"])),
     )
     await db.commit()

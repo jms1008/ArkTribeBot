@@ -511,8 +511,10 @@ class Management(commands.Cog, name="Management"):
         idioma: app_commands.Choice[str] = None,
     ):
         # Idioma: explícito si se pasa; si no, el idioma de comando del usuario/servidor.
-        lang = idioma.value if idioma else await resolve_lang(
-            self.bot, interaction.guild_id, "command", interaction.user.id
+        lang = (
+            idioma.value
+            if idioma
+            else await resolve_lang(self.bot, interaction.guild_id, "command", interaction.user.id)
         )
         texts = get_info_texts(lang)
         not_found = "Information not found." if lang == "en" else "Información no encontrada."
@@ -533,16 +535,16 @@ class Management(commands.Cog, name="Management"):
             app_commands.Choice(name="🇬🇧 English", value="en"),
         ]
     )
-    async def help_cmd(
-        self, interaction: discord.Interaction, idioma: app_commands.Choice[str] = None
-    ):
+    async def help_cmd(self, interaction: discord.Interaction, idioma: app_commands.Choice[str] = None):
         """Manual interactivo bilingüe que reutiliza las guías de ``locales/guides_*``.
 
         El idioma se elige explícitamente o se hereda del idioma de comando del
         usuario/servidor. El ``Select`` y las guías se renderizan en ese idioma.
         """
-        lang = idioma.value if idioma else await resolve_lang(
-            self.bot, interaction.guild_id, "command", interaction.user.id
+        lang = (
+            idioma.value
+            if idioma
+            else await resolve_lang(self.bot, interaction.guild_id, "command", interaction.user.id)
         )
 
         # Orden y emoji de cada módulo; el label se traduce vía catálogo.

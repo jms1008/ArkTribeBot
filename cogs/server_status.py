@@ -7,7 +7,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
-from utils.i18n import resolve_lang, t
+from utils.i18n import GAME_ASA, get_game_mode, resolve_lang, t
 from utils.parsing import parse_battlemetrics
 
 # Configuración de Logging
@@ -59,6 +59,7 @@ async def _fetch_single_server(name: str, ip: str, port: int):
         return info, players
 
 
+
 async def query_all_servers(bot, guild_id: int, servers: dict = None) -> dict:
     """Consulta A2S centralizada con caché de corta vida (30s).
 
@@ -81,19 +82,28 @@ async def query_all_servers(bot, guild_id: int, servers: dict = None) -> dict:
         else:
             to_fetch[name] = (ip, port)
 
+    game_mode = await get_game_mode(bot, guild_id)
+
     # 2. Consultar solo los que no están en caché
     if to_fetch:
 
         async def _query_one(map_name, ip, port):
             try:
                 info, players = await _fetch_single_server(map_name, ip, port)
-                valid = [{"name": p.name.strip(), "duration": p.duration} for p in players if p.name]
+
+                if game_mode == GAME_ASA:
+                    valid = []
+                    p_count = info.player_count
+                else:
+                    valid = [{"name": p.name.strip(), "duration": p.duration} for p in players if p.name]
+                    p_count = len(valid)
+
                 return map_name, {
                     "info": info,
                     "players": valid,
                     "address": f"{ip}:{port}",
                     "ping": int(info.ping * 1000),
-                    "player_count": len(valid),
+                    "player_count": p_count,
                     "max_players": info.max_players,
                     "error": None,
                 }
@@ -152,7 +162,7 @@ class ServerStatus(commands.Cog):
         self.status_loop.cancel()
         self.global_status_loop.cancel()
 
-    async def get_server_embed(self, server_name: str, servers: dict):
+    async def get_server_embed(self, server_name: str, servers: dict, guild_id: int):
         """Genera el Embed con el estado del servidor."""
         if server_name not in servers:
             return None
@@ -160,23 +170,27 @@ class ServerStatus(commands.Cog):
         ip, port = servers[server_name]
         address = (ip, port)
 
+        game_mode = await get_game_mode(self.bot, guild_id)
+
         try:
             # Ejecución asíncrona de consultas A2S
             info = await asyncio.wait_for(asyncio.to_thread(a2s.info, address), timeout=10.0)
-            players = await asyncio.wait_for(asyncio.to_thread(a2s.players, address), timeout=10.0)
 
-            valid_players = [p.name for p in players if p.name]
-            p_count = len(valid_players)
+            if game_mode == GAME_ASA:
+                p_count = info.player_count
+                player_list = f"👥 {p_count} jugadores"
+            else:
+                players = await asyncio.wait_for(asyncio.to_thread(a2s.players, address), timeout=10.0)
+                valid_players = [p.name for p in players if p.name]
+                p_count = len(valid_players)
+                player_list = ", ".join(valid_players)
+                if p_count == 0:
+                    player_list = "Nadie conectado."
+
             ping_ms = int(info.ping * 1000)
 
             embed = discord.Embed(title=f"🦖 Estado: {server_name}", color=discord.Color.green())
             embed.add_field(name="Mapa", value=info.map_name, inline=True)
-
-            player_list = ", ".join(valid_players)
-
-            # Manejo de servidor sin jugadores activos
-            if p_count == 0:
-                player_list = "Nadie conectado."
 
             if len(player_list) > 1000:
                 player_list = player_list[:1000] + "..."
@@ -217,7 +231,7 @@ class ServerStatus(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         lang = await resolve_lang(self.bot, interaction.guild_id, "command", interaction.user.id)
         servers = await get_guild_servers(self.bot, interaction.guild_id)
-        embed = await self.get_server_embed(mapa, servers)
+        embed = await self.get_server_embed(mapa, servers, interaction.guild_id)
         if embed:
             await interaction.followup.send(embed=embed, ephemeral=True)
         else:
@@ -237,7 +251,7 @@ class ServerStatus(commands.Cog):
 
         await interaction.response.defer()
         servers = await get_guild_servers(self.bot, interaction.guild_id)
-        embed = await self.get_server_embed(mapa, servers)
+        embed = await self.get_server_embed(mapa, servers, interaction.guild_id)
         if not embed:
             await interaction.followup.send(t("status.cmd.gen_error", lang), ephemeral=True)
             return
@@ -281,7 +295,7 @@ class ServerStatus(commands.Cog):
                     continue
 
                 message = await channel.fetch_message(message_id)
-                new_embed = await self.get_server_embed(map_name, servers)
+                new_embed = await self.get_server_embed(map_name, servers, guild_id)
 
                 if new_embed:
                     await message.edit(embed=new_embed)
@@ -305,9 +319,7 @@ class ServerStatus(commands.Cog):
     async def get_global_status_embed(self, guild_id: int, servers: dict):
         """Genera un Embed unificado para todos los servidores del Guild, ordenado por jugadores."""
         lang = await resolve_lang(self.bot, guild_id, "periodic")
-        embed = discord.Embed(
-            title=t("status.title", lang), color=discord.Color.from_rgb(0, 120, 255)
-        )
+        embed = discord.Embed(title=t("status.title", lang), color=discord.Color.from_rgb(0, 120, 255))
 
         if not servers:
             embed.description = t("status.no_servers", lang)
@@ -315,15 +327,19 @@ class ServerStatus(commands.Cog):
 
         # Consulta A2S centralizada (compartida con K4Ultra)
         raw_results = await query_all_servers(self.bot, guild_id, servers)
+        game_mode = await get_game_mode(self.bot, guild_id)
 
         # Guardar en caché de DB (usa la conexión persistente compartida).
         try:
             db = self.bot.db
             for name, res in raw_results.items():
                 if not res.get("error"):
-                    player_names = ", ".join([p["name"] for p in res["players"]])
-                    if not player_names:
-                        player_names = "Nadie conectado."
+                    if game_mode == GAME_ASA:
+                        player_names = t("status.player_count_only", lang, count=res["player_count"])
+                    else:
+                        player_names = ", ".join([p["name"] for p in res["players"]])
+                        if not player_names:
+                            player_names = t("status.nobody", lang)
                     await db.execute(
                         """INSERT OR REPLACE INTO server_status_cache
                            (guild_id, server_name, ip_port, ping, player_count, player_names, updated_at)
@@ -356,9 +372,13 @@ class ServerStatus(commands.Cog):
                 total_players += p_count
                 total_max += res.get("max_players", 0)
 
-                player_list = ", ".join([p["name"] for p in res["players"]])
-                if not player_list:
-                    player_list = t("status.nobody", lang)
+                if game_mode == GAME_ASA:
+                    player_list = t("status.player_count_only", lang, count=p_count)
+                else:
+                    player_list = ", ".join([p["name"] for p in res["players"]])
+                    if not player_list:
+                        player_list = t("status.nobody", lang)
+
                 if len(player_list) > 1000:
                     player_list = player_list[:1000] + "..."
 

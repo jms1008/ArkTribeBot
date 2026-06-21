@@ -96,9 +96,7 @@ class TestResolveLang:
     @pytest.mark.asyncio
     async def test_explicit_es_mode(self, mock_bot):
         await mock_bot.init_mock_db()
-        await mock_bot.db.execute(
-            "INSERT INTO guild_config (guild_id, language) VALUES (?, ?)", (1, "es")
-        )
+        await mock_bot.db.execute("INSERT INTO guild_config (guild_id, language) VALUES (?, ?)", (1, "es"))
         await mock_bot.db.commit()
         assert await i18n.resolve_lang(mock_bot, 1, "periodic") == "es"
         assert await i18n.resolve_lang(mock_bot, 1, "command") == "es"
@@ -137,9 +135,7 @@ class TestResolveLang:
     @pytest.mark.asyncio
     async def test_cache_invalidation_reflects_change(self, mock_bot):
         await mock_bot.init_mock_db()
-        await mock_bot.db.execute(
-            "INSERT INTO guild_config (guild_id, language) VALUES (?, ?)", (1, "es")
-        )
+        await mock_bot.db.execute("INSERT INTO guild_config (guild_id, language) VALUES (?, ?)", (1, "es"))
         await mock_bot.db.commit()
         assert await i18n.resolve_lang(mock_bot, 1, "periodic") == "es"
 

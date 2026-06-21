@@ -43,6 +43,41 @@ VALID_MODES = (MODE_ES, MODE_EN_PERIODIC, MODE_EN_TOTAL)
 # /idioma para que los dashboards reflejen el cambio sin esperar al loop.
 _mode_cache: dict[int, str] = {}
 
+# --- Game mode (ASE / ASA) ---
+GAME_ASE = "ase"
+GAME_ASA = "asa"
+
+_game_mode_cache: dict[int, str] = {}
+
+
+def invalidate_game_mode_cache(guild_id: int | None = None) -> None:
+    """Invalida la caché de game mode de un guild (o de todos si es None)."""
+    if guild_id is None:
+        _game_mode_cache.clear()
+    else:
+        _game_mode_cache.pop(guild_id, None)
+
+
+async def get_game_mode(bot, guild_id: int | None) -> str:
+    """Devuelve 'ase' o 'asa' para el guild, usando caché."""
+    if guild_id is None:
+        return GAME_ASE
+    if guild_id in _game_mode_cache:
+        return _game_mode_cache[guild_id]
+
+    mode = GAME_ASE
+    try:
+        db = getattr(bot, "db", None)
+        if db is not None:
+            row = await db.fetchone("SELECT game_mode FROM guild_config WHERE guild_id = ?", (guild_id,))
+            if row and row["game_mode"] in (GAME_ASE, GAME_ASA):
+                mode = row["game_mode"]
+    except Exception as e:
+        logger.debug(f"[i18n] No se pudo leer game_mode ({guild_id}): {e}")
+
+    _game_mode_cache[guild_id] = mode
+    return mode
+
 
 def invalidate_lang_cache(guild_id: int | None = None) -> None:
     """Invalida la caché del modo de idioma de un guild (o de todos si es None)."""
@@ -66,9 +101,7 @@ async def get_guild_mode(bot, guild_id: int | None) -> str:
     try:
         db = getattr(bot, "db", None)
         if db is not None:
-            row = await db.fetchone(
-                "SELECT language FROM guild_config WHERE guild_id = ?", (guild_id,)
-            )
+            row = await db.fetchone("SELECT language FROM guild_config WHERE guild_id = ?", (guild_id,))
             if row is not None and row["language"] in VALID_MODES:
                 mode = row["language"]
     except Exception as e:  # columna ausente, DB no lista, etc.

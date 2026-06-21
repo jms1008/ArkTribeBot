@@ -10,7 +10,7 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 from cogs.server_status import get_guild_servers
-from utils.i18n import resolve_lang, t
+from utils.i18n import GAME_ASA, get_game_mode, resolve_lang, t
 
 logger = logging.getLogger("ArkTribeBot")
 
@@ -50,8 +50,7 @@ async def _get_trusted_members(bot, guild_id: int) -> set[str]:
     """
     trusted: set[str] = set()
     rows = await bot.db.fetchall(
-        "SELECT members_json FROM k4ultra_fixed_tribes "
-        "WHERE guild_id = ? AND (is_own = 1 OR is_ally = 1)",
+        "SELECT members_json FROM k4ultra_fixed_tribes WHERE guild_id = ? AND (is_own = 1 OR is_ally = 1)",
         (guild_id,),
     )
     for row in rows:
@@ -74,8 +73,7 @@ def _format_alert_content(map_name: str, entries: list[dict], lang: str) -> str:
     """
     lines = [t("alarm.dm.header", lang, map=map_name), ""]
     for e in entries:
-        time_display = f"<t:{e['ts']}:t>" if "ts" in e else f"`{e.get('time', '?')}`"
-        lines.append(t("alarm.dm.entry", lang, name=e["name"], time=time_display))
+        lines.append(t("alarm.dm.entry", lang, player=e["name"], mapa=map_name))
     lines.append("")
     lines.append(t("alarm.dm.footer", lang))
     return "\n".join(lines)
@@ -173,6 +171,29 @@ async def _deliver_intruder_alert(bot, guild_id: int, user_id: int, map_name: st
         logger.warning(f"[Alarma] No se puede enviar DM a {user_id} (DMs cerrados). Mapa={map_name}.")
     except Exception as e:
         logger.error(f"[Alarma] Error entregando alerta DM a {user_id}: {e}")
+
+
+async def _deliver_population_alert(
+    bot, guild_id: int, user_id: int, map_name: str, delta: int, current_count: int
+):
+    lang = await resolve_lang(bot, guild_id, "command", user_id)
+    lines = [
+        t("alarm.dm.header_asa", lang, map=map_name),
+        "",
+        t("alarm.dm.entry_asa", lang, delta=delta, mapa=map_name, total=current_count),
+        "",
+        t("alarm.dm.footer", lang),
+    ]
+    content = "\n".join(lines)
+
+    try:
+        user = bot.get_user(user_id) or await bot.fetch_user(user_id)
+        if user:
+            await user.send(content)
+    except discord.Forbidden:
+        logger.warning(f"[Alarma] No se puede enviar DM a {user_id} (DMs cerrados). Mapa={map_name}.")
+    except Exception as e:
+        logger.error(f"[Alarma] Error enviando alerta ASA a {user_id}: {e}")
 
 
 async def _fetch_user_alarms(bot, guild_id: int, user_id: int) -> list[dict]:
@@ -435,9 +456,7 @@ class Alarma(commands.Cog):
         pero sigue conectado (su nombre estaría cacheado y no dispararía alarma).
         """
         try:
-            cursor = await self.bot.db.execute(
-                "DELETE FROM map_last_players WHERE guild_id = ?", (guild_id,)
-            )
+            cursor = await self.bot.db.execute("DELETE FROM map_last_players WHERE guild_id = ?", (guild_id,))
             await self.bot.db.commit()
             logger.info(
                 f"[Alarma] Snapshot de map_last_players limpiado para guild={guild_id} "
@@ -483,9 +502,7 @@ class Alarma(commands.Cog):
                 return
 
             if mapa not in servers:
-                await interaction.followup.send(
-                    t("alarm.cmd.map_not_found", lang, map=mapa), ephemeral=True
-                )
+                await interaction.followup.send(t("alarm.cmd.map_not_found", lang, map=mapa), ephemeral=True)
                 return
 
             db = self.bot.db
@@ -514,9 +531,7 @@ class Alarma(commands.Cog):
     async def alarmas(self, interaction: discord.Interaction):
         servers = await get_guild_servers(self.bot, interaction.guild_id)
         if not servers:
-            cmd_lang = await resolve_lang(
-                self.bot, interaction.guild_id, "command", interaction.user.id
-            )
+            cmd_lang = await resolve_lang(self.bot, interaction.guild_id, "command", interaction.user.id)
             await interaction.response.send_message(t("common.no_servers", cmd_lang), ephemeral=True)
             return
 
@@ -554,92 +569,121 @@ class Alarma(commands.Cog):
                         (guild_id, map_name),
                     )
 
-                    if not cache_row or not cache_row["player_names"]:
-                        continue
+                    game_mode = await get_game_mode(self.bot, guild_id)
 
-                    # Parsear nombres actuales del caché. Se usa Counter (no set) para
-                    # distinguir jugadores distintos que comparten Steam name (caso clásico:
-                    # varios "123" o "bob" online a la vez). Si el contador de un nombre
-                    # SUBE entre dos ticks, hay un nuevo jugador con ese mismo nombre y la
-                    # alarma debe dispararse.
-                    raw_names = cache_row["player_names"]
-                    if raw_names == "Nadie conectado." or cache_row["player_count"] == 0:
-                        current_counter: Counter[str] = Counter()
-                    else:
-                        current_counter = Counter(
-                            n.strip() for n in raw_names.split(",") if n.strip()
+                    if game_mode == GAME_ASA:
+                        current_count = cache_row["player_count"]
+                        prev_row = await db.fetchone(
+                            "SELECT players_json FROM map_last_players WHERE guild_id = ? AND map_name = ?",
+                            (guild_id, map_name),
                         )
+                        prev_count = 0
+                        if prev_row:
+                            try:
+                                prev_data = json.loads(prev_row["players_json"])
+                                if isinstance(prev_data, dict):
+                                    prev_count = prev_data.get("count", 0)
+                            except (json.JSONDecodeError, TypeError):
+                                pass
 
-                    # Obtener estado anterior — convertimos la lista (con duplicados
-                    # preservados) a Counter para hacer la resta multi-conjunto.
-                    prev_row = await db.fetchone(
-                        "SELECT players_json FROM map_last_players WHERE guild_id = ? AND map_name = ?",
-                        (guild_id, map_name),
-                    )
-                    if prev_row:
-                        try:
-                            prev_counter = Counter(json.loads(prev_row["players_json"]))
-                        except (json.JSONDecodeError, TypeError):
-                            prev_counter = Counter()
-                    else:
-                        prev_counter = Counter()
-
-                    # Counter - Counter solo conserva claves con delta positivo.
-                    diff = current_counter - prev_counter
-                    new_entries = set(diff.keys())
-
-                    if new_entries:
-                        # Set de "confiables": tribu propia + tribus aliadas.
-                        trusted_members = await _get_trusted_members(self.bot, guild_id)
-
-                        intruders: list[str] = []
-                        for name in new_entries:
-                            # Ignorar miembros de la tribu propia o tribus aliadas
-                            if name.lower() in trusted_members:
-                                continue
-
-                            # Comprobar si es un personaje registrado de la tribu
-                            check_row = await db.fetchone(
-                                """SELECT 1 FROM tribe_characters
-                                   WHERE guild_id = ? AND (LOWER(character_name) = LOWER(?) OR LOWER(player_name) = LOWER(?))""",
-                                (guild_id, name, name),
-                            )
-                            if not check_row:
-                                intruders.append(name)
-
-                        if intruders:
+                        if current_count > prev_count:
+                            delta = current_count - prev_count
                             alert_targets = await db.fetchall(
                                 "SELECT user_id FROM map_alarms WHERE guild_id = ? AND map_name = ?",
                                 (guild_id, map_name),
                             )
-
-                            # DM por usuario con mensaje-resumen agrupado (ver
-                            # _deliver_intruder_alert): si hay una alerta reciente
-                            # se edita añadiendo a la lista en vez de spamear.
                             for target in alert_targets:
-                                await _deliver_intruder_alert(
-                                    self.bot, guild_id, target["user_id"], map_name, intruders
+                                await _deliver_population_alert(
+                                    self.bot, guild_id, target["user_id"], map_name, delta, current_count
                                 )
 
-                    # Actualizar el estado anterior. Serializamos como lista con duplicados
-                    # expandidos (Counter.elements()) para que el siguiente tick pueda
-                    # detectar incrementos de cuenta en nombres repetidos.
-                    await db.execute(
-                        "INSERT OR REPLACE INTO map_last_players (guild_id, map_name, players_json) VALUES (?, ?, ?)",
-                        (
-                            guild_id,
-                            map_name,
-                            json.dumps(list(current_counter.elements())),
-                        ),
-                    )
-                    await db.commit()
+                        await db.execute(
+                            "INSERT OR REPLACE INTO map_last_players (guild_id, map_name, players_json) VALUES (?, ?, ?)",
+                            (guild_id, map_name, json.dumps({"count": current_count})),
+                        )
+                        await db.commit()
+
+                    else:
+                        # Parsear nombres actuales del caché. Se usa Counter (no set) para
+                        # distinguir jugadores distintos que comparten Steam name (caso clásico:
+                        # varios "123" o "bob" online a la vez). Si el contador de un nombre
+                        # SUBE entre dos ticks, hay un nuevo jugador con ese mismo nombre y la
+                        # alarma debe dispararse.
+                        raw_names = cache_row["player_names"]
+                        if raw_names == "Nadie conectado." or cache_row["player_count"] == 0:
+                            current_counter: Counter[str] = Counter()
+                        else:
+                            current_counter = Counter(n.strip() for n in raw_names.split(",") if n.strip())
+
+                        # Obtener estado anterior — convertimos la lista (con duplicados
+                        # preservados) a Counter para hacer la resta multi-conjunto.
+                        prev_row = await db.fetchone(
+                            "SELECT players_json FROM map_last_players WHERE guild_id = ? AND map_name = ?",
+                            (guild_id, map_name),
+                        )
+                        if prev_row:
+                            try:
+                                prev_counter = Counter(json.loads(prev_row["players_json"]))
+                            except (json.JSONDecodeError, TypeError):
+                                prev_counter = Counter()
+                        else:
+                            prev_counter = Counter()
+
+                        # Counter - Counter solo conserva claves con delta positivo.
+                        diff = current_counter - prev_counter
+                        new_entries = set(diff.keys())
+
+                        if new_entries:
+                            # Set de "confiables": tribu propia + tribus aliadas.
+                            trusted_members = await _get_trusted_members(self.bot, guild_id)
+
+                            intruders: list[str] = []
+                            for name in new_entries:
+                                # Ignorar miembros de la tribu propia o tribus aliadas
+                                if name.lower() in trusted_members:
+                                    continue
+
+                                # Comprobar si es un personaje registrado de la tribu
+                                check_row = await db.fetchone(
+                                    """SELECT 1 FROM tribe_characters
+                                       WHERE guild_id = ? AND (LOWER(character_name) = LOWER(?) OR LOWER(player_name) = LOWER(?))""",
+                                    (guild_id, name, name),
+                                )
+                                if not check_row:
+                                    intruders.append(name)
+
+                            if intruders:
+                                alert_targets = await db.fetchall(
+                                    "SELECT user_id FROM map_alarms WHERE guild_id = ? AND map_name = ?",
+                                    (guild_id, map_name),
+                                )
+
+                                # DM por usuario con mensaje-resumen agrupado (ver
+                                # _deliver_intruder_alert): si hay una alerta reciente
+                                # se edita añadiendo a la lista en vez de spamear.
+                                for target in alert_targets:
+                                    await _deliver_intruder_alert(
+                                        self.bot, guild_id, target["user_id"], map_name, intruders
+                                    )
+
+                        # Actualizar el estado anterior. Serializamos como lista con duplicados
+                        # expandidos (Counter.elements()) para que el siguiente tick pueda
+                        # detectar incrementos de cuenta en nombres repetidos.
+                        await db.execute(
+                            "INSERT OR REPLACE INTO map_last_players (guild_id, map_name, players_json) VALUES (?, ?, ?)",
+                            (
+                                guild_id,
+                                map_name,
+                                json.dumps(list(current_counter.elements())),
+                            ),
+                        )
+                        await db.commit()
 
                 except Exception as e:
                     logger.error(f"[Alarma] Error procesando alarma para {map_name} (Guild {guild_id}): {e}")
 
         except Exception as e:
             logger.error(f"[Alarma] Error general en check_alarms_loop: {e}")
-
 
 
 async def setup(bot):

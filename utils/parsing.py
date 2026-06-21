@@ -102,6 +102,7 @@ def resolve_map_from_tag(tag: str | None, server_names: list[str]) -> str:
 
     # Pase 0: tabla de tags conocidos.
     if ab in KNOWN_MAP_TAGS:
+
         def _norm(s: str) -> str:
             return s.lower().replace(" ", "")
 

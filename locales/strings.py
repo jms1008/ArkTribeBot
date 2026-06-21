@@ -102,6 +102,9 @@ STRINGS: dict[str, dict[str, str]] = {
         # --- /admin ---
         "admin.config.updated": "✅ **Configuración actualizada correctamente.**",
         "admin.config.not_setup": "❌ Este servidor no está configurado. Usa `/inicio_ark` primero.",
+        "admin.juego.set": "✅ Modo de juego configurado a: **{mode}**",
+        "admin.juego.note_asa": "⚠️ **Modo ASA Activado:** El radar K4Ultra se pausa (ASA no expone nombres). Las alarmas de intrusos actuarán por aumento de población.",
+        "admin.juego.note_ase": "✅ **Modo ASE Activado:** Funcionalidad completa activada (Radar, Nombres, Alarmas específicas).",
         "admin.wipe.done": "✅ **BASE DE DATOS BORRADA.**\nTodos los registros han sido eliminados y los contadores reiniciados.",
         "admin.wipe.error": "❌ Error al borrar DB: {err}",
         "admin.clear.done": "✅ **DASHBOARDS LIMPIOS.** Si los mensajes viejos siguen existiendo en Discord, bórralos a mano.\nEl bot ya LOS HA OLVIDADO y no intentará editarlos más.",
@@ -113,7 +116,10 @@ STRINGS: dict[str, dict[str, str]] = {
         "config.title": "⚙️ Configuración de ArkTribeBot",
         "config.subtitle": "Estado actual de la vinculación y parámetros del bot.",
         "config.footer": "ID Servidor: {guild_id}",
-        "config.f.channels": "📡 Canales del Sistema",
+        "config.f.channels": "📡 Canales Activos",
+        "config.f.game": "🎮 Modo de Juego",
+        "config.game_value": "ARK: Survival {mode}",
+        "config.f.roles": "🔑 Permisos",
         "config.channels_value": "🚨 **Alertas SOS:** <#{sos}>\n📜 **Lector Logs:** <#{log}>\n📁 **Repositorio:** <#{upload}>",
         "config.f.auth": "🛡️ Autorización",
         "config.auth_full": "👤 **Owner:** <@{owner}>\n🛡️ **Admin Role:** <@&{role}>",
@@ -148,9 +154,11 @@ STRINGS: dict[str, dict[str, str]] = {
             "cuando entre un intruso. 🔔\n⚠️ Asegúrate de tener los DMs abiertos para este servidor."
         ),
         "alarm.cmd.error": "❌ Ocurrió un error al procesar la alarma: {err}",
-        "alarm.dm.header": "⚠️ **Alerta de intrusos** en `{map}`",
-        "alarm.dm.entry": "• **{name}**  ·  ⏱️ {time}",
-        "alarm.dm.footer": "-# Este mensaje se actualiza si entran más intrusos · Pulsa Silenciar para descartarlo",
+        "alarm.dm.header": "🚨 **ALERTA DE INTRUSO**",
+        "alarm.dm.header_asa": "📈 **AUMENTO DE POBLACIÓN**",
+        "alarm.dm.entry": "• ⚠️ `{player}` detectado en **{mapa}**",
+        "alarm.dm.entry_asa": "• Se detectaron **+{delta} jugador(es)** en **{mapa}** (Población total: {total})",
+        "alarm.dm.footer": "ArkTribeBot Vigilancia Automática",
         # --- To-Do dashboard ---
         "todo.title": "📋 LISTA DE TAREAS",
         "todo.empty": (
@@ -225,6 +233,8 @@ STRINGS: dict[str, dict[str, str]] = {
         "pd.field.record_type": "📑 Tipo de Registro",
         "pd.allies_none": "Sin aliados conocidos.",
         "pd.field.allies": "🤝 Aliados Cercanos",
+        "k4ultra.radar.allies": "🤝 **ALIADOS PREDICHOS (COINCIDENCIAS)**",
+        "k4ultra.disabled_asa": "⚠️ **Radar Pausado:** El servidor está en modo ASA. El juego no expone nombres, por lo que el tracking individual está deshabilitado.",
         # --- KDA / Ranking de muertes dashboard ---
         "kda.title": "☠️ EL SALÓN DE LA INFAMIA",
         "kda.empty_title": "☠️ El Salón de la Infamia",
@@ -359,7 +369,8 @@ STRINGS: dict[str, dict[str, str]] = {
         ),
         # --- Status global dashboard ---
         "status.title": "🌐 ESTADO GLOBAL DE SERVIDORES",
-        "status.no_servers": "⚠️ No hay servidores configurados. Usa `/inicio_ark` para añadirlos.",
+        "status.no_servers": "❌ No hay servidores configurados.",
+        "status.player_count_only": "👥 {count} jugadores online",
         "status.nobody": "Nadie conectado.",
         "status.total_players": "👥 **Total de jugadores en la red:** {occupancy}",
         "status.no_data": "*sin datos*",
@@ -447,10 +458,7 @@ STRINGS: dict[str, dict[str, str]] = {
         ),
         # --- /idioma ---
         "idioma.denied": "❌ Acceso denegado. Necesitas permisos de administrador.",
-        "idioma.set.es": (
-            "🌐 Idioma configurado: **Español**.\n"
-            "Todo el bot se mostrará en español."
-        ),
+        "idioma.set.es": ("🌐 Idioma configurado: **Español**.\nTodo el bot se mostrará en español."),
         "idioma.set.en_periodic": (
             "🌐 Idioma configurado: **Inglés (solo dashboards)**.\n"
             "Los paneles automáticos pasarán a inglés; los comandos y mensajes "
@@ -547,6 +555,9 @@ STRINGS: dict[str, dict[str, str]] = {
         # --- /admin ---
         "admin.config.updated": "✅ **Configuration updated successfully.**",
         "admin.config.not_setup": "❌ This server is not configured. Use `/inicio_ark` first.",
+        "admin.juego.set": "✅ Game mode set to: **{mode}**",
+        "admin.juego.note_asa": "⚠️ **ASA Mode Activated:** K4Ultra radar is paused (ASA does not expose names). Intruder alarms will trigger on population increase.",
+        "admin.juego.note_ase": "✅ **ASE Mode Activated:** Full functionality enabled (Radar, Names, Specific Alarms).",
         "admin.wipe.done": "✅ **DATABASE WIPED.**\nAll records have been deleted and counters reset.",
         "admin.wipe.error": "❌ Error wiping DB: {err}",
         "admin.clear.done": "✅ **DASHBOARDS CLEARED.** If the old messages still exist in Discord, delete them by hand.\nThe bot has FORGOTTEN them and won't try to edit them anymore.",
@@ -558,7 +569,10 @@ STRINGS: dict[str, dict[str, str]] = {
         "config.title": "⚙️ ArkTribeBot Configuration",
         "config.subtitle": "Current binding status and bot parameters.",
         "config.footer": "Server ID: {guild_id}",
-        "config.f.channels": "📡 System Channels",
+        "config.f.channels": "📡 Active Channels",
+        "config.f.game": "🎮 Game Mode",
+        "config.game_value": "ARK: Survival {mode}",
+        "config.f.roles": "🔑 Permissions",
         "config.channels_value": "🚨 **SOS Alerts:** <#{sos}>\n📜 **Log Reader:** <#{log}>\n📁 **Repository:** <#{upload}>",
         "config.f.auth": "🛡️ Authorization",
         "config.auth_full": "👤 **Owner:** <@{owner}>\n🛡️ **Admin Role:** <@&{role}>",
@@ -593,9 +607,11 @@ STRINGS: dict[str, dict[str, str]] = {
             "when an intruder shows up. 🔔\n⚠️ Make sure your DMs are open for this server."
         ),
         "alarm.cmd.error": "❌ An error occurred while processing the alarm: {err}",
-        "alarm.dm.header": "⚠️ **Intruder alert** on `{map}`",
-        "alarm.dm.entry": "• **{name}**  ·  ⏱️ {time}",
-        "alarm.dm.footer": "-# This message updates if more intruders enter · Press Silence to dismiss it",
+        "alarm.dm.header": "🚨 **INTRUDER ALERT**",
+        "alarm.dm.header_asa": "📈 **POPULATION INCREASE**",
+        "alarm.dm.entry": "• ⚠️ `{player}` detected in **{mapa}**",
+        "alarm.dm.entry_asa": "• Detected **+{delta} player(s)** in **{mapa}** (Total pop: {total})",
+        "alarm.dm.footer": "ArkTribeBot Automatic Vigilance",
         # --- To-Do dashboard ---
         "todo.title": "📋 TASK LIST",
         "todo.empty": (
@@ -615,8 +631,7 @@ STRINGS: dict[str, dict[str, str]] = {
         # --- Blacklist dashboard ---
         "blacklist.title": "☠️ TRIBE BLACKLIST",
         "blacklist.empty": (
-            "The list is clean. No players registered.\n"
-            "💡 Use the **Add** button to register the first one."
+            "The list is clean. No players registered.\n💡 Use the **Add** button to register the first one."
         ),
         "blacklist.badges": "🔴 `{enemies}` Enemies  ·  ⚪ `{neutrals}` Neutrals  ·  📊 `{total}` Total",
         "blacklist.section.enemies": "## 🔴 ENEMIES (KOS)",
@@ -669,7 +684,8 @@ STRINGS: dict[str, dict[str, str]] = {
         "pd.field.threat": "🔥 Danger Level",
         "pd.field.record_type": "📑 Record Type",
         "pd.allies_none": "No known allies.",
-        "pd.field.allies": "🤝 Close Allies",
+        "k4ultra.radar.allies": "🤝 **PREDICTED ALLIES (MATCHES)**",
+        "k4ultra.disabled_asa": "⚠️ **Radar Paused:** Server is in ASA mode. The game doesn't expose names, so individual tracking is disabled.",
         # --- KDA / Death ranking dashboard ---
         "kda.title": "☠️ THE HALL OF INFAMY",
         "kda.empty_title": "☠️ The Hall of Infamy",
@@ -716,8 +732,7 @@ STRINGS: dict[str, dict[str, str]] = {
         # --- Breeding / Lines dashboard ---
         "breeding.title": "🧬 BREEDING LINES (Top Stats)",
         "breeding.empty": (
-            "📭 No lines registered yet.\n\n"
-            "💡 Use `/linea add dino:Rex estadistica:HP puntos:50` to start."
+            "📭 No lines registered yet.\n\n💡 Use `/linea add dino:Rex estadistica:HP puntos:50` to start."
         ),
         "breeding.empty_footer": "Page 1/1 • 0 species",
         "breeding.badges": "📊 `{total:02d}` registered species  ·  📄 Page `{page}/{pages}`",
@@ -804,7 +819,8 @@ STRINGS: dict[str, dict[str, str]] = {
         ),
         # --- Status global dashboard ---
         "status.title": "🌐 GLOBAL SERVER STATUS",
-        "status.no_servers": "⚠️ No servers configured. Use `/inicio_ark` to add them.",
+        "status.no_servers": "❌ No servers configured.",
+        "status.player_count_only": "👥 {count} players online",
         "status.nobody": "Nobody connected.",
         "status.total_players": "👥 **Total players on the network:** {occupancy}",
         "status.no_data": "*no data*",
