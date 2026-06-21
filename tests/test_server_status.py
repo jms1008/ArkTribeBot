@@ -18,7 +18,7 @@ async def test_get_server_embed_offline(status_cog):
     """El embed de error se genera correctamente cuando el servidor no responde."""
     servers = {"Gen2": ("1.2.3.4", 7777)}
     with patch("cogs.server_status.a2s.info", side_effect=Exception("Connection Refused")):
-        embed = await status_cog.get_server_embed("Gen2", servers)
+        embed = await status_cog.get_server_embed("Gen2", servers, guild_id=1)
 
         assert embed is not None
         assert "Error" in embed.title
@@ -43,5 +43,5 @@ async def test_status_command(status_cog, mock_interaction, mock_bot, mocker):
 
     mock_interaction.response.defer.assert_called_once_with(ephemeral=True)
     mock_interaction.followup.send.assert_called_once_with(embed=mock_embed, ephemeral=True)
-    # get_server_embed se llamó con el nombre de mapa correcto y el dict parseado.
-    status_cog.get_server_embed.assert_called_once_with("Gen2", {"Gen2": ("1.2.3.4", 7777)})
+    # get_server_embed se llamó con el nombre de mapa correcto y el dict parseado, junto con el guild_id.
+    status_cog.get_server_embed.assert_called_once_with("Gen2", {"Gen2": ("1.2.3.4", 7777)}, mock_interaction.guild_id)
