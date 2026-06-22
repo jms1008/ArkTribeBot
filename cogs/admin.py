@@ -1,6 +1,5 @@
 import asyncio
 import logging
-from typing import Union
 
 import aiosqlite
 import discord
@@ -91,7 +90,8 @@ class Admin(commands.Cog):
     @app_commands.describe(
         canal_sos="Canal de retransmisión de alertas (SOS).",
         canal_logs="Canal puente donde el bot lee eventos del juego.",
-        canal_archivos="Canal para almacenamiento redundante de imágenes.",
+        canal_archivos="Canal para almacenamiento de imágenes (selector).",
+        canal_archivos_id="ID de canal/hilo para imágenes (para hilos, pega el ID aquí).",
         intervalo_act="Frecuencia (minutos) para actualizar dashboards.",
         rol_admin="Rol de Discord autorizado para usar comandos protegidos.",
         propietario_bot="Usuario de Discord propietario del bot en este servidor.",
@@ -103,7 +103,8 @@ class Admin(commands.Cog):
         interaction: discord.Interaction,
         canal_sos: discord.TextChannel = None,
         canal_logs: discord.TextChannel = None,
-        canal_archivos: Union[discord.TextChannel, discord.Thread] = None,
+        canal_archivos: discord.TextChannel = None,
+        canal_archivos_id: str = None,
         intervalo_act: int = None,
         rol_admin: discord.Role = None,
         propietario_bot: discord.Member = None,
@@ -126,7 +127,17 @@ class Admin(commands.Cog):
         if canal_logs:
             updates.append("log_channel_id = ?")
             params.append(canal_logs.id)
-        if canal_archivos:
+        # canal_archivos_id (texto) tiene prioridad sobre el selector
+        if canal_archivos_id:
+            try:
+                updates.append("upload_channel_id = ?")
+                params.append(int(canal_archivos_id))
+            except ValueError:
+                await interaction.response.send_message(
+                    "❌ `canal_archivos_id` debe ser un número (ID del canal o hilo).", ephemeral=True
+                )
+                return
+        elif canal_archivos:
             updates.append("upload_channel_id = ?")
             params.append(canal_archivos.id)
         if intervalo_act is not None:
