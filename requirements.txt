@@ -2,7 +2,7 @@
 # permitir parches de seguridad automáticos sin romper la API.
 discord.py~=2.7
 aiosqlite~=0.22
-python-dotenv~=1.0
+python-dotenv~=1.2
 python-a2s~=1.4
 tzdata>=2024.1
 
