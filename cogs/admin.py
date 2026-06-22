@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from typing import Union
 
 import aiosqlite
 import discord
@@ -102,7 +103,7 @@ class Admin(commands.Cog):
         interaction: discord.Interaction,
         canal_sos: discord.TextChannel = None,
         canal_logs: discord.TextChannel = None,
-        canal_archivos: discord.TextChannel = None,
+        canal_archivos: Union[discord.TextChannel, discord.Thread] = None,
         intervalo_act: int = None,
         rol_admin: discord.Role = None,
         propietario_bot: discord.Member = None,
