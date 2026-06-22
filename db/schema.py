@@ -49,6 +49,7 @@ TABLES: list[str] = [
     CREATE TABLE IF NOT EXISTS todos (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         guild_id INTEGER NOT NULL,
+        task_number INTEGER,
         tarea TEXT,
         asignado_a INTEGER,
         estado TEXT DEFAULT 'Pendiente'
@@ -416,6 +417,7 @@ MIGRATIONS: list[tuple[str, str]] = [
     ("dinos", "ALTER TABLE dinos ADD COLUMN oxy INTEGER"),
     ("dinos", "ALTER TABLE dinos ADD COLUMN food INTEGER"),
     ("dinos", "ALTER TABLE dinos ADD COLUMN speed INTEGER"),
+    ("todos", "ALTER TABLE todos ADD COLUMN task_number INTEGER"),
 ]
 
 # Auto-migración de guild_id para tablas legacy que pudieran no tenerla.
@@ -493,6 +495,20 @@ async def run_migrations(db: aiosqlite.Connection) -> None:
             logger.info(f"[Schema] Migración: columna guild_id añadida a {table}")
         except aiosqlite.OperationalError:
             pass  # La columna ya existe o la tabla no existe.
+
+    # Backfill task_number para filas existentes que aún no lo tengan.
+    try:
+        await db.execute(
+            """
+            UPDATE todos SET task_number = (
+                SELECT COUNT(*) FROM todos AS t2
+                WHERE t2.guild_id = todos.guild_id AND t2.id <= todos.id
+            )
+            WHERE task_number IS NULL
+            """
+        )
+    except aiosqlite.OperationalError:
+        pass
 
     await db.commit()
 

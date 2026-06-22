@@ -127,8 +127,9 @@ def _render_todo_item(row, lang: str = "es") -> list[str]:
     ``#ID + emoji + **tarea**`` y debajo ``└ 👤 mention``.
     """
     icon = "🔨" if row["estado"] != "Pendiente" else "⏳"
+    num = row.get("task_number", row["id"])
     return [
-        f"`#{row['id']:03d}` {icon} **{row['tarea']}**",
+        f"`#{num:03d}` {icon} **{row['tarea']}**",
         f"  └ 👤 {_format_assignees(row['asignado_a'], lang)}",
     ]
 
@@ -243,12 +244,15 @@ class AddTaskModal(discord.ui.Modal, title="Añadir Nueva Tarea"):
     async def on_submit(self, interaction: discord.Interaction):
         tarea = self.tarea_content.value
         db = self.bot.db
+        # Calcular el próximo task_number para este guild
+        row = await db.fetchone(
+            "SELECT COALESCE(MAX(task_number), 0) AS max_num FROM todos WHERE guild_id = ?",
+            (interaction.guild_id,),
+        )
+        next_num = (row["max_num"] if row else 0) + 1
         await db.execute(
-            "INSERT INTO todos (guild_id, tarea) VALUES (?, ?)",
-            (
-                interaction.guild_id,
-                tarea,
-            ),
+            "INSERT INTO todos (guild_id, task_number, tarea) VALUES (?, ?, ?)",
+            (interaction.guild_id, next_num, tarea),
         )
         await db.commit()
 
@@ -281,7 +285,7 @@ class ClaimTaskModal(discord.ui.Modal, title="Reclamar Tarea"):
         db = self.bot.db
         # Verificar si la tarea existe y recuperar datos actuales
         cursor = await db.execute(
-            "SELECT asignado_a FROM todos WHERE id = ? AND guild_id = ?",
+            "SELECT id, asignado_a FROM todos WHERE task_number = ? AND guild_id = ?",
             (tid_int, interaction.guild_id),
         )
         row = await cursor.fetchone()
@@ -314,7 +318,7 @@ class ClaimTaskModal(discord.ui.Modal, title="Reclamar Tarea"):
         new_assignee = ", ".join(assignees)
 
         await db.execute(
-            "UPDATE todos SET asignado_a = ?, estado = 'En Progreso' WHERE id = ? AND guild_id = ?",
+            "UPDATE todos SET asignado_a = ?, estado = 'En Progreso' WHERE task_number = ? AND guild_id = ?",
             (new_assignee, tid_int, interaction.guild_id),
         )
         await db.commit()
@@ -352,7 +356,7 @@ class DeleteTaskModal(discord.ui.Modal, title="Eliminar Tarea"):
         db = self.bot.db
         # Verificar si la tarea existe y pertenece al servidor
         cursor = await db.execute(
-            "SELECT id FROM todos WHERE id = ? AND guild_id = ?",
+            "SELECT id FROM todos WHERE task_number = ? AND guild_id = ?",
             (tid_int, interaction.guild_id),
         )
         if not await cursor.fetchone():
@@ -363,7 +367,7 @@ class DeleteTaskModal(discord.ui.Modal, title="Eliminar Tarea"):
             return
 
         await db.execute(
-            "DELETE FROM todos WHERE id = ? AND guild_id = ?",
+            "DELETE FROM todos WHERE task_number = ? AND guild_id = ?",
             (
                 tid_int,
                 interaction.guild_id,
@@ -432,12 +436,15 @@ class Management(commands.Cog, name="Management"):
     @app_commands.describe(tarea="Descripción de la tarea")
     async def todo_add(self, interaction: discord.Interaction, tarea: str):
         db = self.bot.db
+        # Calcular el próximo task_number para este guild
+        row = await db.fetchone(
+            "SELECT COALESCE(MAX(task_number), 0) AS max_num FROM todos WHERE guild_id = ?",
+            (interaction.guild_id,),
+        )
+        next_num = (row["max_num"] if row else 0) + 1
         await db.execute(
-            "INSERT INTO todos (guild_id, tarea) VALUES (?, ?)",
-            (
-                interaction.guild_id,
-                tarea,
-            ),
+            "INSERT INTO todos (guild_id, task_number, tarea) VALUES (?, ?, ?)",
+            (interaction.guild_id, next_num, tarea),
         )
         await db.commit()
 

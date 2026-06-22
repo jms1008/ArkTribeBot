@@ -61,17 +61,19 @@ async def test_claim_task_assigns_user_and_moves_to_in_progress(
     await mock_bot.init_mock_db()
     # Tarea preexistente sin asignar.
     cursor = await mock_bot.db.execute(
-        "INSERT INTO todos (guild_id, tarea) VALUES (?, ?)",
-        (mock_interaction.guild_id, "Construir torreta"),
+        "INSERT INTO todos (guild_id, task_number, tarea) VALUES (?, ?, ?)",
+        (mock_interaction.guild_id, 1, "Construir torreta"),
     )
-    task_id = cursor.lastrowid
     await mock_bot.db.commit()
 
     modal = ClaimTaskModal(mock_bot)
-    modal.task_id._value = str(task_id)
+    modal.task_id._value = "1"  # task_number, not global id
     await modal.on_submit(mock_interaction)
 
-    row = await mock_bot.db.fetchone("SELECT asignado_a, estado FROM todos WHERE id = ?", (task_id,))
+    row = await mock_bot.db.fetchone(
+        "SELECT asignado_a, estado FROM todos WHERE task_number = ? AND guild_id = ?",
+        (1, mock_interaction.guild_id),
+    )
     assert row is not None
     assert row["estado"] == "En Progreso"
     assert f"<@{mock_interaction.user.id}>" in row["asignado_a"]
@@ -84,19 +86,21 @@ async def test_claim_task_toggles_off_when_already_assigned(
     """Pulsar 'Reclamar' dos veces como mismo usuario debe quitarlo de la lista."""
     await mock_bot.init_mock_db()
     cursor = await mock_bot.db.execute(
-        "INSERT INTO todos (guild_id, tarea) VALUES (?, ?)",
-        (mock_interaction.guild_id, "Tarea A"),
+        "INSERT INTO todos (guild_id, task_number, tarea) VALUES (?, ?, ?)",
+        (mock_interaction.guild_id, 1, "Tarea A"),
     )
-    task_id = cursor.lastrowid
     await mock_bot.db.commit()
 
     modal = ClaimTaskModal(mock_bot)
-    modal.task_id._value = str(task_id)
+    modal.task_id._value = "1"
     await modal.on_submit(mock_interaction)
     # Segundo claim del mismo usuario.
     await modal.on_submit(mock_interaction)
 
-    row = await mock_bot.db.fetchone("SELECT asignado_a FROM todos WHERE id = ?", (task_id,))
+    row = await mock_bot.db.fetchone(
+        "SELECT asignado_a FROM todos WHERE task_number = ? AND guild_id = ?",
+        (1, mock_interaction.guild_id),
+    )
     # Ya no debe contener su mention.
     assert f"<@{mock_interaction.user.id}>" not in (row["asignado_a"] or "")
 
@@ -131,17 +135,19 @@ async def test_claim_task_rejects_unknown_id(mgmt_cog, mock_interaction, mock_bo
 async def test_delete_task_removes_row(mgmt_cog, mock_interaction, mock_bot, _no_dashboard_refresh):
     await mock_bot.init_mock_db()
     cursor = await mock_bot.db.execute(
-        "INSERT INTO todos (guild_id, tarea) VALUES (?, ?)",
-        (mock_interaction.guild_id, "Tarea a borrar"),
+        "INSERT INTO todos (guild_id, task_number, tarea) VALUES (?, ?, ?)",
+        (mock_interaction.guild_id, 1, "Tarea a borrar"),
     )
-    task_id = cursor.lastrowid
     await mock_bot.db.commit()
 
     modal = DeleteTaskModal(mock_bot)
-    modal.task_id._value = str(task_id)
+    modal.task_id._value = "1"
     await modal.on_submit(mock_interaction)
 
-    row = await mock_bot.db.fetchone("SELECT id FROM todos WHERE id = ?", (task_id,))
+    row = await mock_bot.db.fetchone(
+        "SELECT id FROM todos WHERE task_number = ? AND guild_id = ?",
+        (1, mock_interaction.guild_id),
+    )
     assert row is None
 
 
@@ -150,18 +156,20 @@ async def test_delete_task_isolates_by_guild(mgmt_cog, mock_interaction, mock_bo
     """Un usuario no puede borrar tareas de OTRO guild aunque conozca el ID."""
     await mock_bot.init_mock_db()
     cursor = await mock_bot.db.execute(
-        "INSERT INTO todos (guild_id, tarea) VALUES (?, ?)",
-        (mock_interaction.guild_id + 1, "De otro guild"),
+        "INSERT INTO todos (guild_id, task_number, tarea) VALUES (?, ?, ?)",
+        (mock_interaction.guild_id + 1, 1, "De otro guild"),
     )
-    task_id = cursor.lastrowid
     await mock_bot.db.commit()
 
     modal = DeleteTaskModal(mock_bot)
-    modal.task_id._value = str(task_id)
+    modal.task_id._value = "1"  # task_number 1 exists but in another guild
     await modal.on_submit(mock_interaction)
 
     # La tarea debe seguir existiendo.
-    row = await mock_bot.db.fetchone("SELECT id FROM todos WHERE id = ?", (task_id,))
+    row = await mock_bot.db.fetchone(
+        "SELECT id FROM todos WHERE task_number = ? AND guild_id = ?",
+        (1, mock_interaction.guild_id + 1),
+    )
     assert row is not None
 
 
@@ -175,6 +183,6 @@ class TestBuildTodoEmbedView:
 
     def test_pagination_clamps_high_page(self, mock_bot):
         # Sólo 1 tarea → siempre página 0.
-        rows = [{"id": 1, "tarea": "X", "asignado_a": None, "estado": "Pendiente"}]
+        rows = [{"id": 1, "task_number": 1, "tarea": "X", "asignado_a": None, "estado": "Pendiente"}]
         embed, page, _ = build_todo_embed_view(mock_bot, rows=rows, page=5)
         assert page == 0
