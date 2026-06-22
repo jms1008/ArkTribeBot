@@ -127,7 +127,10 @@ def _render_todo_item(row, lang: str = "es") -> list[str]:
     ``#ID + emoji + **tarea**`` y debajo ``└ 👤 mention``.
     """
     icon = "🔨" if row["estado"] != "Pendiente" else "⏳"
-    num = row.get("task_number", row["id"])
+    try:
+        num = row["task_number"] or row["id"]
+    except (KeyError, IndexError):
+        num = row["id"]
     return [
         f"`#{num:03d}` {icon} **{row['tarea']}**",
         f"  └ 👤 {_format_assignees(row['asignado_a'], lang)}",
