@@ -60,12 +60,14 @@ class MockA2SInfo:
         self.ping = 0.0
 
 async def _fetch_from_battlemetrics(ip: str, port: int):
+    import urllib.parse
     try:
         resolved_ip = socket.gethostbyname(ip)
     except Exception:
         resolved_ip = ip
         
-    url = f"https://api.battlemetrics.com/servers?filter[search]={resolved_ip}:{port}"
+    search_query = urllib.parse.quote(f'"{resolved_ip}:{port}"')
+    url = f"https://api.battlemetrics.com/servers?filter[search]={search_query}"
     async with aiohttp.ClientSession() as session:
         async with session.get(url, timeout=5.0) as resp:
             if resp.status == 200:
