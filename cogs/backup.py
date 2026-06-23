@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 import os
 import shutil
-from datetime import datetime, time, timedelta
+from datetime import datetime, time, timedelta, timezone
 
 from discord.ext import commands, tasks
 
@@ -31,7 +31,7 @@ def _do_backup(db_path: str) -> str:
     """Realiza la copia (síncrona, idempotente para el mismo día) y devuelve la ruta."""
     if not os.path.exists(BACKUP_DIR):
         os.makedirs(BACKUP_DIR)
-    target = os.path.join(BACKUP_DIR, _backup_filename(datetime.utcnow()))
+    target = os.path.join(BACKUP_DIR, _backup_filename(datetime.now(timezone.utc)))
     shutil.copy2(db_path, target)
     return target
 
@@ -40,14 +40,14 @@ def _prune_old_backups() -> int:
     """Borra backups con antigüedad > BACKUP_RETENTION días. Devuelve cuántos se borraron."""
     if not os.path.isdir(BACKUP_DIR):
         return 0
-    cutoff = datetime.utcnow() - timedelta(days=BACKUP_RETENTION)
+    cutoff = datetime.now(timezone.utc) - timedelta(days=BACKUP_RETENTION)
     removed = 0
     for fname in os.listdir(BACKUP_DIR):
         if not fname.startswith("tribe_data_") or not fname.endswith(".db"):
             continue
         full = os.path.join(BACKUP_DIR, fname)
         try:
-            mtime = datetime.utcfromtimestamp(os.path.getmtime(full))
+            mtime = datetime.fromtimestamp(os.path.getmtime(full), tz=timezone.utc)
         except OSError:
             continue
         if mtime < cutoff:

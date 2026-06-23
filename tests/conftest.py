@@ -22,7 +22,7 @@ def _clear_i18n_cache():
 
 
 @pytest.fixture
-def mock_bot(tmp_path):
+async def mock_bot(tmp_path):
     """Mock básico para representar al bot de Discord.
 
     - El esquema de la DB se carga desde ``db/schema.py`` (no copia divergente).
@@ -64,7 +64,10 @@ def mock_bot(tmp_path):
             self.db = Database(self.db_name)
             await self.db.connect()
 
-    return MockBot()
+    bot = MockBot()
+    yield bot
+    if bot.db is not None:
+        await bot.db.close()
 
 
 @pytest.fixture

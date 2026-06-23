@@ -2,7 +2,7 @@ import json
 import logging
 import time
 from collections import Counter
-from datetime import datetime
+from datetime import datetime, timezone
 
 import aiosqlite
 import discord
@@ -93,7 +93,7 @@ async def _deliver_intruder_alert(bot, guild_id: int, user_id: int, map_name: st
     """
     db = bot.db
     lang = await resolve_lang(bot, guild_id, "command", user_id)
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     now_iso = now.strftime("%Y-%m-%d %H:%M:%S")
     # Epoch para timestamps de Discord (<t:..:t>): cada cliente lo muestra en
     # su hora local, independientemente de la zona horaria del servidor.

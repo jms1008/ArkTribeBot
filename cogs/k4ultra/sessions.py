@@ -82,7 +82,7 @@ async def run(bot) -> None:  # noqa: C901 - lógica de identidad densa pero cohe
     """Ejecuta un ciclo completo de recolección y actualización de sesiones."""
     from cogs.server_status import get_guild_servers, query_all_servers
 
-    now = datetime.utcnow()
+    now = datetime.now(dt.timezone.utc)
     db = bot.db
     guild_rows = await db.fetchall(
         """
