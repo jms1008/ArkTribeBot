@@ -153,7 +153,7 @@ class ServerStatus(commands.Cog):
         await asyncio.sleep(0.5)
 
         await self.bot.db.execute(
-            "INSERT INTO status_messages (guild_id, channel_id, message_id) VALUES (?, ?, ?)",
+            "INSERT INTO status_online_messages (guild_id, channel_id, message_id) VALUES (?, ?, ?)",
             (guild_id, channel.id, msg.id),
         )
         await self.bot.db.commit()

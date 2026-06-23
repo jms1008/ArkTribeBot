@@ -159,9 +159,12 @@ def parse_battlemetrics(bm_string: str | None) -> dict[str, tuple[str, int]]:
         return servers
     for entry in bm_string.split(","):
         entry = entry.strip()
-        if "|" not in entry:
+        if "|" in entry:
+            parts = entry.split("|", 1)
+        elif ";" in entry:
+            parts = entry.split(";", 1)
+        else:
             continue
-        parts = entry.split("|", 1)
         if len(parts) != 2:
             continue
         map_name = parts[0].strip()
