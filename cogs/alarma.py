@@ -119,7 +119,8 @@ async def _deliver_intruder_alert(bot, guild_id: int, user_id: int, map_name: st
     reuse = False
     if row and row["message_id"] and row["updated_at"]:
         try:
-            age_min = (now - datetime.fromisoformat(row["updated_at"])).total_seconds() / 60
+            stored = datetime.fromisoformat(row["updated_at"]).replace(tzinfo=timezone.utc)
+            age_min = (now - stored).total_seconds() / 60
             reuse = age_min < ALERT_REUSE_WINDOW_MIN
         except ValueError:
             reuse = False
