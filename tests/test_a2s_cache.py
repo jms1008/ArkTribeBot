@@ -47,7 +47,7 @@ async def test_refetches_when_cache_expired(mocker):
     fake_player = mocker.MagicMock(name_attr="P1", duration=12.0)
     fake_player.name = "P1"  # discord-style attribute, no propiedad name
 
-    async def _fake_fetch(name, ip, port):
+    async def _fake_fetch(name, ip, port, game_mode=None):
         return fake_info, [fake_player]
 
     mocker.patch("cogs.server_status._fetch_single_server", side_effect=_fake_fetch)
@@ -66,7 +66,7 @@ async def test_refetches_when_cache_expired(mocker):
 async def test_records_error_when_fetch_fails(mocker):
     """Si la consulta A2S explota, se devuelve un dict con 'error' no nulo."""
 
-    async def _boom(name, ip, port):
+    async def _boom(name, ip, port, game_mode=None):
         raise TimeoutError("simulated")
 
     mocker.patch("cogs.server_status._fetch_single_server", side_effect=_boom)

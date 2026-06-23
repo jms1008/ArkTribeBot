@@ -1,5 +1,7 @@
 import asyncio
 import logging
+import socket
+import aiohttp
 
 import a2s
 import aiosqlite
@@ -50,13 +52,49 @@ _A2S_CACHE_TTL = 90  # segundos
 _a2s_semaphore = asyncio.Semaphore(5)
 
 
-async def _fetch_single_server(name: str, ip: str, port: int):
-    """Consulta A2S de un solo servidor con semáforo global."""
+class MockA2SInfo:
+    def __init__(self, map_name, player_count, max_players):
+        self.map_name = map_name
+        self.player_count = player_count
+        self.max_players = max_players
+        self.ping = 0.0
+
+async def _fetch_from_battlemetrics(ip: str, port: int):
+    try:
+        resolved_ip = socket.gethostbyname(ip)
+    except Exception:
+        resolved_ip = ip
+        
+    url = f"https://api.battlemetrics.com/servers?filter[search]={resolved_ip}:{port}"
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url, timeout=5.0) as resp:
+            if resp.status == 200:
+                data = await resp.json()
+                for s in data.get("data", []):
+                    attrs = s.get("attributes", {})
+                    # Battlemetrics puede tener portQuery == port para ASA
+                    if attrs.get("ip") == resolved_ip and (attrs.get("port") == port or attrs.get("portQuery") == port):
+                        info = MockA2SInfo(
+                            map_name=attrs.get("details", {}).get("map", "Unknown"),
+                            player_count=attrs.get("players", 0),
+                            max_players=attrs.get("maxPlayers", 0)
+                        )
+                        return info, []
+    raise TimeoutError("Timeout o servidor no encontrado en Battlemetrics")
+
+async def _fetch_single_server(name: str, ip: str, port: int, game_mode: str = None):
+    """Consulta A2S de un solo servidor con semáforo global, con fallback a Battlemetrics."""
     async with _a2s_semaphore:
         address = (ip, port)
-        info = await asyncio.wait_for(asyncio.to_thread(a2s.info, address), timeout=10.0)
-        players = await asyncio.wait_for(asyncio.to_thread(a2s.players, address), timeout=10.0)
-        return info, players
+        try:
+            info = await asyncio.wait_for(asyncio.to_thread(a2s.info, address), timeout=4.0)
+            if game_mode == GAME_ASA:
+                players = []
+            else:
+                players = await asyncio.wait_for(asyncio.to_thread(a2s.players, address), timeout=4.0)
+            return info, players
+        except Exception:
+            return await _fetch_from_battlemetrics(ip, port)
 
 
 
@@ -89,7 +127,7 @@ async def query_all_servers(bot, guild_id: int, servers: dict = None) -> dict:
 
         async def _query_one(map_name, ip, port):
             try:
-                info, players = await _fetch_single_server(map_name, ip, port)
+                info, players = await _fetch_single_server(map_name, ip, port, game_mode)
 
                 if game_mode == GAME_ASA:
                     valid = []
@@ -173,15 +211,13 @@ class ServerStatus(commands.Cog):
         game_mode = await get_game_mode(self.bot, guild_id)
 
         try:
-            # Ejecución asíncrona de consultas A2S
-            info = await asyncio.wait_for(asyncio.to_thread(a2s.info, address), timeout=10.0)
+            info, players = await _fetch_single_server(server_name, ip, port, game_mode)
 
             if game_mode == GAME_ASA:
                 p_count = info.player_count
                 player_list = f"👥 {p_count} jugadores"
             else:
-                players = await asyncio.wait_for(asyncio.to_thread(a2s.players, address), timeout=10.0)
-                valid_players = [p.name for p in players if p.name]
+                valid_players = [p.name for p in players if getattr(p, "name", None)]
                 p_count = len(valid_players)
                 player_list = ", ".join(valid_players)
                 if p_count == 0:
