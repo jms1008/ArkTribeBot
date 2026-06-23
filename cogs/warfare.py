@@ -70,15 +70,20 @@ def build_blacklist_embed(rows: list, page: int = 0, lang: str = "es") -> discor
             tribe_txt = row["tribe"] or "???"
             map_txt = row["map"] or "???"
 
+            try:
+                num = row['entry_number'] or row['id']
+            except (KeyError, IndexError):
+                num = row['id']
+
             if is_enemy == 1:
                 lines.append(
-                    f"> `#{str(row['id']).zfill(3)}` 🔴 **{row['player']}** · {tribe_txt} · {map_txt}"
+                    f"> `#{str(num).zfill(3)}` 🔴 **{row['player']}** · {tribe_txt} · {map_txt}"
                 )
                 if nota_corta:
                     lines.append(f">  ╰ 📝 *{nota_corta}*")
             else:
                 lines.append(
-                    f"> `#{str(row['id']).zfill(3)}` ⚪ **{row['player']}** · {tribe_txt} · {map_txt}"
+                    f"> `#{str(num).zfill(3)}` ⚪ **{row['player']}** · {tribe_txt} · {map_txt}"
                 )
                 if nota_corta:
                     lines.append(f">  ╰ 📝 *{nota_corta}*")
@@ -330,14 +335,21 @@ class AddBlacklistModal(discord.ui.Modal, title="Añadir a Blacklist"):
 
     async def on_submit(self, interaction: discord.Interaction):
         db = self.bot.db
+        cursor = await db.execute(
+            "SELECT COALESCE(MAX(entry_number), 0) AS max_num FROM blacklist WHERE guild_id = ?",
+            (interaction.guild_id,),
+        )
+        row = await cursor.fetchone()
+        next_num = (row['max_num'] if row else 0) + 1
         await db.execute(
-            "INSERT INTO blacklist (guild_id, player, tribe, map, notes, is_enemy) VALUES (?, ?, ?, ?, ?, 1)",
+            "INSERT INTO blacklist (guild_id, player, tribe, map, notes, is_enemy, entry_number) VALUES (?, ?, ?, ?, ?, 1, ?)",
             (
                 interaction.guild_id,
                 self.player.value,
                 self.tribe.value or "Desconocido",
                 self.map_name.value or "Desconocido",
                 self.notes.value or "",
+                next_num,
             ),
         )
         await db.commit()
@@ -392,7 +404,7 @@ class ModifyBlacklistModal(discord.ui.Modal, title="Modificar entrada de Blackli
 
         db = self.bot.db
         cursor = await db.execute(
-            "SELECT id FROM blacklist WHERE id = ? AND guild_id = ?",
+            "SELECT id FROM blacklist WHERE entry_number = ? AND guild_id = ?",
             (
                 bid,
                 interaction.guild_id,
@@ -405,7 +417,7 @@ class ModifyBlacklistModal(discord.ui.Modal, title="Modificar entrada de Blackli
             )
             return
         await db.execute(
-            f"UPDATE blacklist SET {campo} = ? WHERE id = ? AND guild_id = ?",
+            f"UPDATE blacklist SET {campo} = ? WHERE entry_number = ? AND guild_id = ?",
             (valor, bid, interaction.guild_id),
         )
         await db.commit()
@@ -433,7 +445,7 @@ class DeleteBlacklistModal(discord.ui.Modal, title="Eliminar de Blacklist"):
 
         db = self.bot.db
         await db.execute(
-            "DELETE FROM blacklist WHERE id = ? AND guild_id = ?",
+            "DELETE FROM blacklist WHERE entry_number = ? AND guild_id = ?",
             (
                 bid,
                 interaction.guild_id,
@@ -1029,15 +1041,21 @@ class Warfare(commands.Cog):
 
         # Verificar si el jugador existe en la blacklist
         cursor = await db.execute(
-            "SELECT id FROM blacklist WHERE player = ? AND guild_id = ?",
+            "SELECT entry_number FROM blacklist WHERE player = ? AND guild_id = ?",
             (jugador, interaction.guild_id),
         )
         bl_row = await cursor.fetchone()
 
         # Si no está en la blacklist, lo añadimos automáticamente
         if not bl_row:
+            cursor2 = await db.execute(
+                "SELECT COALESCE(MAX(entry_number), 0) AS max_num FROM blacklist WHERE guild_id = ?",
+                (interaction.guild_id,),
+            )
+            max_row = await cursor2.fetchone()
+            next_num = (max_row['max_num'] if max_row else 0) + 1
             await db.execute(
-                "INSERT INTO blacklist (guild_id, player, tribe, map, notes, is_enemy, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO blacklist (guild_id, player, tribe, map, notes, is_enemy, created_at, entry_number) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     interaction.guild_id,
                     jugador,
@@ -1046,6 +1064,7 @@ class Warfare(commands.Cog):
                     notas or "",
                     int(enemigo.value) if enemigo else 1,
                     datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    next_num,
                 ),
             )
             await db.commit()
@@ -1069,9 +1088,9 @@ class Warfare(commands.Cog):
                 safe_keys = [k for k in updates if k in ALLOWED_BLACKLIST_FIELDS]
                 if safe_keys:
                     set_clause = ", ".join(f"{k} = ?" for k in safe_keys)
-                    values = [updates[k] for k in safe_keys] + [bl_row["id"], interaction.guild_id]
+                    values = [updates[k] for k in safe_keys] + [bl_row["entry_number"], interaction.guild_id]
                     await db.execute(
-                        f"UPDATE blacklist SET {set_clause} WHERE id = ? AND guild_id = ?",
+                        f"UPDATE blacklist SET {set_clause} WHERE entry_number = ? AND guild_id = ?",
                         values,
                     )
                     await db.commit()

@@ -67,17 +67,23 @@ class AddScoutModal(discord.ui.Modal, title="Añadir Scout"):
         notas = self.notas.value or ""
 
         db = self.bot.db
-        cursor = await db.execute(
-            "INSERT INTO scouts (guild_id, tribu_enemiga, mapa, coordenadas, nivel_amenaza, url_imagen, notas) "
-            "VALUES (?, ?, ?, ?, ?, 'N/A', ?)",
-            (interaction.guild_id, tribu, mapa, coords, amenaza_int, notas),
+        c = await db.execute(
+            "SELECT COALESCE(MAX(entry_number), 0) FROM scouts WHERE guild_id = ?",
+            (interaction.guild_id,),
         )
-        scout_id = cursor.lastrowid
+        max_row = await c.fetchone()
+        next_num = (max_row[0] or 0) + 1
+
+        await db.execute(
+            "INSERT INTO scouts (guild_id, tribu_enemiga, mapa, coordenadas, nivel_amenaza, url_imagen, notas, entry_number) "
+            "VALUES (?, ?, ?, ?, ?, 'N/A', ?, ?)",
+            (interaction.guild_id, tribu, mapa, coords, amenaza_int, notas, next_num),
+        )
         await db.commit()
 
         await interaction.response.send_message(
-            f"✅ Scout **#{scout_id}** registrado: **{tribu}** en {mapa}.\n"
-            f"Para adjuntar una imagen usa `/scout imagen` con el ID **{scout_id}**.",
+            f"✅ Scout **#{next_num}** registrado: **{tribu}** en {mapa}.\n"
+            f"Para adjuntar una imagen usa `/scout imagen` con el ID **{next_num}**.",
             ephemeral=True,
         )
         await update_scout_dashboards(self.bot, interaction.guild_id, mapa)
@@ -88,11 +94,15 @@ class ScoutSelect(discord.ui.Select):
         self.bot = bot
         options = []
         for row in chunk:
+            try:
+                num = row['entry_number'] or row['id']
+            except (KeyError, IndexError):
+                num = row['id']
             options.append(
                 discord.SelectOption(
-                    label=f"#{row['id']} {row['tribu_enemiga'][:80]}",
+                    label=f"#{num} {row['tribu_enemiga'][:80]}",
                     description=f"{row['mapa']} | {row['coordenadas']}",
-                    value=str(row["id"]),
+                    value=str(num),
                     emoji="📍",
                 )
             )
@@ -114,7 +124,7 @@ class ScoutSelect(discord.ui.Select):
 
         scout_id = int(self.values[0])
         db = self.bot.db
-        c = await db.execute("SELECT * FROM scouts WHERE id = ?", (scout_id,))
+        c = await db.execute("SELECT * FROM scouts WHERE entry_number = ? AND guild_id = ?", (scout_id, interaction.guild_id))
         row = await c.fetchone()
 
         if not row:
@@ -125,7 +135,7 @@ class ScoutSelect(discord.ui.Select):
         notas = row["notas"] or "*Sin notas adicionales*"
 
         embed = discord.Embed(
-            title=f"🔎 SCOUT #{row['id']:03d}",
+            title=f"🔎 SCOUT #{(row['entry_number'] if row['entry_number'] else row['id']):03d}",
             color=discord.Color.from_rgb(200, 50, 50),
         )
         embed.description = (
@@ -136,7 +146,11 @@ class ScoutSelect(discord.ui.Select):
             f"## 📝 Notas\n"
             f"> {notas}"
         )
-        embed.set_footer(text=f"Scout #{row['id']:03d}  •  /scout borrar id:{row['id']} para eliminar")
+        try:
+            _num = row['entry_number'] or row['id']
+        except (KeyError, IndexError):
+            _num = row['id']
+        embed.set_footer(text=f"Scout #{_num:03d}  •  /scout borrar id:{_num} para eliminar")
 
         img_url = None
         if row["url_imagen"] and row["url_imagen"] != "N/A":
@@ -318,13 +332,17 @@ async def build_scout_embed_view(bot, rows: list, map_filter: str, page: int = 0
                         link_img = f" [📷]({row['url_imagen']})"
                 except Exception as e:
                     logging.getLogger("ArkTribeBot").warning(
-                        f"No se pudo recuperar imagen fresca para scout {row['id']}: {e}"
+                        f"No se pudo recuperar imagen fresca para scout {row.get('entry_number', row['id']) if hasattr(row, 'get') else row['id']}: {e}"
                     )
 
             notas = row["notas"] or ""
             notas_txt = f"\n>  ╰ 📝 *{notas[:50]}{'...' if len(notas) > 50 else ''}*" if notas else ""
 
-            lines.append(f"> `#{row['id']}` {prefix}**{row['tribu_enemiga']}**{link_img}")
+            try:
+                _enum = row['entry_number'] or row['id']
+            except (KeyError, IndexError):
+                _enum = row['id']
+            lines.append(f"> `#{_enum}` {prefix}**{row['tribu_enemiga']}**{link_img}")
             lines.append(f">  📍 `{row['coordenadas']}` · {threat_bar}{notas_txt}")
             lines.append("")
 
@@ -414,7 +432,7 @@ class DeleteScoutModal(discord.ui.Modal, title="Eliminar Scout"):
 
         db = self.bot.db
         cursor = await db.execute(
-            "SELECT mapa, url_imagen, guild_id FROM scouts WHERE id = ? AND guild_id = ?",
+            "SELECT mapa, url_imagen, guild_id FROM scouts WHERE entry_number = ? AND guild_id = ?",
             (sid, interaction.guild_id),
         )
         scout = await cursor.fetchone()
@@ -445,7 +463,7 @@ class DeleteScoutModal(discord.ui.Modal, title="Eliminar Scout"):
             except Exception as e:
                 logging.getLogger("ArkTribeBot").warning(f"No se pudo eliminar imagen del scout #{sid}: {e}")
 
-        await db.execute("DELETE FROM scouts WHERE id = ? AND guild_id = ?", (sid, interaction.guild_id))
+        await db.execute("DELETE FROM scouts WHERE entry_number = ? AND guild_id = ?", (sid, interaction.guild_id))
         await db.commit()
 
         await interaction.response.send_message(f"🗑️ Scout **#{sid}** eliminado.", ephemeral=False)
@@ -501,7 +519,7 @@ class ModifyScoutModal(discord.ui.Modal, title="Modificar Scout"):
 
         db = self.bot.db
         cursor = await db.execute(
-            "SELECT mapa, notas, nivel_amenaza FROM scouts WHERE id = ? AND guild_id = ?",
+            "SELECT mapa, notas, nivel_amenaza FROM scouts WHERE entry_number = ? AND guild_id = ?",
             (sid, interaction.guild_id),
         )
         row = await cursor.fetchone()
@@ -534,7 +552,7 @@ class ModifyScoutModal(discord.ui.Modal, title="Modificar Scout"):
             new_notas = f"{existing_notas}\n[{today}]: {notas}" if existing_notas else f"[{today}]: {notas}"
 
         await db.execute(
-            "UPDATE scouts SET notas = ?, nivel_amenaza = ? WHERE id = ? AND guild_id = ?",
+            "UPDATE scouts SET notas = ?, nivel_amenaza = ? WHERE entry_number = ? AND guild_id = ?",
             (new_notas, new_amenaza, sid, interaction.guild_id),
         )
         await db.commit()
@@ -631,16 +649,23 @@ class Scouting(commands.Cog):
     ):
         await interaction.response.defer(ephemeral=False)
 
-        # Insertar primero para obtener el ID autogenerado
+        # Calcular el siguiente entry_number para este guild
         db = self.bot.db
-        cursor = await db.execute(
-            """
-            INSERT INTO scouts (guild_id, tribu_enemiga, mapa, coordenadas, nivel_amenaza, url_imagen, notas)
-            VALUES (?, ?, ?, ?, ?, 'N/A', ?)
-        """,
-            (interaction.guild_id, tribu, mapa, coords, amenaza, notas),
+        c = await db.execute(
+            "SELECT COALESCE(MAX(entry_number), 0) FROM scouts WHERE guild_id = ?",
+            (interaction.guild_id,),
         )
-        scout_id = cursor.lastrowid
+        max_row = await c.fetchone()
+        next_num = (max_row[0] or 0) + 1
+
+        await db.execute(
+            """
+            INSERT INTO scouts (guild_id, tribu_enemiga, mapa, coordenadas, nivel_amenaza, url_imagen, notas, entry_number)
+            VALUES (?, ?, ?, ?, ?, 'N/A', ?, ?)
+        """,
+            (interaction.guild_id, tribu, mapa, coords, amenaza, notas, next_num),
+        )
+        scout_id = next_num
         await db.commit()
 
         url_imagen = "N/A"
@@ -673,8 +698,8 @@ class Scouting(commands.Cog):
             # Actualizar url_imagen ahora que ya tenemos el mensaje subido
             db = self.bot.db
             await db.execute(
-                "UPDATE scouts SET url_imagen = ? WHERE id = ?",
-                (url_imagen, scout_id),
+                "UPDATE scouts SET url_imagen = ? WHERE entry_number = ? AND guild_id = ?",
+                (url_imagen, scout_id, interaction.guild_id),
             )
             await db.commit()
 
@@ -708,19 +733,14 @@ class Scouting(commands.Cog):
 
         db = self.bot.db
         # Buscamos primero el scout sin filtrar por guild para diagnosticar si existe en otro lado
-        cursor = await db.execute("SELECT tribu_enemiga, mapa, guild_id FROM scouts WHERE id = ?", (id,))
+        cursor = await db.execute("SELECT tribu_enemiga, mapa, guild_id FROM scouts WHERE entry_number = ? AND guild_id = ?", (id, interaction.guild_id))
         row = await cursor.fetchone()
 
         if not row:
             await interaction.followup.send(t("scout.cmd.not_found", lang, id=id))
             return
 
-        if row["guild_id"] != interaction.guild_id:
-            logger.warning(
-                f"Intento de acceso a Scout #{id} desde Guild {interaction.guild_id}. Dueño real: {row['guild_id']}"
-            )
-            await interaction.followup.send(t("scout.cmd.no_perms", lang, id=id))
-            return
+        # guild_id already filtered in WHERE clause, no cross-guild access possible
 
         tribu = row["tribu_enemiga"]
         mapa = row["mapa"]
@@ -751,8 +771,8 @@ class Scouting(commands.Cog):
 
         db = self.bot.db
         await db.execute(
-            "UPDATE scouts SET url_imagen = ? WHERE id = ?",
-            (url_imagen, id),
+            "UPDATE scouts SET url_imagen = ? WHERE entry_number = ? AND guild_id = ?",
+            (url_imagen, id, interaction.guild_id),
         )
         await db.commit()
 
@@ -772,7 +792,7 @@ class Scouting(commands.Cog):
         lang = await resolve_lang(self.bot, interaction.guild_id, "command", interaction.user.id)
         db = self.bot.db
         cursor = await db.execute(
-            "SELECT mapa FROM scouts WHERE id = ? AND guild_id = ?",
+            "SELECT mapa FROM scouts WHERE entry_number = ? AND guild_id = ?",
             (
                 id,
                 interaction.guild_id,
@@ -788,7 +808,7 @@ class Scouting(commands.Cog):
 
         map_target = row[0]
 
-        await db.execute("DELETE FROM scouts WHERE id = ? AND guild_id = ?", (id, interaction.guild_id))
+        await db.execute("DELETE FROM scouts WHERE entry_number = ? AND guild_id = ?", (id, interaction.guild_id))
         await db.commit()
 
         await interaction.response.send_message(t("scout.cmd.deleted", lang, id=id), ephemeral=False)
@@ -870,7 +890,11 @@ class Scouting(commands.Cog):
                 notas = (row["notas"] or "").strip()
                 nota_corta = (notas[:50] + "...") if len(notas) > 50 else notas
                 map_prefix = f"**[{row['mapa']}]** " if target_map == "Global" else ""
-                lines.append(f"`#{row['id']:03d}` 🏴 {map_prefix}**{row['tribu_enemiga']}**")
+                try:
+                    _pnum = row['entry_number'] or row['id']
+                except (KeyError, IndexError):
+                    _pnum = row['id']
+                lines.append(f"`#{_pnum:03d}` 🏴 {map_prefix}**{row['tribu_enemiga']}**")
                 lines.append(f"  📍 `{row['coordenadas']}`  ·  {threat_bar}")
                 if nota_corta:
                     lines.append(f"  ╰ 📝 *{nota_corta}*")

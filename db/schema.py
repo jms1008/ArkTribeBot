@@ -36,6 +36,7 @@ TABLES: list[str] = [
     CREATE TABLE IF NOT EXISTS scouts (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         guild_id INTEGER NOT NULL,
+        entry_number INTEGER,
         tribu_enemiga TEXT,
         mapa TEXT,
         coordenadas TEXT,
@@ -103,6 +104,7 @@ TABLES: list[str] = [
     CREATE TABLE IF NOT EXISTS blacklist (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         guild_id INTEGER NOT NULL,
+        entry_number INTEGER,
         player TEXT,
         tribe TEXT,
         map TEXT,
@@ -418,6 +420,8 @@ MIGRATIONS: list[tuple[str, str]] = [
     ("dinos", "ALTER TABLE dinos ADD COLUMN food INTEGER"),
     ("dinos", "ALTER TABLE dinos ADD COLUMN speed INTEGER"),
     ("todos", "ALTER TABLE todos ADD COLUMN task_number INTEGER"),
+    ("scouts", "ALTER TABLE scouts ADD COLUMN entry_number INTEGER"),
+    ("blacklist", "ALTER TABLE blacklist ADD COLUMN entry_number INTEGER"),
 ]
 
 # Auto-migración de guild_id para tablas legacy que pudieran no tenerla.
@@ -497,18 +501,19 @@ async def run_migrations(db: aiosqlite.Connection) -> None:
             pass  # La columna ya existe o la tabla no existe.
 
     # Backfill task_number para filas existentes que aún no lo tengan.
-    try:
-        await db.execute(
-            """
-            UPDATE todos SET task_number = (
-                SELECT COUNT(*) FROM todos AS t2
-                WHERE t2.guild_id = todos.guild_id AND t2.id <= todos.id
+    for table, col in [("todos", "task_number"), ("scouts", "entry_number"), ("blacklist", "entry_number")]:
+        try:
+            await db.execute(
+                f"""
+                UPDATE {table} SET {col} = (
+                    SELECT COUNT(*) FROM {table} AS t2
+                    WHERE t2.guild_id = {table}.guild_id AND t2.id <= {table}.id
+                )
+                WHERE {col} IS NULL
+                """
             )
-            WHERE task_number IS NULL
-            """
-        )
-    except aiosqlite.OperationalError:
-        pass
+        except aiosqlite.OperationalError:
+            pass
 
     await db.commit()
 
