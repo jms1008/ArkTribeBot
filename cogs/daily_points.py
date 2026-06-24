@@ -71,6 +71,7 @@ class DailyPoints(commands.Cog):
         name="mi",
         description="Activa o desactiva tus notificaciones diarias para votar los mapas.",
     )
+    @app_commands.guild_only()
     @app_commands.describe(
         estado="Activar (on) o desactivar (off)",
         hora="Hora del recordatorio (0-23) [Defecto: 8]",
