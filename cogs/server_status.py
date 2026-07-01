@@ -65,24 +65,27 @@ async def _fetch_from_battlemetrics(ip: str, port: int):
         resolved_ip = socket.gethostbyname(ip)
     except Exception:
         resolved_ip = ip
-        
+
     search_query = urllib.parse.quote(f'"{resolved_ip}:{port}"')
     url = f"https://api.battlemetrics.com/servers?filter[search]={search_query}"
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url, timeout=5.0) as resp:
+    bm_timeout = aiohttp.ClientTimeout(total=10)
+    async with aiohttp.ClientSession(timeout=bm_timeout) as session:
+        async with session.get(url) as resp:
             if resp.status == 200:
                 data = await resp.json()
                 for s in data.get("data", []):
                     attrs = s.get("attributes", {})
-                    # Battlemetrics puede tener portQuery == port para ASA
                     if attrs.get("ip") == resolved_ip and (attrs.get("port") == port or attrs.get("portQuery") == port):
                         info = MockA2SInfo(
                             map_name=attrs.get("details", {}).get("map", "Unknown"),
                             player_count=attrs.get("players", 0),
                             max_players=attrs.get("maxPlayers", 0)
                         )
+                        logger.debug(f"[BM Fallback] {ip}:{port} -> {info.map_name} ({info.player_count}p)")
                         return info, []
-    raise TimeoutError("Timeout o servidor no encontrado en Battlemetrics")
+            else:
+                logger.warning(f"[BM Fallback] HTTP {resp.status} para {url}")
+    raise TimeoutError(f"Servidor {ip}:{port} no encontrado en Battlemetrics")
 
 async def _fetch_single_server(name: str, ip: str, port: int, game_mode: str = None):
     """Consulta A2S de un solo servidor con semáforo global, con fallback a Battlemetrics."""
